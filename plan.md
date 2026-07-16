@@ -19,7 +19,7 @@ This file is the **execution truth** for what runs today and what is next.
 4. Fail closed on severe policy risk.  
 5. Human approval before first listing publish and supplier PO execution.  
 6. Commerce signals are operational recommendations — not securities advice.  
-7. No silent auto-publish to live marketplaces without policy + approval.  
+7. No silent auto-publish to live marketplaces without policy + human approval.  
 
 ---
 
@@ -81,16 +81,18 @@ Details: [docs/FIRST_RUN.md](docs/FIRST_RUN.md) · [docs/TRADEOPS_LOCAL_SETUP.md
 | M1 | Auth, orgs, RBAC (API) | **Complete** (web login UI removed for local-first) |
 | M2a | Connector framework + fixtures | **Complete** |
 | M2b | Real Shopify | **Next** — credentials |
-| M3–M4 | Commerce terminal + profit | **Partial / largely complete** via fixtures |
+| M3 | Commerce domain + terminal | **Complete** (fixture-backed) |
+| M4 | Profit + cash flow + pricing | **Partial** — unit economics + portfolio REAL |
 | M5 | Automation engine | Pending |
-| M6 | AI (beyond baselines) | Partial baselines; neural STUB |
-| M7–M10 | Second connector … hardening | Pending |
-
-Full table: [docs/architecture/MILESTONES.md](docs/architecture/MILESTONES.md)
+| M6 | AI intelligence | **Partial** — baseline forecast + evaluation REAL; neural STUB |
+| M7 | Second connector + marketplace manager | Pending |
+| M8 | Suppliers, shipping, payments depth | Pending |
+| M9 | Developer platform | Pending |
+| M10 | Production hardening | Pending |
 
 ---
 
-## Next work (after local slice)
+## Next work
 
 1. **M2b Shopify** when merchant credentials + app config exist ([SHOPIFY_CREDENTIALS](docs/TRADEOPS_SHOPIFY_CREDENTIALS.md)).  
 2. Keep fixture loop green as regression baseline.  

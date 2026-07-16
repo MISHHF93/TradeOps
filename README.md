@@ -11,7 +11,7 @@ TradeOps is a marketplace-independent commerce control center. External platform
 ## Current milestone
 
 **M0 — Platform foundation** ✅ complete  
-**M1 — Auth, organizations, RBAC** ✅ complete (API; local web uses `AUTH_BYPASS`, no login UI)  
+**M1 — Auth, organizations, RBAC** ✅ complete (API + web `/login` · `/register`; `AUTH_BYPASS` local-only)  
 **M2a — Fixture connectors + commerce terminal** ✅ complete  
 **M2b — Real Shopify** — next when merchant credentials available  
 
@@ -20,13 +20,13 @@ TradeOps is a marketplace-independent commerce control center. External platform
 | Component | Status |
 |-----------|--------|
 | Monorepo (pnpm workspaces) | Yes |
-| API (`apps/api` NestJS) | Health + identity + commerce + **public tools** + **weekend Google automation** |
-| Worker (`apps/worker` BullMQ) | Platform heartbeat queue |
-| Web (`apps/web` Next.js) | Landing, free tools, terminal (scanner, pipeline, automations, …) — no `/login` |
+| API (`apps/api` NestJS) | Health + identity + commerce + public tools + AI + automation |
+| Worker (`apps/worker` BullMQ) | Platform heartbeat queue (Redis optional) |
+| Web (`apps/web` Next.js) | Public site + `/login` · `/register` + terminal + free tools |
 | Postgres / PGlite | Identity + full commerce schema + seed |
 | Redis | Optional for first UI; health may be degraded |
 | CI | GitHub Actions |
-| Docs index | [docs/README.md](docs/README.md) |
+| Docs index | [docs/README.md](docs/README.md) · **execution matrix** [docs/TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md) |
 
 Docs index: [docs/README.md](docs/README.md) · Milestones: [docs/architecture/MILESTONES.md](docs/architecture/MILESTONES.md)
 

@@ -14,5 +14,6 @@
 | Shopify/Amazon/eBay live | Credential-blocked | Registry only |
 | Billing | Coming soon | |
 | Email verify | Not built | Launch blocker |
-| GA4 | Optional / docs | Env gated |
+| GA4 | Docs only | Policy written; **gtag component not wired** |
 | Deploy docs | Written | Compose + Cloud Run notes |
+| Doc ↔ code matrix | Written | [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md) |

@@ -51,9 +51,12 @@ Open:
 
 | URL | What |
 |-----|------|
-| http://localhost:3000 | Public landing (free tools + terminal entry) |
+| http://localhost:3000 | Public website (marketing + free tools) |
 | http://localhost:3000/tools | Free calculators (profit · score · policy) |
-| http://localhost:3000/terminal | Operator terminal (**no login**) |
+| http://localhost:3000/login · `/register` | Real session auth (optional; AUTH_BYPASS also works in dev) |
+| http://localhost:3000/status | Capability honesty board |
+| http://localhost:3000/terminal | Operator terminal |
+| http://localhost:3000/terminal/ai | AI operator (shadow by default) |
 | http://localhost:3000/terminal/automations | Weekend Google automation (shadow by default) |
 | http://localhost:3000/terminal/pipeline | Commerce pipeline board |
 
@@ -70,12 +73,14 @@ pnpm run setup:db
 npm start
 ```
 
-## Local access (no login UI)
+## Local access
 
-Login and registration **pages are removed**. `/` is the **public benefit landing**; operators open `/terminal`.
+`/` is the **public website**. Operators use `/terminal` (workspace). Auth options:
 
-- `AUTH_BYPASS=true` (default in development) → API acts as seeded demo owner  
-- Identity: `founder@tradeops.local` / org **demo-commerce**  
+1. **Register / sign in** at `/register` and `/login` (real session cookies), or  
+2. **`AUTH_BYPASS=true`** (default in development) → API acts as seeded demo owner without a cookie  
+
+- Seeded identity: `founder@tradeops.local` / `TradeOps-Demo-2026!` / org **demo-commerce**  
 - Bypass is **never** active when API runs with `NODE_ENV=production` (local `npm start` keeps API on development for bypass)
 
 ### Full commerce loop
@@ -84,7 +89,7 @@ Login and registration **pages are removed**. `/` is the **public benefit landin
 pnpm run demo:loop
 ```
 
-Or click **Run full demo loop** on Scanner / Pipeline.
+Or click **Run fixture development loop** on Scanner / Pipeline.
 
 Flow: simulate → listing draft → approve → ingest orders → PO approve → fulfill → evaluate.
 

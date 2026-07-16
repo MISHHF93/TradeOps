@@ -4,7 +4,8 @@
 
 - Index: [docs/README.md](docs/README.md)  
 - Keep **operational** docs (FIRST_RUN, LOCAL_SETUP, README quick start) aligned with `package.json` scripts.  
-- Mark vision docs clearly vs REAL implementation ([IMPLEMENTATION_LEDGER](docs/TRADEOPS_IMPLEMENTATION_LEDGER.md)).
+- Mark vision docs clearly vs REAL implementation ([IMPLEMENTATION_LEDGER](docs/TRADEOPS_IMPLEMENTATION_LEDGER.md)).  
+- Full doc ↔ code matrix: [TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md).
 
 ## Workflow
 
@@ -12,7 +13,7 @@
 2. Keep changes compiling: `pnpm typecheck`, `pnpm test`, `pnpm build`.
 3. Prefer vertical slices over horizontal stubs across unfinished modules.
 4. Document irreversible decisions as ADRs under `docs/architecture/`.
-5. Local run: `pnpm run bootstrap:local` → `npm start` → open `/terminal` (no login).
+5. Local run: `pnpm run bootstrap:local` → `npm start` → open `/` (public) or `/terminal` (workspace). Optional: `/login` / `/register`.
 
 ## Package boundaries
 

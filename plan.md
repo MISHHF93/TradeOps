@@ -69,13 +69,16 @@ pnpm run demo:loop         # optional full commerce loop
 |-----|---------|
 | http://localhost:3000 | Public landing (free tools + terminal entry) |
 | http://localhost:3000/tools | Free public calculators |
-| http://localhost:3000/terminal | Operator terminal (no login) |
+| http://localhost:3000/login · `/register` | Real session cookies |
+| http://localhost:3000/status | Capability honesty board |
+| http://localhost:3000/terminal | Operator terminal (session or AUTH_BYPASS) |
+| http://localhost:3000/terminal/ai | AI operator (shadow default) |
 | http://localhost:3000/terminal/automations | Weekend Google automation |
 | http://localhost:3000/terminal/pipeline | Pipeline board |
 | http://localhost:4000/api/v1/health/live | API liveness |
 | http://localhost:4000/api/v1/public/tools/catalog | Public tools API catalog |
 | http://localhost:4000/api/v1/automation/google/weekend/status | Weekend job status |
-| http://localhost:4000/api/v1/auth/me | Demo identity (bypass) |
+| http://localhost:4000/api/v1/auth/me | Session or bypass identity |
 
 Details: [docs/FIRST_RUN.md](docs/FIRST_RUN.md) · [docs/TRADEOPS_LOCAL_SETUP.md](docs/TRADEOPS_LOCAL_SETUP.md) · [docs/WINDOWS_APP_CONTROL.md](docs/WINDOWS_APP_CONTROL.md)
 
@@ -107,7 +110,7 @@ Details: [docs/FIRST_RUN.md](docs/FIRST_RUN.md) · [docs/TRADEOPS_LOCAL_SETUP.md
 | ID | Name | Status |
 |----|------|--------|
 | M0 | Platform foundation | **Complete** |
-| M1 | Auth, orgs, RBAC (API) | **Complete** (web login UI removed for local-first) |
+| M1 | Auth, orgs, RBAC | **Complete** (API + web login/register; AUTH_BYPASS local-only) |
 | M2a | Connector framework + fixtures | **Complete** |
 | M2b | Real Shopify | **Next** — credentials |
 | M3 | Commerce domain + terminal | **Complete** (fixture-backed) |

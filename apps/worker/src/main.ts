@@ -1,4 +1,10 @@
 import { loadEnv } from '@tradeops/config';
+import {
+  GOOGLE_MERCHANT_PROVIDER_KEY,
+  GoogleMerchantConnector,
+  isWeekendLocal,
+  nextWeekendMorning,
+} from '@tradeops/connector-google-merchant';
 import { createPrismaClient, checkDatabaseHealth } from '@tradeops/database';
 import { createLogger } from '@tradeops/logging';
 import { Queue, Worker } from 'bullmq';
@@ -6,6 +12,7 @@ import IORedis from 'ioredis';
 
 const PLATFORM_QUEUE = 'tradeops.platform';
 const HEARTBEAT_JOB = 'heartbeat';
+const GOOGLE_WEEKEND_JOB = 'google-weekend-feed';
 
 async function bootstrap(): Promise<void> {
   const env = loadEnv();
@@ -23,9 +30,9 @@ async function bootstrap(): Promise<void> {
   } catch (error) {
     logger.warn(
       { err: error instanceof Error ? error.message : error },
-      'Redis unavailable — worker will exit after reporting status',
+      'Redis unavailable — worker weekend Google job will not be queue-scheduled (API in-process scheduler still runs)',
     );
-    process.exitCode = 1;
+    process.exitCode = 0;
     return;
   }
 
@@ -49,6 +56,19 @@ async function bootstrap(): Promise<void> {
     },
   );
 
+  // Weekend Google Merchant feed: Saturday and Sunday 09:00 UTC-ish via cron.
+  // Shadow by default inside job handler when credentials are missing.
+  await queue.add(
+    GOOGLE_WEEKEND_JOB,
+    { source: 'worker-schedule', next: nextWeekendMorning().toISOString() },
+    {
+      removeOnComplete: 50,
+      removeOnFail: 50,
+      repeat: { pattern: '0 9 * * 6,0' },
+      jobId: 'google-weekend-feed',
+    },
+  );
+
   const worker = new Worker(
     PLATFORM_QUEUE,
     async (job) => {
@@ -64,6 +84,63 @@ async function bootstrap(): Promise<void> {
         );
         return { ok: true, database: health.status };
       }
+
+      if (job.name === GOOGLE_WEEKEND_JOB) {
+        logger.info(
+          { jobId: job.id, isWeekend: isWeekendLocal(), next: nextWeekendMorning().toISOString() },
+          'Google weekend feed job started',
+        );
+        const accessToken = process.env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim();
+        const merchantId = process.env.GOOGLE_MERCHANT_ID?.trim();
+        const connector = new GoogleMerchantConnector(
+          accessToken || merchantId ? { accessToken, merchantId } : null,
+        );
+
+        const org =
+          (await prisma.organization.findFirst({ where: { slug: 'demo-commerce' } })) ??
+          (await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } }));
+
+        if (!org) {
+          logger.warn('No organization for weekend Google feed');
+          return { ok: false, reason: 'organization_missing' };
+        }
+
+        const products = await prisma.product.findMany({
+          where: { organizationId: org.id },
+          take: 100,
+          orderBy: { updatedAt: 'desc' },
+        });
+
+        const result = await connector.prepareWeekendFeed(
+          products.map((p) => ({
+            externalId: p.externalId,
+            title: p.title,
+            description: p.description,
+            targetPriceMinor: p.targetPriceMinor,
+            currency: p.currency,
+            inventoryQuantity: p.inventoryQuantity,
+            sourcePlatform: p.sourcePlatform,
+            dataConfidence: p.dataConfidence,
+            dataFreshnessAt: p.dataFreshnessAt,
+            isFixtureSource: p.sourcePlatform.startsWith('fixture'),
+          })),
+        );
+
+        logger.info(
+          {
+            jobId: job.id,
+            provider: GOOGLE_MERCHANT_PROVIDER_KEY,
+            mode: result.mode,
+            prepared: result.preparedCount,
+            posted: result.postedCount,
+            live: result.livePostSucceeded,
+            status: result.status,
+          },
+          'Google weekend feed job finished',
+        );
+        return result;
+      }
+
       logger.warn({ jobName: job.name }, 'Unknown job name');
       return { ok: false };
     },
@@ -74,7 +151,10 @@ async function bootstrap(): Promise<void> {
     logger.error({ jobId: job?.id, err: error.message }, 'Job failed');
   });
 
-  logger.info({ queue: PLATFORM_QUEUE }, 'TradeOps worker online');
+  logger.info(
+    { queue: PLATFORM_QUEUE, nextGoogleWeekend: nextWeekendMorning().toISOString() },
+    'TradeOps worker online (heartbeat + weekend Google feed schedule)',
+  );
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down worker');

@@ -7,8 +7,11 @@ import { DEFAULT_API_TIMEOUT_MS, getApiBaseUrl } from '../lib/api';
 /** Full vertical slice can take well over 30s on PGlite. */
 const DEMO_LOOP_TIMEOUT_MS = Math.max(DEFAULT_API_TIMEOUT_MS, 180_000);
 
-/** Runs the full local commerce vertical slice against the API (AUTH_BYPASS). */
-export function DemoLoopButton({ label = 'Run full demo loop' }: { label?: string }) {
+/**
+ * Runs the fixture development loop: real DB + real contracts + fixture connectors.
+ * Not a live marketplace loop — fixture products stay labeled fixture.
+ */
+export function DemoLoopButton({ label = 'Run fixture development loop' }: { label?: string }) {
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,10 +54,10 @@ export function DemoLoopButton({ label = 'Run full demo loop' }: { label?: strin
       const aborted = e instanceof Error && e.name === 'AbortError';
       setMsg(
         aborted
-          ? `Demo loop timed out after ${DEMO_LOOP_TIMEOUT_MS}ms`
+          ? `Fixture development loop timed out after ${DEMO_LOOP_TIMEOUT_MS}ms`
           : e instanceof Error
             ? e.message
-            : 'Demo loop failed',
+            : 'Fixture development loop failed',
       );
     } finally {
       clearTimeout(timer);
@@ -65,7 +68,7 @@ export function DemoLoopButton({ label = 'Run full demo loop' }: { label?: strin
   return (
     <div className="terminal-toolbar">
       <button type="button" className="btn primary" disabled={busy} onClick={() => void run()}>
-        {busy ? 'Running demo loop…' : label}
+        {busy ? 'Running fixture loop…' : label}
       </button>
       {msg ? (
         <span className="meta" style={{ maxWidth: 520, whiteSpace: 'normal' }}>

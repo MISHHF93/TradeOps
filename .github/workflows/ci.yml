@@ -80,3 +80,6 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # Full browser E2E requires a long-lived stack; package tests + build remain primary.
+      # Optional smoke (needs services up): pnpm e2e:smoke

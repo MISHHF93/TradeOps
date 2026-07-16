@@ -1,7 +1,16 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+import { LogoutButton } from '../../components/auth-forms';
 import { OrgSwitcher } from '../../components/org-switcher';
+import { StatusBadge } from '../../components/status-badge';
 import { fetchApiHealth } from '../../lib/api';
+import { noIndexMeta } from '../../lib/seo';
 import { getServerSession } from '../../lib/session';
+
+export const metadata: Metadata = {
+  ...noIndexMeta,
+  title: 'Workspace',
+};
 
 export default async function AppHomePage() {
   const [session, health] = await Promise.all([getServerSession(), fetchApiHealth()]);
@@ -10,6 +19,7 @@ export default async function AppHomePage() {
     <section className="hero">
       <div className="app-header">
         <div>
+          <p className="pill">Authenticated workspace</p>
           <h1>Operations console</h1>
           <p className="lede">
             {session ? (
@@ -18,8 +28,9 @@ export default async function AppHomePage() {
               </>
             ) : (
               <>
-                No local identity yet. Run <code>pnpm run setup:db</code> with{' '}
-                <code>AUTH_BYPASS=true</code>.
+                No session. <Link href="/login">Sign in</Link> or{' '}
+                <Link href="/register">register</Link>. Local dev may use{' '}
+                <code>AUTH_BYPASS=true</code> after <code>setup:db</code>.
               </>
             )}
           </p>
@@ -34,8 +45,14 @@ export default async function AppHomePage() {
           <Link className="btn primary" href="/terminal">
             Open terminal
           </Link>
+          {session ? <LogoutButton /> : null}
         </div>
       </div>
+
+      <p className="meta">
+        Public website is separate at <Link href="/">/</Link>. This surface holds private org data.{' '}
+        <StatusBadge status="operational" /> when session/API healthy.
+      </p>
 
       <div className="grid">
         <article className="card">
@@ -81,13 +98,14 @@ export default async function AppHomePage() {
         </article>
 
         <article className="card">
-          <h3>Local mode</h3>
+          <h2>Auth modes</h2>
           <p>
-            Login and registration are disabled. The API uses auth bypass as the seeded demo owner
-            so you can work in the terminal without accounts.
+            Production: session cookies via <Link href="/login">sign in</Link> /{' '}
+            <Link href="/register">register</Link>. Local development may also use{' '}
+            <code>AUTH_BYPASS</code> (forced off when <code>NODE_ENV=production</code>).
           </p>
           <p className="meta">
-            <Link href="/terminal">Commerce terminal</Link>
+            <Link href="/status">Capability status →</Link>
           </p>
         </article>
       </div>

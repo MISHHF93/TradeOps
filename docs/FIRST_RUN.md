@@ -8,6 +8,7 @@
 | DB + seed (auto PGlite if needed) | `pnpm run bootstrap:local` |
 | Start product (API + web) | `npm start` or `pnpm start` |
 | Full commerce demo loop | `pnpm run demo:loop` (or UI button) |
+| Weekend Google feed (shadow) | `pnpm run google:weekend -- --shadow` |
 | Stop apps (free ports) | `npm run stop` |
 | Development hot rebuild | `pnpm dev` |
 | Keep PGlite DB process only | `pnpm run db:pglite` |
@@ -46,7 +47,15 @@ Optional — fill the full pipeline after start:
 pnpm run demo:loop
 ```
 
-Open **http://localhost:3000** → commerce terminal (**no login**).
+Open:
+
+| URL | What |
+|-----|------|
+| http://localhost:3000 | Public landing (free tools + terminal entry) |
+| http://localhost:3000/tools | Free calculators (profit · score · policy) |
+| http://localhost:3000/terminal | Operator terminal (**no login**) |
+| http://localhost:3000/terminal/automations | Weekend Google automation (shadow by default) |
+| http://localhost:3000/terminal/pipeline | Commerce pipeline board |
 
 ## Sequence (Docker)
 
@@ -63,7 +72,7 @@ npm start
 
 ## Local access (no login UI)
 
-Login and registration **pages are removed**. `/` redirects to `/terminal`.
+Login and registration **pages are removed**. `/` is the **public benefit landing**; operators open `/terminal`.
 
 - `AUTH_BYPASS=true` (default in development) → API acts as seeded demo owner  
 - Identity: `founder@tradeops.local` / org **demo-commerce**  
@@ -77,7 +86,29 @@ pnpm run demo:loop
 
 Or click **Run full demo loop** on Scanner / Pipeline.
 
-Flow: simulate → listing draft → approve → ingest orders → PO approve → fulfill → evaluate.  
+Flow: simulate → listing draft → approve → ingest orders → PO approve → fulfill → evaluate.
+
+### Weekend Google automation
+
+```powershell
+pnpm run google:weekend -- --shadow
+```
+
+- **Shadow (default):** prepares a Google Merchant product feed, skips policy-blocked SKUs, never claims live success.  
+- **Schedule:** API arms an hourly scheduler; runs once Sat/Sun 09:00–10:59 local.  
+- **Live:** only with `GOOGLE_MERCHANT_ACCESS_TOKEN` + `GOOGLE_MERCHANT_ID` and a wired Content API client — no fabricated posts.  
+- UI: http://localhost:3000/terminal/automations  
+
+### Public free tools API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/v1/public/tools/catalog` | Tool list |
+| POST | `/api/v1/public/tools/unit-economics` | Contribution profit |
+| POST | `/api/v1/public/tools/opportunity-score` | Explainable 0–100 score |
+| POST | `/api/v1/public/tools/policy-check` | Fail-closed policy gate |
+
+Same math as the terminal (`@tradeops/commerce-engine`). No private store data.
 Then open http://localhost:3000/terminal/pipeline.
 
 ### API timeouts

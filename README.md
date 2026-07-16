@@ -15,14 +15,14 @@ TradeOps is a marketplace-independent commerce control center. External platform
 **M2a — Fixture connectors + commerce terminal** ✅ complete  
 **M2b — Real Shopify** — next when merchant credentials available  
 
-**Local product:** open http://localhost:3000 → **Commerce Terminal** (no login).
+**Local product:** open http://localhost:3000 → **public website** (marketing + free tools + register/sign-in) and **merchant workspace** (`/terminal`, `/app`).
 
 | Component | Status |
 |-----------|--------|
 | Monorepo (pnpm workspaces) | Yes |
-| API (`apps/api` NestJS) | Health + identity + commerce terminal APIs |
+| API (`apps/api` NestJS) | Health + identity + commerce + **public tools** + **weekend Google automation** |
 | Worker (`apps/worker` BullMQ) | Platform heartbeat queue |
-| Web (`apps/web` Next.js) | Terminal (scanner, pipeline, portfolio, …) — no `/login` |
+| Web (`apps/web` Next.js) | Landing, free tools, terminal (scanner, pipeline, automations, …) — no `/login` |
 | Postgres / PGlite | Identity + full commerce schema + seed |
 | Redis | Optional for first UI; health may be degraded |
 | CI | GitHub Actions |
@@ -36,17 +36,17 @@ Docs index: [docs/README.md](docs/README.md) · Milestones: [docs/architecture/M
 
 ```text
 apps/
-  api/       NestJS HTTP API (/api/v1 health, identity, commerce)
+  api/       NestJS HTTP API (/api/v1 health, identity, commerce, public tools, automation)
   worker/    Background jobs (BullMQ)
-  web/       Next.js commerce terminal
+  web/       Next.js public site + commerce terminal
 packages/
   config/ logging/ contracts/ domain/ auth/
   database/          Prisma schema + migrations + seed
   commerce-engine/   Profit, score, forecast, policy, signals
   connector-core/    Connector capability contracts
-  connectors/        fixture-supplier, fixture-marketplace
+  connectors/        fixture-supplier, fixture-marketplace, google-merchant
 infra/docker/        Postgres + Redis Compose stack
-scripts/             start, bootstrap:local, db:pglite, demo:loop, …
+scripts/             start, bootstrap:local, db:pglite, demo:loop, google:weekend, …
 docs/                See docs/README.md
 ```
 
@@ -111,11 +111,25 @@ pnpm run demo:loop
 
 Open:
 
-- http://localhost:3000 → **terminal** (no login UI)  
-- Pipeline: http://localhost:3000/terminal/pipeline  
-- Account: http://localhost:3000/app  
-- Local identity: `AUTH_BYPASS` + seed (`founder@tradeops.local` / `demo-commerce`)  
-- Vertical slice: Scanner → Pipeline → Signals → Portfolio → Orders → Approvals → Connectors
+| Surface | URL |
+|---------|-----|
+| Public website | http://localhost:3000 |
+| Free tools | http://localhost:3000/tools |
+| Register / Sign in | http://localhost:3000/register · `/login` |
+| Capability status | http://localhost:3000/status |
+| Merchant workspace | http://localhost:3000/app · `/terminal` |
+| AI operator | http://localhost:3000/terminal/ai |
+
+Seeded local account (after `setup:db`): `founder@tradeops.local` / `TradeOps-Demo-2026!`  
+Dev may also use `AUTH_BYPASS=true` (forced off in production).  
+Honesty board classifies every primary control as operational / approval-controlled / credential-blocked / coming soon. 
+
+Weekend Google (shadow by default):
+
+```powershell
+pnpm run google:weekend -- --shadow
+# Optional live path later: set GOOGLE_MERCHANT_ACCESS_TOKEN + GOOGLE_MERCHANT_ID
+```
 
 **Note:** Root `npm start` starts **API + Web**. There is no bare `npm starrt` (typo). Use `npm start` or `pnpm start`.
 

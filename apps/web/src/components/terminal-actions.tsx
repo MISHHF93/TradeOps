@@ -56,6 +56,7 @@ export function TerminalToolbar() {
         type="button"
         className="btn ghost"
         disabled={busy}
+        title="Administrative · fixture-labeled import into real DB"
         onClick={() => void run('Import', '/api/v1/commerce/import/fixture-supplier')}
       >
         Import fixtures
@@ -64,11 +65,16 @@ export function TerminalToolbar() {
         type="button"
         className="btn ghost"
         disabled={busy}
+        title="Administrative · fixture order ingest"
         onClick={() => void run('Orders', '/api/v1/orders/ingest/fixture')}
       >
-        Ingest orders
+        Ingest fixture orders
       </button>
       {msg ? <span className="meta">{msg}</span> : null}
+      <span className="meta" style={{ width: '100%' }}>
+        Buttons above write real DB rows via fixture connectors — never labeled as live marketplace
+        traffic. See /status for classifications.
+      </span>
     </div>
   );
 }

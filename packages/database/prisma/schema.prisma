@@ -103,6 +103,16 @@ model Organization {
   profitabilitySnapshots ProfitabilitySnapshot[]
   predictionOutcomes     PredictionOutcome[]
   modelVersions          ModelVersion[]
+  // Professor-mode foundations (live loops / AI / harmonization / events)
+  productIdentifiers     ProductIdentifier[]
+  externalPayloads       ExternalPayload[]
+  identityLinks          IdentityLink[]
+  commerceEvents         CommerceEvent[]
+  webhookReceipts        WebhookReceipt[]
+  shadowDecisions        ShadowDecision[]
+  operatorRuns           OperatorRun[]
+  operatorRecommendations OperatorRecommendation[]
+  connectorHealthEvents  ConnectorHealthEvent[]
 
   @@map("organizations")
 }
@@ -268,6 +278,13 @@ model Product {
   dataConfidence      Float    @default(0.7) @map("data_confidence")
   dataFreshnessAt     DateTime @default(now()) @map("data_freshness_at") @db.Timestamptz(3)
   schemaVersion       String   @default("1") @map("schema_version") @db.VarChar(16)
+  brand               String?  @db.VarChar(200)
+  manufacturer        String?  @db.VarChar(200)
+  condition           String?  @db.VarChar(64)
+  countryOfOrigin     String?  @map("country_of_origin") @db.VarChar(2)
+  hsCode              String?  @map("hs_code") @db.VarChar(16)
+  sourceProvenance    String?  @map("source_provenance") @db.VarChar(128)
+  rawPayloadRef       String?  @map("raw_payload_ref") @db.VarChar(128)
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -283,6 +300,12 @@ model Product {
   simulationRuns         SimulationRun[]
   profitabilitySnapshots ProfitabilitySnapshot[]
   predictionOutcomes     PredictionOutcome[]
+  identifiers            ProductIdentifier[]
+  externalPayloads       ExternalPayload[]
+  identityLinksAsSource  IdentityLink[]          @relation("IdentitySourceProduct")
+  identityLinksAsTarget  IdentityLink[]          @relation("IdentityTargetProduct")
+  shadowDecisions        ShadowDecision[]
+  operatorRecommendations OperatorRecommendation[]
 
   @@unique([organizationId, sourcePlatform, externalId])
   @@index([organizationId])
@@ -597,4 +620,241 @@ model ModelVersion {
 
   @@unique([organizationId, version, family])
   @@map("model_versions")
+}
+
+// ——— Professor-mode foundations: loops, AI operator, harmonization, events ———
+
+enum OperationLoopMode {
+  fixture
+  development
+  shadow
+  controlled_live
+  automated_live
+}
+
+enum AiActionClass {
+  read_only
+  draft
+  reversible_operational
+  financial_contractual
+  prohibited
+}
+
+enum OperatorRunStatus {
+  planning
+  collecting
+  recommending
+  critic
+  auditor
+  decided
+  executing
+  awaiting_approval
+  completed
+  failed
+  blocked
+}
+
+enum OperatorDecision {
+  accept
+  revise
+  downgrade
+  block
+  escalate
+}
+
+/// External identifier for identity resolution (GTIN, SKU, MPN, etc.)
+model ProductIdentifier {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  productId      String?  @map("product_id") @db.Uuid
+  scheme         String   @db.VarChar(32)
+  value          String   @db.VarChar(128)
+  sourcePlatform String   @map("source_platform") @db.VarChar(64)
+  confidence     Float    @default(0.5)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, scheme, value, sourcePlatform])
+  @@index([organizationId, productId])
+  @@map("product_identifiers")
+}
+
+/// Preserved external payload (ProductInput-style) before/alongside normalization
+model ExternalPayload {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  productId      String?  @map("product_id") @db.Uuid
+  providerKey    String   @map("provider_key") @db.VarChar(64)
+  externalId     String   @map("external_id") @db.VarChar(128)
+  payloadKind    String   @map("payload_kind") @db.VarChar(64)
+  rawJson        Json     @map("raw_json")
+  schemaVersion  String   @default("1") @map("schema_version") @db.VarChar(16)
+  collectedAt    DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, providerKey, externalId])
+  @@map("external_payloads")
+}
+
+/// Identity match between two product records with explicit confidence (never auto-merge on name alone)
+model IdentityLink {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  sourceProductId  String   @map("source_product_id") @db.Uuid
+  targetProductId  String   @map("target_product_id") @db.Uuid
+  matchMethod      String   @map("match_method") @db.VarChar(64)
+  confidence       Float
+  evidenceJson     Json     @map("evidence_json")
+  status           String   @default("proposed") @db.VarChar(32)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sourceProduct Product      @relation("IdentitySourceProduct", fields: [sourceProductId], references: [id], onDelete: Cascade)
+  targetProduct Product      @relation("IdentityTargetProduct", fields: [targetProductId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, sourceProductId, targetProductId])
+  @@index([organizationId, confidence])
+  @@map("identity_links")
+}
+
+/// Canonical commerce event fabric (webhooks, polls, internal actions)
+model CommerceEvent {
+  id               String             @id @default(uuid()) @db.Uuid
+  organizationId   String             @map("organization_id") @db.Uuid
+  eventType        String             @map("event_type") @db.VarChar(128)
+  providerKey      String?            @map("provider_key") @db.VarChar(64)
+  externalEventId  String?            @map("external_event_id") @db.VarChar(128)
+  loopMode         OperationLoopMode  @default(development) @map("loop_mode")
+  isFixture        Boolean            @default(false) @map("is_fixture")
+  payloadJson      Json               @map("payload_json")
+  processedAt      DateTime?          @map("processed_at") @db.Timestamptz(3)
+  errorMessage     String?            @map("error_message") @db.VarChar(500)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, eventType])
+  @@unique([organizationId, providerKey, externalEventId])
+  @@map("commerce_events")
+}
+
+model WebhookReceipt {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  providerKey    String    @map("provider_key") @db.VarChar(64)
+  topic          String    @db.VarChar(128)
+  signatureValid Boolean?  @map("signature_valid")
+  headersJson    Json      @default("{}") @map("headers_json")
+  bodyJson       Json      @map("body_json")
+  commerceEventId String?  @map("commerce_event_id") @db.Uuid
+  receivedAt     DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, providerKey, receivedAt])
+  @@map("webhook_receipts")
+}
+
+/// Shadow loop: real recommendation recorded without live execution risk
+model ShadowDecision {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizationId    String            @map("organization_id") @db.Uuid
+  productId         String?           @map("product_id") @db.Uuid
+  operatorRunId     String?           @map("operator_run_id") @db.Uuid
+  actionClass       AiActionClass     @map("action_class")
+  proposedAction    String            @map("proposed_action") @db.VarChar(128)
+  evidenceJson      Json              @map("evidence_json")
+  expectedOutcomeJson Json            @map("expected_outcome_json")
+  wouldHaveExecuted Boolean           @default(true) @map("would_have_executed")
+  outcomeComparedAt DateTime?         @map("outcome_compared_at") @db.Timestamptz(3)
+  outcomeJson       Json?             @map("outcome_json")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  operatorRun  OperatorRun? @relation(fields: [operatorRunId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("shadow_decisions")
+}
+
+/// Interactive AI operator session for a natural-language objective
+model OperatorRun {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  userId         String?           @map("user_id") @db.Uuid
+  objective      String            @db.Text
+  loopMode       OperationLoopMode @default(development) @map("loop_mode")
+  status         OperatorRunStatus @default(planning)
+  planJson       Json              @default("{}") @map("plan_json")
+  toolTraceJson  Json              @default("[]") @map("tool_trace_json")
+  criticJson     Json?             @map("critic_json")
+  auditorJson    Json?             @map("auditor_json")
+  decision       OperatorDecision?
+  decisionNote   String?           @map("decision_note") @db.Text
+  errorMessage   String?           @map("error_message") @db.VarChar(500)
+  startedAt      DateTime          @default(now()) @map("started_at") @db.Timestamptz(3)
+  completedAt    DateTime?         @map("completed_at") @db.Timestamptz(3)
+
+  organization    Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recommendations OperatorRecommendation[]
+  shadowDecisions ShadowDecision[]
+
+  @@index([organizationId, startedAt])
+  @@map("operator_runs")
+}
+
+model OperatorRecommendation {
+  id               String         @id @default(uuid()) @db.Uuid
+  organizationId   String         @map("organization_id") @db.Uuid
+  operatorRunId    String         @map("operator_run_id") @db.Uuid
+  productId        String?        @map("product_id") @db.Uuid
+  rank             Int            @default(1)
+  actionClass      AiActionClass  @map("action_class")
+  title            String         @db.VarChar(500)
+  rationale        String         @db.Text
+  evidenceJson     Json           @map("evidence_json")
+  assumptionsJson  Json           @map("assumptions_json")
+  missingDataJson  Json           @map("missing_data_json")
+  calculationJson  Json           @map("calculation_json")
+  forecastJson     Json           @map("forecast_json")
+  confidence       Float
+  policyRiskScore  Int            @default(0) @map("policy_risk_score")
+  approvalRequired Boolean        @default(true) @map("approval_required")
+  expectedOutcomeJson Json        @map("expected_outcome_json")
+  criticNotes      String?        @map("critic_notes") @db.Text
+  auditorNotes     String?        @map("auditor_notes") @db.Text
+  decision         OperatorDecision?
+  approvalId       String?        @map("approval_id") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  operatorRun  OperatorRun  @relation(fields: [operatorRunId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, operatorRunId])
+  @@map("operator_recommendations")
+}
+
+model ConnectorHealthEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  providerKey    String   @map("provider_key") @db.VarChar(64)
+  status         String   @db.VarChar(64)
+  message        String?  @db.VarChar(500)
+  latencyMs      Int?     @map("latency_ms")
+  isFixture      Boolean  @default(false) @map("is_fixture")
+  detailsJson    Json     @default("{}") @map("details_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, providerKey, createdAt])
+  @@map("connector_health_events")
 }

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tradeops/config": "workspace:*",
+    "@tradeops/connector-google-merchant": "workspace:*",
     "@tradeops/database": "workspace:*",
     "@tradeops/logging": "workspace:*",
     "bullmq": "^5.34.5",

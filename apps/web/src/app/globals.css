@@ -272,6 +272,156 @@ code {
   color: var(--text);
 }
 
+.public-landing .pill {
+  margin-bottom: 12px;
+}
+
+.public-nav {
+  max-width: 720px;
+  justify-content: flex-end;
+}
+
+.site-footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--panel-border);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.footer-links a:hover {
+  color: var(--text);
+}
+
+.cap-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cap-operational {
+  background: rgba(52, 211, 153, 0.14);
+  color: var(--up);
+}
+
+.cap-approval_controlled {
+  background: rgba(61, 139, 253, 0.16);
+  color: #9ec5ff;
+}
+
+.cap-credential_blocked {
+  background: rgba(251, 191, 36, 0.14);
+  color: var(--degraded);
+}
+
+.cap-coming_soon {
+  background: rgba(143, 163, 193, 0.16);
+  color: var(--muted);
+}
+
+.cap-administrative {
+  background: rgba(167, 139, 250, 0.14);
+  color: #c4b5fd;
+}
+
+.cap-unsupported {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--down);
+}
+
+.cap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.cap-legend-item {
+  display: inline-flex;
+}
+
+.app-surface.terminal-shell {
+  margin-top: 8px;
+}
+
+.terminal-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.tool-form {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+}
+
+.tool-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.tool-form input,
+.tool-form textarea {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.tool-result {
+  margin: 0;
+  overflow: auto;
+  max-height: 420px;
+  font-size: 0.82rem;
+  color: #c7d7f5;
+  white-space: pre-wrap;
+}
+
+.tool-summary {
+  display: grid;
+  gap: 14px;
+}
+
+.tool-hero-metric {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(61, 139, 253, 0.08);
+  border: 1px solid rgba(61, 139, 253, 0.2);
+}
+
+.tool-hero-metric strong {
+  letter-spacing: -0.02em;
+}
+
 .auth-panel {
   max-width: 440px;
   margin: 12px auto 0;

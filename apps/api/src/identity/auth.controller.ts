@@ -8,6 +8,7 @@ import {
 } from '@tradeops/contracts';
 import type { Request, Response } from 'express';
 import { BadRequestException } from '@nestjs/common';
+import { AuthRateLimitService } from './auth-rate-limit.service';
 import { AuthService } from './auth.service';
 import { CurrentAuth, Public } from './decorators';
 import { SessionService } from './session.service';
@@ -36,6 +37,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly sessions: SessionService,
+    private readonly rateLimit: AuthRateLimitService,
   ) {}
 
   @Public()
@@ -45,6 +47,8 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    this.rateLimit.assertWithinLimit(`register:${ip}`, 10, 15 * 60 * 1000);
     const input = parseBody<RegisterRequest>(registerRequestSchema, body);
     return this.authService.register(input, res, requestMeta(req));
   }
@@ -57,6 +61,8 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    this.rateLimit.assertWithinLimit(`login:${ip}`, 30, 15 * 60 * 1000);
     const input = parseBody<LoginRequest>(loginRequestSchema, body);
     return this.authService.login(input, res, requestMeta(req));
   }

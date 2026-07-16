@@ -1,0 +1,38 @@
+{
+  "name": "@tradeops/database",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node ../../scripts/run-node-tests.mjs dist",
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "studio": "prisma studio",
+    "seed": "tsc -p tsconfig.seed.json && node dist-seed/seed.js"
+  },
+  "prisma": {
+    "seed": "pnpm seed"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "@tradeops/auth": "workspace:*",
+    "@tradeops/commerce-engine": "workspace:*",
+    "@tradeops/connector-fixture-supplier": "workspace:*"
+  },
+  "devDependencies": {
+    "prisma": "^6.1.0",
+    "typescript": "^5.7.2"
+  }
+}

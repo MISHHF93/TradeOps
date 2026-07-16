@@ -1,0 +1,3 @@
+# Convenience entrypoint — full stack data plane lives under infra/docker.
+include:
+  - path: infra/docker/docker-compose.yml

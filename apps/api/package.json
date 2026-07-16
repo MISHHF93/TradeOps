@@ -1,0 +1,38 @@
+{
+  "name": "@tradeops/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json && node dist/main.js",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node ../../scripts/run-node-tests.mjs dist"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.4.15",
+    "@nestjs/core": "^10.4.15",
+    "@nestjs/platform-express": "^10.4.15",
+    "@tradeops/auth": "workspace:*",
+    "@tradeops/commerce-engine": "workspace:*",
+    "@tradeops/config": "workspace:*",
+    "@tradeops/connector-core": "workspace:*",
+    "@tradeops/connector-fixture-marketplace": "workspace:*",
+    "@tradeops/connector-fixture-supplier": "workspace:*",
+    "@tradeops/contracts": "workspace:*",
+    "@tradeops/database": "workspace:*",
+    "@tradeops/domain": "workspace:*",
+    "@tradeops/logging": "workspace:*",
+    "cookie-parser": "^1.4.7",
+    "ioredis": "^5.4.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.8",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2"
+  }
+}

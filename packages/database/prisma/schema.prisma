@@ -1,0 +1,600 @@
+// TradeOps — identity + commerce vertical slice
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SystemRole {
+  owner
+  admin
+  manager
+  analyst
+  viewer
+  developer
+}
+
+enum ConnectorStatus {
+  not_configured
+  credentials_required
+  connected
+  authorization_expired
+  permission_limited
+  rate_limited
+  unhealthy
+  disabled
+}
+
+enum ListingStatus {
+  draft
+  pending_approval
+  active
+  paused
+  rejected
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum ApprovalKind {
+  publish_listing
+  supplier_purchase_order
+  price_change
+  simulation_only
+}
+
+enum OrderStatus {
+  pending
+  paid
+  fulfilled
+  cancelled
+  refunded
+}
+
+enum PolicyOutcome {
+  approved
+  approved_with_conditions
+  manual_review
+  blocked
+}
+
+enum CommerceSignalType {
+  BUY
+  SELL
+  HOLD
+  SCALE
+  REDUCE
+  EXIT
+  BLOCKED
+}
+
+model Organization {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(200)
+  slug      String   @unique @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships            Membership[]
+  auditEvents            AuditEvent[]
+  activeSessions         Session[]                 @relation("SessionActiveOrganization")
+  connectorInstallations ConnectorInstallation[]
+  suppliers              Supplier[]
+  products               Product[]
+  salesChannels          SalesChannel[]
+  listings               Listing[]
+  opportunities          Opportunity[]
+  signals                CommerceSignal[]
+  forecasts              DemandForecast[]
+  policyAssessments      PolicyAssessment[]
+  customerOrders         CustomerOrder[]
+  supplierPurchaseOrders SupplierPurchaseOrder[]
+  fulfillments           Fulfillment[]
+  approvals              Approval[]
+  simulationRuns         SimulationRun[]
+  profitabilitySnapshots ProfitabilitySnapshot[]
+  predictionOutcomes     PredictionOutcome[]
+  modelVersions          ModelVersion[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(320)
+  displayName  String   @map("display_name") @db.VarChar(200)
+  passwordHash String?  @map("password_hash") @db.VarChar(255)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+  auditEvents AuditEvent[]
+  sessions    Session[]
+  approvals   Approval[]   @relation("ApprovalActor")
+
+  @@map("users")
+}
+
+model Membership {
+  id             String     @id @default(uuid()) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  userId         String     @map("user_id") @db.Uuid
+  role           SystemRole @default(viewer)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model Session {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  tokenHash            String    @unique @map("token_hash") @db.VarChar(64)
+  activeOrganizationId String?   @map("active_organization_id") @db.Uuid
+  expiresAt            DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(3)
+  ipAddress            String?   @map("ip_address") @db.VarChar(64)
+  userAgent            String?   @map("user_agent") @db.VarChar(512)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganization Organization? @relation("SessionActiveOrganization", fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  action         String   @db.VarChar(128)
+  resourceType   String   @map("resource_type") @db.VarChar(64)
+  resourceId     String?  @map("resource_id") @db.VarChar(128)
+  metadata       Json     @default("{}")
+  ipAddress      String?  @map("ip_address") @db.VarChar(64)
+  userAgent      String?  @map("user_agent") @db.VarChar(512)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_events")
+}
+
+model ConnectorInstallation {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  providerKey    String          @map("provider_key") @db.VarChar(64)
+  displayName    String          @map("display_name") @db.VarChar(200)
+  family         String          @db.VarChar(32)
+  isFixture      Boolean         @default(false) @map("is_fixture")
+  status         ConnectorStatus @default(not_configured)
+  capabilities   Json            @default("[]")
+  lastHealthAt   DateTime?       @map("last_health_at") @db.Timestamptz(3)
+  lastError      String?         @map("last_error") @db.VarChar(500)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, providerKey])
+  @@index([organizationId])
+  @@map("connector_installations")
+}
+
+model Supplier {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  name               String   @db.VarChar(200)
+  sourcePlatform     String   @map("source_platform") @db.VarChar(64)
+  externalId         String   @map("external_id") @db.VarChar(128)
+  reliabilityScore   Int      @default(70) @map("reliability_score")
+  dataConfidence     Float    @default(0.7) @map("data_confidence")
+  collectedAt        DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  offers       SupplierOffer[]
+
+  @@unique([organizationId, sourcePlatform, externalId])
+  @@index([organizationId])
+  @@map("suppliers")
+}
+
+model SupplierOffer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  supplierId         String   @map("supplier_id") @db.Uuid
+  productId          String?  @map("product_id") @db.Uuid
+  sourcePlatform     String   @map("source_platform") @db.VarChar(64)
+  externalId         String   @map("external_id") @db.VarChar(128)
+  title              String   @db.VarChar(500)
+  costMinor          Int      @map("cost_minor")
+  shippingCostMinor  Int      @map("shipping_cost_minor")
+  currency           String   @db.VarChar(3)
+  inventoryQuantity  Int      @default(0) @map("inventory_quantity")
+  dataConfidence     Float    @default(0.7) @map("data_confidence")
+  collectedAt        DateTime @default(now()) @map("collected_at") @db.Timestamptz(3)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, sourcePlatform, externalId])
+  @@index([organizationId, productId])
+  @@map("supplier_offers")
+}
+
+model Product {
+  id                  String   @id @default(uuid()) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  title               String   @db.VarChar(500)
+  description         String   @db.Text
+  category            String   @db.VarChar(120)
+  sourcePlatform      String   @map("source_platform") @db.VarChar(64)
+  externalId          String   @map("external_id") @db.VarChar(128)
+  currency            String   @db.VarChar(3) @default("USD")
+  supplierCostMinor   Int      @map("supplier_cost_minor")
+  shippingCostMinor   Int      @map("shipping_cost_minor")
+  targetPriceMinor    Int      @map("target_price_minor")
+  marketplaceFeeMinor Int      @map("marketplace_fee_minor")
+  paymentFeeMinor     Int      @map("payment_fee_minor")
+  adAllocationMinor   Int      @default(0) @map("ad_allocation_minor")
+  returnReserveMinor  Int      @default(0) @map("return_reserve_minor")
+  inventoryQuantity   Int      @default(0) @map("inventory_quantity")
+  rating              Float    @default(0)
+  reviewCount         Int      @default(0) @map("review_count")
+  dataConfidence      Float    @default(0.7) @map("data_confidence")
+  dataFreshnessAt     DateTime @default(now()) @map("data_freshness_at") @db.Timestamptz(3)
+  schemaVersion       String   @default("1") @map("schema_version") @db.VarChar(16)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization           Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  offers                 SupplierOffer[]
+  listings               Listing[]
+  opportunities          Opportunity[]
+  signals                CommerceSignal[]
+  forecasts              DemandForecast[]
+  policyAssessments      PolicyAssessment[]
+  orderLines             CustomerOrderLine[]
+  supplierPurchaseOrders SupplierPurchaseOrder[]
+  simulationRuns         SimulationRun[]
+  profitabilitySnapshots ProfitabilitySnapshot[]
+  predictionOutcomes     PredictionOutcome[]
+
+  @@unique([organizationId, sourcePlatform, externalId])
+  @@index([organizationId])
+  @@map("products")
+}
+
+model SalesChannel {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String   @db.VarChar(200)
+  providerKey    String   @map("provider_key") @db.VarChar(64)
+  isFixture      Boolean  @default(false) @map("is_fixture")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  listings     Listing[]
+
+  @@unique([organizationId, providerKey])
+  @@map("sales_channels")
+}
+
+model Listing {
+  id               String        @id @default(uuid()) @db.Uuid
+  organizationId   String        @map("organization_id") @db.Uuid
+  productId        String        @map("product_id") @db.Uuid
+  salesChannelId   String        @map("sales_channel_id") @db.Uuid
+  status           ListingStatus @default(draft)
+  externalId       String?       @map("external_id") @db.VarChar(128)
+  priceMinor       Int           @map("price_minor")
+  currency         String        @db.VarChar(3)
+  sku              String        @db.VarChar(128)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  salesChannel SalesChannel @relation(fields: [salesChannelId], references: [id], onDelete: Cascade)
+  approvals    Approval[]
+
+  @@index([organizationId, status])
+  @@map("listings")
+}
+
+model Opportunity {
+  id                   String   @id @default(uuid()) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  productId            String   @map("product_id") @db.Uuid
+  score                Int
+  formulaVersion       String   @map("formula_version") @db.VarChar(64)
+  componentsJson       Json     @map("components_json")
+  explanation          String   @db.Text
+  expectedProfitMinor  Int      @map("expected_profit_minor")
+  expectedMarginBps    Int      @map("expected_margin_bps")
+  demandScore          Int      @map("demand_score")
+  trendScore           Int      @map("trend_score")
+  competitionScore     Int      @map("competition_score")
+  supplierReliability  Int      @map("supplier_reliability")
+  shippingReliability  Int      @map("shipping_reliability")
+  reviewHealth         Int      @map("review_health")
+  returnRiskScore      Int      @map("return_risk_score")
+  policyRiskScore      Int      @map("policy_risk_score")
+  forecastConfidence   Float    @map("forecast_confidence")
+  currentSignal        CommerceSignalType @map("current_signal")
+  scoredAt             DateTime @default(now()) @map("scored_at") @db.Timestamptz(3)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId])
+  @@index([organizationId, score])
+  @@map("opportunities")
+}
+
+model CommerceSignal {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizationId String             @map("organization_id") @db.Uuid
+  productId      String?            @map("product_id") @db.Uuid
+  signal         CommerceSignalType
+  rationale      String             @db.Text
+  confidence     Float
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("commerce_signals")
+}
+
+model DemandForecast {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  productId       String   @map("product_id") @db.Uuid
+  horizonDays     Int      @map("horizon_days")
+  expectedUnits   Int      @map("expected_units")
+  lowUnits        Int      @map("low_units")
+  highUnits       Int      @map("high_units")
+  confidence      Float
+  modelVersion    String   @map("model_version") @db.VarChar(64)
+  factorsJson     Json     @map("factors_json")
+  missingJson     Json     @map("missing_json")
+  explanation     String   @db.Text
+  generatedAt     DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, productId])
+  @@map("demand_forecasts")
+}
+
+model PolicyAssessment {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  productId      String        @map("product_id") @db.Uuid
+  outcome        PolicyOutcome
+  reasonsJson    Json          @map("reasons_json")
+  riskFlagsJson  Json          @map("risk_flags_json")
+  failClosed     Boolean       @map("fail_closed")
+  assessedAt     DateTime      @default(now()) @map("assessed_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, productId])
+  @@map("policy_assessments")
+}
+
+model CustomerOrder {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  sourcePlatform String      @map("source_platform") @db.VarChar(64)
+  externalId     String      @map("external_id") @db.VarChar(128)
+  status         OrderStatus @default(pending)
+  currency       String      @db.VarChar(3)
+  totalMinor     Int         @map("total_minor")
+  placedAt       DateTime    @map("placed_at") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lines        CustomerOrderLine[]
+  fulfillments Fulfillment[]
+  purchaseOrders SupplierPurchaseOrder[]
+
+  @@unique([organizationId, sourcePlatform, externalId])
+  @@index([organizationId])
+  @@map("customer_orders")
+}
+
+model CustomerOrderLine {
+  id             String @id @default(uuid()) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  orderId        String @map("order_id") @db.Uuid
+  productId      String? @map("product_id") @db.Uuid
+  title          String @db.VarChar(500)
+  sku            String @db.VarChar(128)
+  quantity       Int
+  unitPriceMinor Int    @map("unit_price_minor")
+
+  order   CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("customer_order_lines")
+}
+
+model SupplierPurchaseOrder {
+  id               String      @id @default(uuid()) @db.Uuid
+  organizationId   String      @map("organization_id") @db.Uuid
+  productId        String      @map("product_id") @db.Uuid
+  customerOrderId  String?     @map("customer_order_id") @db.Uuid
+  status           OrderStatus @default(pending)
+  costMinor        Int         @map("cost_minor")
+  shippingMinor    Int         @map("shipping_minor")
+  currency         String      @db.VarChar(3)
+  quantity         Int
+  isDraft          Boolean     @default(true) @map("is_draft")
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerOrder CustomerOrder? @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+  approvals     Approval[]
+
+  @@index([organizationId])
+  @@map("supplier_purchase_orders")
+}
+
+model Fulfillment {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  customerOrderId String   @map("customer_order_id") @db.Uuid
+  status          String   @db.VarChar(64)
+  trackingNumber  String?  @map("tracking_number") @db.VarChar(128)
+  carrier         String?  @db.VarChar(64)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerOrder CustomerOrder @relation(fields: [customerOrderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("fulfillments")
+}
+
+model Approval {
+  id                      String         @id @default(uuid()) @db.Uuid
+  organizationId          String         @map("organization_id") @db.Uuid
+  kind                    ApprovalKind
+  status                  ApprovalStatus @default(pending)
+  listingId               String?        @map("listing_id") @db.Uuid
+  supplierPurchaseOrderId String?        @map("supplier_purchase_order_id") @db.Uuid
+  requestedByUserId       String?        @map("requested_by_user_id") @db.Uuid
+  note                    String?        @db.VarChar(500)
+  decidedAt               DateTime?      @map("decided_at") @db.Timestamptz(3)
+  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  listing               Listing?               @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  supplierPurchaseOrder SupplierPurchaseOrder? @relation(fields: [supplierPurchaseOrderId], references: [id], onDelete: SetNull)
+  requestedBy           User?                  @relation("ApprovalActor", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@map("approvals")
+}
+
+model SimulationRun {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  productId             String   @map("product_id") @db.Uuid
+  signal                CommerceSignalType
+  simulatedUnits        Int      @map("simulated_units")
+  predictedProfitMinor  Int      @map("predicted_profit_minor")
+  actualProfitMinor     Int?     @map("actual_profit_minor")
+  predictedUnits        Int      @map("predicted_units")
+  actualUnits           Int?     @map("actual_units")
+  assumptionsJson       Json     @map("assumptions_json")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, productId])
+  @@map("simulation_runs")
+}
+
+model ProfitabilitySnapshot {
+  id                       String   @id @default(uuid()) @db.Uuid
+  organizationId           String   @map("organization_id") @db.Uuid
+  productId                String   @map("product_id") @db.Uuid
+  currency                 String   @db.VarChar(3)
+  revenueMinor             Int      @map("revenue_minor")
+  contributionProfitMinor  Int      @map("contribution_profit_minor")
+  netMarginBps             Int      @map("net_margin_bps")
+  cashRequiredMinor        Int      @map("cash_required_minor")
+  breakdownJson            Json     @map("breakdown_json")
+  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, productId])
+  @@map("profitability_snapshots")
+}
+
+/// Forecast vs realized outcome for model evaluation / improvement.
+model PredictionOutcome {
+  id                     String   @id @default(uuid()) @db.Uuid
+  organizationId         String   @map("organization_id") @db.Uuid
+  productId              String   @map("product_id") @db.Uuid
+  modelVersion           String   @map("model_version") @db.VarChar(64)
+  source                 String   @db.VarChar(32)
+  predictedUnits         Int      @map("predicted_units")
+  actualUnits            Int      @map("actual_units")
+  predictedProfitMinor   Int      @map("predicted_profit_minor")
+  actualProfitMinor      Int      @map("actual_profit_minor")
+  signalAtPrediction     String?  @map("signal_at_prediction") @db.VarChar(16)
+  signalCorrect          Boolean? @map("signal_correct")
+  unitAbsoluteError      Int      @map("unit_absolute_error")
+  profitAbsoluteError    Int      @map("profit_absolute_error")
+  notes                  String?  @db.VarChar(500)
+  evaluatedAt            DateTime @default(now()) @map("evaluated_at") @db.Timestamptz(3)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, evaluatedAt])
+  @@index([organizationId, productId])
+  @@map("prediction_outcomes")
+}
+
+/// Registered model versions and optional promotion notes after evaluation.
+model ModelVersion {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  version        String   @db.VarChar(64)
+  family         String   @db.VarChar(64)
+  status         String   @default("active") @db.VarChar(32)
+  metricsJson    Json     @default("{}") @map("metrics_json")
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, version, family])
+  @@map("model_versions")
+}

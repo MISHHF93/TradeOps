@@ -1,22 +1,23 @@
 /**
  * TradeOps AI Gateway — single entry for the frontend.
- * User → Gateway → Grok → tools/search/capabilities → validated text+JSON envelope.
  *
- * One visible AI Operator. Skills (research, commerce, payments, …) are internal.
+ * User → Gateway → AI Adapter (OpenAI primary) → Search Manager / Capability Gateway
+ *              → verified text + JSON envelope
+ *
+ * The frontend never selects a vendor model or search API.
  */
 
 import {
   aiPlatformPublicStatus,
   getAiPlatformConfig,
-  getXaiConfig,
 } from '@tradeops/config';
+import { getAiAdapter, listAiAdaptersPublic } from './ai-adapter';
 import {
   invokeCapability,
   suggestCapabilitiesForObjective,
   type CapabilityInvokeResult,
 } from './capability-executor';
 import { listCapabilitiesPublic } from './capability-catalog';
-import { completeWithXai } from './llm-client';
 import {
   buildEnvelope,
   validateObjectivePayload,
@@ -36,11 +37,8 @@ export type AiGatewayRequest = {
   userId?: string;
   conversationId?: string;
   objective: string;
-  /** Optional tenant operational context (orders, inventory summaries) — never invented */
   operationalContext?: Record<string, unknown>;
-  /** Force skip public search */
   disableSearch?: boolean;
-  /** Max pre-invoked capabilities before Grok synthesis */
   maxCapabilityInvocations?: number;
 };
 
@@ -49,9 +47,9 @@ export type AiGatewayResult = TradeOpsAIResponse<Record<string, unknown>>;
 function systemPrompt(): string {
   return [
     'You are TradeOps AI — the single AI Operator for a commerce + industrial OS.',
-    'You are powered by xAI Grok only. Do not claim to be other model brands.',
+    'You reason for TradeOps; do not claim a specific model brand unless asked.',
     'Rules:',
-    '1. Operational facts (inventory, orders, payments, shipments) come ONLY from authenticated connector/database context provided in the user message — never invent them from web search.',
+    '1. Operational facts (inventory, orders, payments, shipments) come ONLY from authenticated connector/database context — never invent them from web search.',
     '2. Public web/social evidence is for market research only and must be cited.',
     '3. Prefer structured JSON matching the required schema. Also write clear human text.',
     '4. Recommend write actions with requiresApproval=true; never claim execution without approval.',
@@ -126,12 +124,18 @@ function parseJsonLoose(text: string): unknown {
  */
 export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayResult> {
   const platform = getAiPlatformConfig();
-  const xai = getXaiConfig();
+  const adapter = getAiAdapter();
   const warnings: string[] = [];
   const toolsInvoked: string[] = [];
   const actions: TradeOpsAiAction[] = [];
   let evidence: TradeOpsEvidence[] = [];
   const capabilityResults: CapabilityInvokeResult[] = [];
+
+  const metaBase = {
+    schemaVersion: platform.outputSchemaVersion,
+    aiProvider: adapter.id,
+    model: adapter.model,
+  } as const;
 
   if (!input.tenantId) {
     return buildEnvelope({
@@ -142,14 +146,14 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       status: 'failed',
       confidence: 0,
       warnings: ['tenantId required'],
-      meta: { schemaVersion: platform.outputSchemaVersion, aiProvider: 'xai' },
+      meta: metaBase,
     });
   }
 
   const need = classifyInformationNeed(input.objective);
   let searchUsed = false;
 
-  // 1) Capability pre-pass (normalized tools — no vendor APIs exposed)
+  // 1) Capability pre-pass
   const suggested = suggestCapabilitiesForObjective(input.objective);
   const maxCaps = Math.min(
     input.maxCapabilityInvocations ?? 4,
@@ -157,7 +161,6 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     6,
   );
   for (const name of suggested.slice(0, maxCaps)) {
-    // Skip public research caps when search disabled or pure operational
     if (
       name.startsWith('research.') &&
       (input.disableSearch || need === 'authenticated_operational_data' || need === 'no_search')
@@ -177,7 +180,7 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     actions.push(...result.actions);
   }
 
-  // 2) Search Manager if still needed and research not already run
+  // 2) Search Manager
   const researchAlready = toolsInvoked.some((t) => t.startsWith('research.'));
   if (
     !input.disableSearch &&
@@ -190,7 +193,10 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     evidence.push(...search.evidence);
     warnings.push(...search.warnings);
     searchUsed = search.evidence.some(
-      (e) => e.provider === 'tavily' || e.provider.startsWith('xai'),
+      (e) =>
+        e.provider === 'tavily' ||
+        e.provider === 'openai_web' ||
+        e.provider.startsWith('xai'),
     );
   } else if (need === 'authenticated_operational_data') {
     warnings.push(
@@ -202,11 +208,11 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
 
   evidence = rankAndDeduplicateEvidence(evidence);
 
-  if (!xai.apiKey || !xai.configured) {
+  if (!adapter.configured) {
     const text =
       evidence.length > 0
-        ? `xAI is not configured or unfunded. Retrieved ${evidence.length} public source(s). Add XAI credits at console.x.ai and set XAI_API_KEY for Grok synthesis.`
-        : 'xAI is not configured. Set XAI_API_KEY and fund the xAI team for Grok orchestration. Local tools and RAG still work elsewhere.';
+        ? `AI runtime not configured. Retrieved ${evidence.length} public source(s). Set OPENAI_API_KEY (recommended) or XAI_API_KEY / AI_PROVIDER.`
+        : 'AI runtime not configured. Set OPENAI_API_KEY for the primary OpenAI adapter (or AI_PROVIDER=xai with XAI_API_KEY). Capability tools and connectors still work.';
     return buildEnvelope({
       tenantId: input.tenantId,
       conversationId: input.conversationId,
@@ -227,10 +233,9 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       confidence: 0.2,
       evidence,
       actions,
-      warnings: [...warnings, 'xai_not_available'],
+      warnings: [...warnings, 'ai_runtime_not_configured'],
       meta: {
-        schemaVersion: platform.outputSchemaVersion,
-        aiProvider: 'xai',
+        ...metaBase,
         informationNeed: need,
         searchUsed,
         toolsInvoked,
@@ -238,22 +243,31 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     });
   }
 
-  const completion = await completeWithXai({
+  const useStrictSchema =
+    platform.structuredOutputEnabled &&
+    platform.responseMode === 'json_schema' &&
+    adapter.id === 'openai';
+
+  const completion = await adapter.generate({
     system: systemPrompt(),
     user: buildUserMessage(input, evidence, need, capabilityResults),
     temperature: 0.3,
     maxTokens: 2000,
-    model: platform.xaiModel || xai.chatModel,
+    jsonObject: platform.responseMode === 'json_object',
+    jsonSchema: useStrictSchema
+      ? {
+          name: 'tradeops_objective_response',
+          strict: true,
+          schema: GATEWAY_OBJECTIVE_JSON_SCHEMA as unknown as Record<string, unknown>,
+        }
+      : undefined,
   });
 
   if (!completion.ok || !completion.text) {
     return buildEnvelope({
       tenantId: input.tenantId,
       conversationId: input.conversationId,
-      text:
-        completion.error?.includes('403') || completion.error?.includes('credit')
-          ? 'xAI returned permission denied (often missing team credits). Fund the team at console.x.ai. Public evidence may still be listed in json.sources when Tavily is configured.'
-          : `Grok completion failed: ${completion.error ?? 'unknown'}`,
+      text: `AI completion failed (${adapter.id}): ${completion.error ?? 'unknown'}`,
       json: {
         objective: input.objective,
         recommendations: [],
@@ -272,9 +286,8 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       actions,
       warnings: [...warnings, completion.error ?? 'completion_failed'],
       meta: {
-        schemaVersion: platform.outputSchemaVersion,
-        aiProvider: 'xai',
-        model: completion.model,
+        ...metaBase,
+        model: completion.model ?? adapter.model,
         informationNeed: need,
         searchUsed,
         toolsInvoked,
@@ -325,9 +338,8 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       actions,
       warnings: [...warnings, ...validated.errors, 'structured_output_validation_partial'],
       meta: {
-        schemaVersion: platform.outputSchemaVersion,
-        aiProvider: 'xai',
-        model: completion.model,
+        ...metaBase,
+        model: completion.model ?? adapter.model,
         informationNeed: need,
         searchUsed,
         toolsInvoked,
@@ -350,7 +362,6 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     }
   }
 
-  // Suggest RFQ when discovery-like and not already queued
   if (
     /supplier|rfq|procure|wholesale/i.test(input.objective) &&
     !actions.some((a) => a.capability === 'procurement.create_rfq')
@@ -382,9 +393,8 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     actions,
     warnings,
     meta: {
-      schemaVersion: platform.outputSchemaVersion,
-      aiProvider: 'xai',
-      model: completion.model,
+      ...metaBase,
+      model: completion.model ?? adapter.model,
       informationNeed: need,
       searchUsed,
       toolsInvoked,
@@ -395,6 +405,7 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
 export function gatewayCatalogPublic() {
   return {
     platform: aiPlatformPublicStatus(),
+    adapters: listAiAdaptersPublic(),
     capabilities: listCapabilitiesPublic(),
     responseSchema: GATEWAY_OBJECTIVE_JSON_SCHEMA,
     skills: [
@@ -411,6 +422,6 @@ export function gatewayCatalogPublic() {
       'social_signal',
       'authenticated_operational',
     ],
-    note: 'User sees one TradeOps AI. Skills and tools are internal. Operational truth uses connectors; public web uses Tavily/xAI search only.',
+    note: 'User sees one TradeOps AI. Runtime is selected by AI Adapter (OpenAI primary). Search Manager + Capability Gateway are provider-agnostic. Operational truth uses connectors only.',
   };
 }

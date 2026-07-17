@@ -88,11 +88,15 @@ function resolveRuntimeConfig(options: LlmClientOptions = {}): {
   allow: boolean;
 } {
   const cfg = options.config ?? getXaiConfig();
+  const apiKey = options.apiKey ?? cfg.apiKey;
+  // Explicit allowXai:true (AI Adapter path) bypasses TRADEOPS_AI_MODE when key present
   const allow =
-    options.allowXai !== false &&
-    (options.config ? shouldUseXaiFromConfig(cfg) : shouldUseXai());
+    options.allowXai === true
+      ? Boolean(apiKey)
+      : options.allowXai !== false &&
+        (options.config ? shouldUseXaiFromConfig(cfg) : shouldUseXai());
   return {
-    apiKey: options.apiKey ?? cfg.apiKey,
+    apiKey,
     baseUrl: (options.baseUrl ?? cfg.baseUrl).replace(/\/$/, ''),
     chatModel: options.defaultModel ?? cfg.chatModel,
     embedModel: cfg.embedModel,

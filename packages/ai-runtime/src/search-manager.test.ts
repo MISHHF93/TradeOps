@@ -26,7 +26,11 @@ describe('Search Manager intent', () => {
     );
     const p = buildSearchPolicy(need);
     assert.equal(p.allowed, true);
-    assert.ok(p.providers.includes('tavily') || p.providers.includes('xai_web'));
+    assert.ok(
+      p.providers.includes('openai_web') ||
+        p.providers.includes('tavily') ||
+        p.providers.includes('xai_web'),
+    );
   });
 
   it('detects social signal intent', () => {

@@ -6,8 +6,21 @@
  */
 
 import { getAiPlatformConfig, type AiPlatformConfig, type SearchProviderId } from '@tradeops/config';
+import { getAiAdapter } from './ai-adapter';
 import type { TradeOpsEvidence } from './response-envelope';
 import { tavilyExtract, tavilySearch } from './tavily-client';
+
+/** Prefer OpenAI web, then Tavily, then xAI — based on platform search primary. */
+function defaultWebProviders(cfg: AiPlatformConfig): SearchProviderId[] {
+  if (cfg.searchProviderPrimary === 'tavily') {
+    return ['tavily', 'openai_web'];
+  }
+  if (cfg.searchProviderPrimary === 'xai') {
+    return ['xai_web', 'openai_web', 'tavily'];
+  }
+  // openai default
+  return ['openai_web', 'tavily'];
+}
 
 /**
  * Source hierarchy (lower rank = higher trust).
@@ -157,29 +170,32 @@ export function buildSearchPolicy(
       return {
         ...base,
         allowed: true,
-        providers: cfg.xaiXSearchEnabled ? ['xai_x', 'tavily'] : ['tavily'],
+        providers: cfg.xaiXSearchEnabled
+          ? ['xai_x', ...defaultWebProviders(cfg)]
+          : defaultWebProviders(cfg),
         freshness: 'week',
         maxQueries: 4,
-        reason: 'social_signal → X search + optional web',
+        reason: 'social_signal → X search + web adapters',
       };
     case 'current_news':
       return {
         ...base,
         allowed: true,
-        providers: ['xai_web', 'tavily'],
+        providers: defaultWebProviders(cfg),
         freshness: 'day',
         maxQueries: 6,
-        reason: 'current_news → web + tavily',
+        reason: 'current_news → Search Manager web providers',
       };
     case 'official_documentation':
       return {
         ...base,
         allowed: true,
-        providers: ['tavily'],
+        // Controlled retrieval: Tavily when configured, else OpenAI web
+        providers: cfg.tavilyConfigured ? ['tavily', 'openai_web'] : ['openai_web', 'tavily'],
         requireOfficialSources: true,
         cacheTtlSeconds: 86400,
         maxQueries: 4,
-        reason: 'official docs prefer controlled Tavily retrieval',
+        reason: 'official docs prefer controlled retrieval adapters',
       };
     case 'product_discovery':
     case 'supplier_discovery':
@@ -188,9 +204,9 @@ export function buildSearchPolicy(
       return {
         ...base,
         allowed: true,
-        providers: ['tavily', 'xai_web'],
+        providers: defaultWebProviders(cfg),
         maxQueries: 5,
-        reason: `${need} → Tavily retrieval + optional xAI web`,
+        reason: `${need} → Search Manager (OpenAI web / Tavily adapters)`,
       };
     default:
       return base;
@@ -224,7 +240,60 @@ export async function runSearchManager(input: {
   const query = input.objective.slice(0, 400);
   queriesRun.push(query);
 
-  // Prefer Tavily for controlled retrieval
+  // --- Provider router (one Search Manager; adapters only) ---
+
+  // 1) OpenAI native web search (primary when configured)
+  if (policy.providers.includes('openai_web') && cfg.openaiWebSearchEnabled && cfg.openaiConfigured) {
+    const adapter = getAiAdapter(input.env);
+    if (adapter.id === 'openai' && adapter.search) {
+      const result = await adapter.search({ query, maxResults: policy.maxResultsPerQuery });
+      if (result.ok) {
+        if (result.text) {
+          evidence.push({
+            sourceType: 'web',
+            provider: 'openai_web',
+            title: 'OpenAI Web Search',
+            retrievedAt: new Date().toISOString(),
+            freshness: 'live',
+            snippet: result.text.slice(0, 500),
+          });
+        }
+        for (const s of result.sources) {
+          evidence.push({
+            sourceType: 'web',
+            provider: 'openai_web',
+            title: s.title ?? s.url,
+            url: s.url,
+            retrievedAt: new Date().toISOString(),
+            freshness: 'live',
+            snippet: s.snippet?.slice(0, 400),
+          });
+        }
+      } else {
+        warnings.push(`OpenAI web search: ${result.error ?? 'failed'}`);
+      }
+    } else if (adapter.search) {
+      // Active adapter is not OpenAI but still has search — use it
+      const result = await adapter.search({ query });
+      if (result.ok) {
+        for (const s of result.sources) {
+          evidence.push({
+            sourceType: 'web',
+            provider: result.provider,
+            title: s.title ?? s.url,
+            url: s.url,
+            retrievedAt: new Date().toISOString(),
+            freshness: 'live',
+            snippet: s.snippet?.slice(0, 400),
+          });
+        }
+      }
+    }
+  } else if (policy.providers.includes('openai_web') && !cfg.openaiConfigured) {
+    warnings.push('OpenAI web search preferred but OPENAI_API_KEY not set');
+  }
+
+  // 2) Tavily — optional dedicated retrieval adapter (domain filters, extract, crawl)
   if (policy.providers.includes('tavily') && cfg.tavilySearchEnabled) {
     const result = await tavilySearch({
       query,
@@ -249,10 +318,10 @@ export async function runSearchManager(input: {
       warnings.push(`Tavily search: ${result.error ?? 'failed'}`);
     }
   } else if (policy.providers.includes('tavily') && !cfg.tavilyApiKey) {
-    warnings.push('Tavily not configured (set TAVILY_API_KEY) — public web retrieval limited');
+    warnings.push('Tavily adapter not configured (optional — set TAVILY_API_KEY for domain-filtered retrieval)');
   }
 
-  // xAI web/X: recorded as intended providers when enabled (full agent tool loop is progressive)
+  // 3) xAI web/X: progressive placeholders when enabled
   if (policy.providers.includes('xai_web') && cfg.xaiWebSearchEnabled && cfg.xaiApiKey) {
     evidence.push({
       sourceType: 'web',
@@ -260,7 +329,7 @@ export async function runSearchManager(input: {
       title: 'xAI Web Search available',
       retrievedAt: new Date().toISOString(),
       freshness: 'unknown',
-      snippet: 'Grok may use xAI web search when tool-calling loop is active; Tavily results used when present.',
+      snippet: 'Optional xAI web search adapter when AI_PROVIDER=xai or multi-tool loop is active.',
     });
   }
   if (policy.providers.includes('xai_x') && cfg.xaiXSearchEnabled && cfg.xaiApiKey) {
@@ -270,7 +339,7 @@ export async function runSearchManager(input: {
       title: 'xAI X Search available',
       retrievedAt: new Date().toISOString(),
       freshness: 'unknown',
-      snippet: 'Social/market signals via xAI X Search when tool-calling loop is active.',
+      snippet: 'Social/market signals via xAI X Search adapter when enabled.',
     });
   }
 

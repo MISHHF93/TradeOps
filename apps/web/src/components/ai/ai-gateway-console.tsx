@@ -179,17 +179,30 @@ export function AiGatewayConsole({
     <article className="panel" style={{ marginBottom: 16 }}>
       <h2 style={{ marginTop: 0 }}>TradeOps AI Gateway</h2>
       <p className="meta" style={{ marginTop: 0 }}>
-        One AI · xAI Grok orchestration · Tavily web retrieval · connectors for operational truth.
-        Response always includes <code>output.text</code> and <code>output.json</code>.
+        One AI · AI Adapter (OpenAI primary) · Search Manager · Capability Gateway · connectors for
+        operational truth. Response always includes <code>output.text</code> and{' '}
+        <code>output.json</code>.
       </p>
 
       {catalog?.platform ? (
         <p className="meta">
-          Model: <strong>{catalog.platform.xaiModel ?? 'grok'}</strong>
+          Runtime: <strong>{catalog.platform.aiProvider ?? 'openai'}</strong>
           {' · '}
-          xAI: {catalog.platform.xaiConfigured ? 'key set' : 'missing'}
+          Model:{' '}
+          <strong>
+            {(catalog.platform as { openaiModel?: string; xaiModel?: string }).openaiModel ??
+              catalog.platform.xaiModel ??
+              '—'}
+          </strong>
           {' · '}
-          Tavily: {catalog.platform.tavilyConfigured ? 'key set' : 'missing'}
+          OpenAI:{' '}
+          {(catalog.platform as { openaiConfigured?: boolean }).openaiConfigured
+            ? 'key set'
+            : 'missing'}
+          {' · '}
+          xAI: {catalog.platform.xaiConfigured ? 'key set' : 'optional'}
+          {' · '}
+          Tavily: {catalog.platform.tavilyConfigured ? 'key set' : 'optional'}
           {catalog.skills?.length ? (
             <>
               {' · '}

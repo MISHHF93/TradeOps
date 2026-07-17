@@ -14,4 +14,6 @@ export * from './capability-catalog';
 export * from './capability-executor';
 export * from './search-manager';
 export * from './tavily-client';
+export * from './openai-client';
+export * from './ai-adapter';
 export * from './ai-gateway';

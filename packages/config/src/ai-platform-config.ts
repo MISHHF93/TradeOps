@@ -1,7 +1,10 @@
 /**
- * Unified AI platform configuration.
- * Architectural rule: xAI/Grok is the only LLM provider.
- * Tavily is the only dedicated public-web retrieval provider.
+ * TradeOps AI platform configuration.
+ *
+ * Architecture (2026 pivot):
+ * - TradeOps owns orchestration, Search Manager, Capability Gateway, response envelope.
+ * - An AI Adapter selects the reasoning runtime (OpenAI primary; xAI/Gemini optional).
+ * - Search is pluggable (OpenAI web, Tavily, xAI web/X) — one Search Manager, swap adapters.
  */
 
 function truthy(v: string | undefined | null, defaultTrue = false): boolean {
@@ -15,16 +18,30 @@ function num(v: string | undefined, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-export type AiProviderId = 'xai';
+/** Active reasoning runtime behind the AI Adapter. */
+export type AiProviderId = 'openai' | 'xai' | 'gemini';
 
-export type SearchProviderId = 'xai_web' | 'xai_x' | 'tavily';
+/** Search backends the Search Manager may route to. */
+export type SearchProviderId = 'openai_web' | 'xai_web' | 'xai_x' | 'tavily';
 
 export type AiPlatformConfig = {
-  /** Always xai — sole reasoning provider */
+  /** Primary runtime selected by AI Adapter */
   aiProvider: AiProviderId;
+
+  openaiApiKey: string | undefined;
+  openaiModel: string;
+  openaiBaseUrl: string;
+  openaiConfigured: boolean;
+  openaiWebSearchEnabled: boolean;
+
   xaiApiKey: string | undefined;
   xaiModel: string;
   xaiBaseUrl: string;
+  xaiConfigured: boolean;
+
+  geminiApiKey: string | undefined;
+  geminiModel: string;
+  geminiConfigured: boolean;
 
   responseMode: 'json_schema' | 'json_object' | 'text';
   textOutputEnabled: boolean;
@@ -43,8 +60,9 @@ export type AiPlatformConfig = {
   tavilyResearchEnabled: boolean;
   tavilyConfigured: boolean;
 
-  searchProviderPrimary: 'xai' | 'tavily';
-  searchProviderRetrieval: 'tavily' | 'xai';
+  /** Preferred search backend family for the Search Manager */
+  searchProviderPrimary: 'openai' | 'xai' | 'tavily';
+  searchProviderRetrieval: 'openai' | 'tavily' | 'xai';
   searchRequireCitations: boolean;
   searchRequireSourceTimestamps: boolean;
   searchMaxQueriesPerRequest: number;
@@ -76,19 +94,66 @@ function csv(v: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseProvider(
+  raw: string | undefined,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): AiProviderId {
+  const s = (raw ?? 'openai').trim().toLowerCase();
+  if (s === 'xai' || s === 'grok') return 'xai';
+  if (s === 'gemini' || s === 'google') return 'gemini';
+  if (s === 'openai' || s === 'oai') return 'openai';
+  // auto: pick first configured, prefer OpenAI
+  if (s === 'auto') {
+    if ((env.OPENAI_API_KEY ?? '').trim()) return 'openai';
+    if ((env.XAI_API_KEY ?? env.GROK_API_KEY ?? '').trim()) return 'xai';
+    if ((env.GEMINI_API_KEY ?? env.GOOGLE_AI_API_KEY ?? '').trim()) return 'gemini';
+    return 'openai';
+  }
+  return 'openai';
+}
+
+function parseSearchPrimary(raw: string | undefined): AiPlatformConfig['searchProviderPrimary'] {
+  const s = (raw ?? 'openai').trim().toLowerCase();
+  if (s === 'tavily') return 'tavily';
+  if (s === 'xai') return 'xai';
+  return 'openai';
+}
+
+function parseSearchRetrieval(raw: string | undefined): AiPlatformConfig['searchProviderRetrieval'] {
+  const s = (raw ?? 'openai').trim().toLowerCase();
+  if (s === 'tavily') return 'tavily';
+  if (s === 'xai') return 'xai';
+  return 'openai';
+}
+
 export function getAiPlatformConfig(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): AiPlatformConfig {
+  const openaiApiKey = (env.OPENAI_API_KEY ?? '').trim() || undefined;
   const xaiApiKey = (env.XAI_API_KEY ?? env.GROK_API_KEY ?? '').trim() || undefined;
+  const geminiApiKey = (env.GEMINI_API_KEY ?? env.GOOGLE_AI_API_KEY ?? '').trim() || undefined;
   const tavilyApiKey = (env.TAVILY_API_KEY ?? '').trim() || undefined;
-  const model =
-    (env.XAI_MODEL ?? env.XAI_CHAT_MODEL ?? 'grok-3').trim() || 'grok-3';
+
+  const aiProvider = parseProvider(env.AI_PROVIDER, env);
 
   return {
-    aiProvider: 'xai',
+    aiProvider,
+
+    openaiApiKey,
+    openaiModel:
+      (env.OPENAI_MODEL ?? env.OPENAI_CHAT_MODEL ?? 'gpt-4o').trim() || 'gpt-4o',
+    openaiBaseUrl: (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
+    openaiConfigured: Boolean(openaiApiKey),
+    openaiWebSearchEnabled: truthy(env.OPENAI_WEB_SEARCH_ENABLED, true),
+
     xaiApiKey,
-    xaiModel: model,
+    xaiModel: (env.XAI_MODEL ?? env.XAI_CHAT_MODEL ?? 'grok-3').trim() || 'grok-3',
     xaiBaseUrl: (env.XAI_BASE_URL ?? 'https://api.x.ai/v1').replace(/\/$/, ''),
+    xaiConfigured: Boolean(xaiApiKey),
+
+    geminiApiKey,
+    geminiModel: (env.GEMINI_MODEL ?? 'gemini-2.0-flash').trim() || 'gemini-2.0-flash',
+    geminiConfigured: Boolean(geminiApiKey),
 
     responseMode: (env.AI_RESPONSE_MODE ?? 'json_schema').toLowerCase() as AiPlatformConfig['responseMode'],
     textOutputEnabled: truthy(env.AI_TEXT_OUTPUT_ENABLED, true),
@@ -107,9 +172,8 @@ export function getAiPlatformConfig(
     tavilyResearchEnabled: truthy(env.TAVILY_RESEARCH_ENABLED, true) && Boolean(tavilyApiKey),
     tavilyConfigured: Boolean(tavilyApiKey),
 
-    searchProviderPrimary: (env.SEARCH_PROVIDER_PRIMARY ?? 'xai').toLowerCase() === 'tavily' ? 'tavily' : 'xai',
-    searchProviderRetrieval:
-      (env.SEARCH_PROVIDER_RETRIEVAL ?? 'tavily').toLowerCase() === 'xai' ? 'xai' : 'tavily',
+    searchProviderPrimary: parseSearchPrimary(env.SEARCH_PROVIDER_PRIMARY),
+    searchProviderRetrieval: parseSearchRetrieval(env.SEARCH_PROVIDER_RETRIEVAL),
     searchRequireCitations: truthy(env.SEARCH_REQUIRE_CITATIONS, true),
     searchRequireSourceTimestamps: truthy(env.SEARCH_REQUIRE_SOURCE_TIMESTAMPS, true),
     searchMaxQueriesPerRequest: num(env.SEARCH_MAX_QUERIES_PER_REQUEST, 6),
@@ -134,21 +198,39 @@ export function getAiPlatformConfig(
   };
 }
 
+/** Active runtime has a key for the selected AI_PROVIDER. */
+export function isAiRuntimeConfigured(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): boolean {
+  const c = getAiPlatformConfig(env);
+  if (c.aiProvider === 'openai') return c.openaiConfigured;
+  if (c.aiProvider === 'xai') return c.xaiConfigured;
+  if (c.aiProvider === 'gemini') return c.geminiConfigured;
+  return false;
+}
+
 export function aiPlatformPublicStatus(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ) {
   const c = getAiPlatformConfig(env);
   return {
     aiProvider: c.aiProvider,
-    xaiConfigured: Boolean(c.xaiApiKey),
+    runtimeConfigured: isAiRuntimeConfigured(env),
+    openaiConfigured: c.openaiConfigured,
+    openaiModel: c.openaiModel,
+    openaiBaseUrl: c.openaiBaseUrl,
+    xaiConfigured: c.xaiConfigured,
     xaiModel: c.xaiModel,
     xaiBaseUrl: c.xaiBaseUrl,
+    geminiConfigured: c.geminiConfigured,
+    geminiModel: c.geminiModel,
     tavilyConfigured: c.tavilyConfigured,
     search: {
       primary: c.searchProviderPrimary,
       retrieval: c.searchProviderRetrieval,
-      xaiWeb: c.xaiWebSearchEnabled && Boolean(c.xaiApiKey),
-      xaiX: c.xaiXSearchEnabled && Boolean(c.xaiApiKey),
+      openaiWeb: c.openaiWebSearchEnabled && c.openaiConfigured,
+      xaiWeb: c.xaiWebSearchEnabled && c.xaiConfigured,
+      xaiX: c.xaiXSearchEnabled && c.xaiConfigured,
       tavilySearch: c.tavilySearchEnabled,
       tavilyExtract: c.tavilyExtractEnabled,
       tavilyCrawl: c.tavilyCrawlEnabled,
@@ -163,10 +245,12 @@ export function aiPlatformPublicStatus(
       mode: c.responseMode,
     },
     architecture: {
-      rule: 'xAI is the only LLM. Tavily is the only dedicated web retrieval provider. Vendor APIs sit behind capabilities.',
-      competingLlms: false,
+      rule: 'TradeOps owns orchestration. AI Adapter selects runtime (OpenAI primary). Search Manager + Capability Gateway stay provider-agnostic.',
+      aiAdapter: true,
+      primaryRuntime: 'openai',
+      optionalRuntimes: ['xai', 'gemini'] as const,
       competingSearchApis: ['serpapi', 'brave', 'bing', 'google_cse'] as const,
-      note: 'SerpAPI and other search APIs are not used by the unified Search Manager. Prefer Tavily + xAI search.',
+      note: 'Do not call vendor AI SDKs from the frontend or random services — only through the AI Adapter and Search Manager.',
     },
   };
 }

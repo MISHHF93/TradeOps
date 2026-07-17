@@ -52,11 +52,11 @@ export {
 export {
   getAiPlatformConfig,
   aiPlatformPublicStatus,
+  isAiRuntimeConfigured,
   type AiPlatformConfig,
   type AiProviderId,
   type SearchProviderId,
 } from './ai-platform-config';
-
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.

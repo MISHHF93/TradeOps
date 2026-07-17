@@ -103,7 +103,7 @@ function buildCatalogSection() {
   for (const [provider, items] of [...byProvider.entries()].sort((a, b) =>
     a[0].localeCompare(b[0]),
   )) {
-    lines.push(`# ——— ${provider} ———`);
+    lines.push(`# --- ${provider} ---`);
     for (const c of items) {
       lines.push(`# ${c.displayName} (${c.id})`);
       lines.push(`# Docs: ${c.docsUrl}`);
@@ -115,7 +115,7 @@ function buildCatalogSection() {
     }
   }
 
-  lines.push('# ——— Additional platform / AI / billing extras ———');
+  lines.push('# --- Additional platform / AI / billing extras ---');
   for (const block of EXTRA_KEYS) {
     lines.push(`# ${block.note}`);
     for (const key of block.keys) {

@@ -15,5 +15,7 @@ export * from './capability-executor';
 export * from './search-manager';
 export * from './tavily-client';
 export * from './openai-client';
+export * from './cohere-client';
+export * from './retrieval-engine';
 export * from './ai-adapter';
 export * from './ai-gateway';

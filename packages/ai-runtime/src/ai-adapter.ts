@@ -4,12 +4,11 @@
  * Application code must not call OpenAI / xAI / Gemini SDKs directly.
  * Swap AI_PROVIDER (or adapter implementation) without changing gateway, UI, or capabilities.
  *
- * Interface:
- *   generate()  — text / structured completion
- *   classify()  — lightweight label
- *   extract()   — structured extract from text
- *   plan()      — planning step (same generate path with plan schema)
- *   toolCall schemas are owned by Capability Gateway; runtime only selects tools.
+ * Interface surface (generation runtime):
+ *   generate · search · classify · extract · plan · toolCall · stream
+ *
+ * Enterprise retrieval (Cohere) is a separate Retrieval Engine — see retrieval-engine.ts.
+ * Do not make Cohere the sole generation runtime.
  */
 
 import {
@@ -332,7 +331,7 @@ export function listAiAdaptersPublic(
       },
     ],
     interface: ['generate', 'search', 'classify', 'extract', 'plan', 'toolCall', 'stream'] as const,
-    note: 'TradeOps code calls getAiAdapter() only. Swap AI_PROVIDER without rewriting the Capability Gateway or UI.',
+    note: 'Generation: getAiAdapter(). Retrieval/RAG: getRetrievalEngine() (Cohere). Swap either without rewriting the Capability Gateway or UI.',
   };
 }
 

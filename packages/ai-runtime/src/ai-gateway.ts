@@ -26,6 +26,7 @@ import {
   type TradeOpsEvidence,
   GATEWAY_OBJECTIVE_JSON_SCHEMA,
 } from './response-envelope';
+import { retrievalEnginePublicStatus } from './retrieval-engine';
 import {
   classifyInformationNeed,
   rankAndDeduplicateEvidence,
@@ -40,6 +41,18 @@ export type AiGatewayRequest = {
   operationalContext?: Record<string, unknown>;
   disableSearch?: boolean;
   maxCapabilityInvocations?: number;
+  /**
+   * Internal knowledge corpus for Cohere/enterprise retrieval
+   * (products, manuals, RFQs, SOPs). Not invented by the model.
+   */
+  knowledgeDocuments?: Array<{
+    id: string;
+    title: string;
+    body: string;
+    sourceType?: string;
+    provider?: string;
+    url?: string;
+  }>;
 };
 
 export type AiGatewayResult = TradeOpsAIResponse<Record<string, unknown>>;
@@ -180,27 +193,39 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     actions.push(...result.actions);
   }
 
-  // 2) Search Manager
+  // 2) Search Manager — internal Cohere retrieval + optional public web
   const researchAlready = toolsInvoked.some((t) => t.startsWith('research.'));
-  if (
+  const knowledgeDocs =
+    input.knowledgeDocuments ??
+    knowledgeFromOperationalContext(input.operationalContext);
+
+  const wantsPublicSearch =
     !input.disableSearch &&
     need !== 'no_search' &&
     need !== 'authenticated_operational_data' &&
-    !researchAlready
-  ) {
-    toolsInvoked.push('research.web_search');
-    const search = await runSearchManager({ objective: input.objective });
+    !researchAlready;
+
+  if (knowledgeDocs.length || wantsPublicSearch) {
+    if (knowledgeDocs.length) toolsInvoked.push('retrieval.internal');
+    if (wantsPublicSearch) toolsInvoked.push('research.web_search');
+    const search = await runSearchManager({
+      objective: input.objective,
+      internalDocuments: knowledgeDocs,
+      internalOnly: !wantsPublicSearch && knowledgeDocs.length > 0,
+      policy: wantsPublicSearch ? undefined : { allowed: false },
+    });
     evidence.push(...search.evidence);
     warnings.push(...search.warnings);
     searchUsed = search.evidence.some(
       (e) =>
         e.provider === 'tavily' ||
         e.provider === 'openai_web' ||
+        e.provider === 'cohere' ||
         e.provider.startsWith('xai'),
     );
   } else if (need === 'authenticated_operational_data') {
     warnings.push(
-      'Classified as operational — public web search skipped; use connector data for inventory/orders/payments.',
+      'Classified as operational — public web search skipped; use connector data for inventory/orders/payments. Pass knowledgeDocuments for Cohere catalog retrieval.',
     );
   } else if (researchAlready) {
     searchUsed = evidence.some((e) => e.sourceType === 'web' || e.sourceType === 'x');
@@ -402,10 +427,62 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
   });
 }
 
+function knowledgeFromOperationalContext(
+  ctx?: Record<string, unknown>,
+): Array<{
+  id: string;
+  title: string;
+  body: string;
+  sourceType?: string;
+  provider?: string;
+}> {
+  if (!ctx) return [];
+  const docs: Array<{
+    id: string;
+    title: string;
+    body: string;
+    sourceType?: string;
+    provider?: string;
+  }> = [];
+
+  const products = ctx.products ?? ctx.catalog;
+  if (Array.isArray(products)) {
+    for (const [i, p] of products.entries()) {
+      if (!p || typeof p !== 'object') continue;
+      const row = p as Record<string, unknown>;
+      const title = String(row.title ?? row.name ?? row.sku ?? `product_${i}`);
+      docs.push({
+        id: String(row.id ?? `product_${i}`),
+        title,
+        body: JSON.stringify(row).slice(0, 2000),
+        sourceType: 'document',
+        provider: 'catalog',
+      });
+    }
+  }
+
+  if (Array.isArray(ctx.knowledgeDocuments)) {
+    for (const d of ctx.knowledgeDocuments) {
+      if (!d || typeof d !== 'object') continue;
+      const row = d as Record<string, unknown>;
+      docs.push({
+        id: String(row.id ?? docs.length),
+        title: String(row.title ?? 'doc'),
+        body: String(row.body ?? row.text ?? '').slice(0, 4000),
+        sourceType: String(row.sourceType ?? 'document'),
+        provider: String(row.provider ?? 'knowledge'),
+      });
+    }
+  }
+
+  return docs.slice(0, 64);
+}
+
 export function gatewayCatalogPublic() {
   return {
     platform: aiPlatformPublicStatus(),
     adapters: listAiAdaptersPublic(),
+    retrieval: retrievalEnginePublicStatus(),
     capabilities: listCapabilitiesPublic(),
     responseSchema: GATEWAY_OBJECTIVE_JSON_SCHEMA,
     skills: [
@@ -416,12 +493,14 @@ export function gatewayCatalogPublic() {
       'analytics',
       'procurement',
       'industrial',
+      'retrieval',
     ],
     informationClasses: [
       'public_web',
       'social_signal',
       'authenticated_operational',
+      'enterprise_retrieval',
     ],
-    note: 'User sees one TradeOps AI. Runtime is selected by AI Adapter (OpenAI primary). Search Manager + Capability Gateway are provider-agnostic. Operational truth uses connectors only.',
+    note: 'One TradeOps AI. Generation: AI Adapter (OpenAI primary). Enterprise retrieval: Cohere (embed/rerank). Search Manager + Capability Gateway are provider-agnostic. Operational truth uses connectors only.',
   };
 }

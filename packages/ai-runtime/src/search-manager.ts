@@ -103,6 +103,26 @@ export type SearchManagerResult = {
   queriesRun: string[];
 };
 
+export type SearchManagerInput = {
+  objective: string;
+  policy?: Partial<SearchPolicy>;
+  env?: NodeJS.ProcessEnv;
+  /**
+   * Internal corpus for Cohere/local enterprise retrieval
+   * (catalog snippets, manuals, RFQs, SOP chunks).
+   */
+  internalDocuments?: Array<{
+    id: string;
+    title: string;
+    body: string;
+    sourceType?: string;
+    provider?: string;
+    url?: string;
+  }>;
+  /** Skip internet adapters; only internal retrieval */
+  internalOnly?: boolean;
+};
+
 const OPERATIONAL_RE =
   /\b(inventory|stock|order|orders|payment|payments|refund|shipment|shipments|revenue|my sales|our sales|stripe|shopify|fulfillment|warehouse|ga4 conversion)\b/i;
 
@@ -215,32 +235,67 @@ export function buildSearchPolicy(
 
 /**
  * Execute search according to policy. Operational data is never fabricated here.
+ *
+ * Pipeline: Internal retrieval (Cohere) → Internet adapters → rank → cite
  */
-export async function runSearchManager(input: {
-  objective: string;
-  policy?: Partial<SearchPolicy>;
-  env?: NodeJS.ProcessEnv;
-}): Promise<SearchManagerResult> {
+export async function runSearchManager(input: SearchManagerInput): Promise<SearchManagerResult> {
   const cfg = getAiPlatformConfig(input.env);
   const informationNeed = classifyInformationNeed(input.objective);
+  const built = buildSearchPolicy(informationNeed, cfg);
   const policy: SearchPolicy = {
-    ...buildSearchPolicy(informationNeed, cfg),
+    ...built,
     ...input.policy,
-    providers: input.policy?.providers ?? buildSearchPolicy(informationNeed, cfg).providers,
+    providers: input.policy?.providers ?? built.providers,
+    allowed: input.internalOnly
+      ? true
+      : (input.policy?.allowed ?? built.allowed),
   };
 
   const warnings: string[] = [];
   const evidence: TradeOpsEvidence[] = [];
   const queriesRun: string[] = [];
 
-  if (!policy.allowed) {
-    return { informationNeed, policy, evidence, warnings, queriesRun };
-  }
-
+  // Internal enterprise retrieval always allowed when documents provided
+  // (catalog, manuals, RFQs) even if public search is blocked for operational intents.
   const query = input.objective.slice(0, 400);
   queriesRun.push(query);
 
-  // --- Provider router (one Search Manager; adapters only) ---
+  if (input.internalDocuments?.length) {
+    const { getRetrievalEngine } = await import('./retrieval-engine');
+    const engine = getRetrievalEngine(input.env);
+    const internal = await engine.retrieve({
+      query,
+      documents: input.internalDocuments,
+      topK: policy.maxResultsPerQuery,
+    });
+    evidence.push(...internal.evidence);
+    warnings.push(...internal.warnings);
+    if (internal.hits.length) {
+      evidence.push({
+        sourceType: 'document',
+        provider: internal.engine === 'cohere' ? 'cohere' : 'local_lexical',
+        title: `Internal retrieval (${internal.hits.length} hits)`,
+        retrievedAt: new Date().toISOString(),
+        freshness: 'recent',
+        snippet: internal.hits
+          .slice(0, 3)
+          .map((h) => h.title)
+          .join('; '),
+      });
+    }
+  }
+
+  if (!policy.allowed || input.internalOnly) {
+    return {
+      informationNeed,
+      policy,
+      evidence: rankAndDeduplicateEvidence(evidence),
+      warnings,
+      queriesRun,
+    };
+  }
+
+  // --- Public web provider router ---
 
   // 1) OpenAI native web search (primary when configured)
   if (policy.providers.includes('openai_web') && cfg.openaiWebSearchEnabled && cfg.openaiConfigured) {

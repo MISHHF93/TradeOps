@@ -1,10 +1,11 @@
 /**
  * TradeOps AI platform configuration.
  *
- * Architecture (2026 pivot):
+ * Architecture (retrieval-first split):
  * - TradeOps owns orchestration, Search Manager, Capability Gateway, response envelope.
- * - An AI Adapter selects the reasoning runtime (OpenAI primary; xAI/Gemini optional).
- * - Search is pluggable (OpenAI web, Tavily, xAI web/X) — one Search Manager, swap adapters.
+ * - AI Adapter selects generation runtime (OpenAI primary; xAI/Gemini optional).
+ * - Cohere is the enterprise retrieval engine (embed / rerank / classify / RAG) — not the sole runtime.
+ * - Internet search stays pluggable (OpenAI web, optional Tavily).
  */
 
 function truthy(v: string | undefined | null, defaultTrue = false): boolean {
@@ -22,10 +23,16 @@ function num(v: string | undefined, fallback: number): number {
 export type AiProviderId = 'openai' | 'xai' | 'gemini';
 
 /** Search backends the Search Manager may route to. */
-export type SearchProviderId = 'openai_web' | 'xai_web' | 'xai_x' | 'tavily';
+export type SearchProviderId =
+  | 'openai_web'
+  | 'xai_web'
+  | 'xai_x'
+  | 'tavily'
+  | 'cohere_internal'
+  | 'knowledge_graph';
 
 export type AiPlatformConfig = {
-  /** Primary runtime selected by AI Adapter */
+  /** Primary generation runtime selected by AI Adapter */
   aiProvider: AiProviderId;
 
   openaiApiKey: string | undefined;
@@ -42,6 +49,15 @@ export type AiPlatformConfig = {
   geminiApiKey: string | undefined;
   geminiModel: string;
   geminiConfigured: boolean;
+
+  /** Cohere — enterprise retrieval (not sole generation runtime) */
+  cohereApiKey: string | undefined;
+  cohereBaseUrl: string;
+  cohereEmbedModel: string;
+  cohereRerankModel: string;
+  cohereChatModel: string;
+  cohereConfigured: boolean;
+  cohereRetrievalEnabled: boolean;
 
   responseMode: 'json_schema' | 'json_object' | 'text';
   textOutputEnabled: boolean;
@@ -60,9 +76,11 @@ export type AiPlatformConfig = {
   tavilyResearchEnabled: boolean;
   tavilyConfigured: boolean;
 
-  /** Preferred search backend family for the Search Manager */
+  /** Preferred public-web search backend family */
   searchProviderPrimary: 'openai' | 'xai' | 'tavily';
-  searchProviderRetrieval: 'openai' | 'tavily' | 'xai';
+  searchProviderRetrieval: 'openai' | 'tavily' | 'xai' | 'cohere';
+  /** Internal enterprise retrieval engine */
+  searchProviderInternal: 'cohere' | 'local';
   searchRequireCitations: boolean;
   searchRequireSourceTimestamps: boolean;
   searchMaxQueriesPerRequest: number;
@@ -123,6 +141,7 @@ function parseSearchRetrieval(raw: string | undefined): AiPlatformConfig['search
   const s = (raw ?? 'openai').trim().toLowerCase();
   if (s === 'tavily') return 'tavily';
   if (s === 'xai') return 'xai';
+  if (s === 'cohere') return 'cohere';
   return 'openai';
 }
 
@@ -133,6 +152,7 @@ export function getAiPlatformConfig(
   const xaiApiKey = (env.XAI_API_KEY ?? env.GROK_API_KEY ?? '').trim() || undefined;
   const geminiApiKey = (env.GEMINI_API_KEY ?? env.GOOGLE_AI_API_KEY ?? '').trim() || undefined;
   const tavilyApiKey = (env.TAVILY_API_KEY ?? '').trim() || undefined;
+  const cohereApiKey = (env.COHERE_API_KEY ?? '').trim() || undefined;
 
   const aiProvider = parseProvider(env.AI_PROVIDER, env);
 
@@ -155,6 +175,15 @@ export function getAiPlatformConfig(
     geminiModel: (env.GEMINI_MODEL ?? 'gemini-2.0-flash').trim() || 'gemini-2.0-flash',
     geminiConfigured: Boolean(geminiApiKey),
 
+    cohereApiKey,
+    cohereBaseUrl: (env.COHERE_BASE_URL ?? 'https://api.cohere.com').replace(/\/$/, ''),
+    cohereEmbedModel: (env.COHERE_EMBED_MODEL ?? 'embed-v4.0').trim() || 'embed-v4.0',
+    cohereRerankModel: (env.COHERE_RERANK_MODEL ?? 'rerank-v3.5').trim() || 'rerank-v3.5',
+    cohereChatModel:
+      (env.COHERE_CHAT_MODEL ?? 'command-a-03-2025').trim() || 'command-a-03-2025',
+    cohereConfigured: Boolean(cohereApiKey),
+    cohereRetrievalEnabled: truthy(env.COHERE_RETRIEVAL_ENABLED, true) && Boolean(cohereApiKey),
+
     responseMode: (env.AI_RESPONSE_MODE ?? 'json_schema').toLowerCase() as AiPlatformConfig['responseMode'],
     textOutputEnabled: truthy(env.AI_TEXT_OUTPUT_ENABLED, true),
     structuredOutputEnabled: truthy(env.AI_STRUCTURED_OUTPUT_ENABLED, true),
@@ -174,6 +203,10 @@ export function getAiPlatformConfig(
 
     searchProviderPrimary: parseSearchPrimary(env.SEARCH_PROVIDER_PRIMARY),
     searchProviderRetrieval: parseSearchRetrieval(env.SEARCH_PROVIDER_RETRIEVAL),
+    searchProviderInternal:
+      (env.SEARCH_PROVIDER_INTERNAL ?? 'cohere').trim().toLowerCase() === 'local'
+        ? 'local'
+        : 'cohere',
     searchRequireCitations: truthy(env.SEARCH_REQUIRE_CITATIONS, true),
     searchRequireSourceTimestamps: truthy(env.SEARCH_REQUIRE_SOURCE_TIMESTAMPS, true),
     searchMaxQueriesPerRequest: num(env.SEARCH_MAX_QUERIES_PER_REQUEST, 6),
@@ -224,16 +257,21 @@ export function aiPlatformPublicStatus(
     xaiBaseUrl: c.xaiBaseUrl,
     geminiConfigured: c.geminiConfigured,
     geminiModel: c.geminiModel,
+    cohereConfigured: c.cohereConfigured,
+    cohereRetrievalEnabled: c.cohereRetrievalEnabled,
+    cohereEmbedModel: c.cohereEmbedModel,
     tavilyConfigured: c.tavilyConfigured,
     search: {
       primary: c.searchProviderPrimary,
       retrieval: c.searchProviderRetrieval,
+      internal: c.searchProviderInternal,
       openaiWeb: c.openaiWebSearchEnabled && c.openaiConfigured,
       xaiWeb: c.xaiWebSearchEnabled && c.xaiConfigured,
       xaiX: c.xaiXSearchEnabled && c.xaiConfigured,
       tavilySearch: c.tavilySearchEnabled,
       tavilyExtract: c.tavilyExtractEnabled,
       tavilyCrawl: c.tavilyCrawlEnabled,
+      cohereInternal: c.cohereRetrievalEnabled,
     },
     responseContract: {
       schemaVersion: c.outputSchemaVersion,
@@ -245,12 +283,13 @@ export function aiPlatformPublicStatus(
       mode: c.responseMode,
     },
     architecture: {
-      rule: 'TradeOps owns orchestration. AI Adapter selects runtime (OpenAI primary). Search Manager + Capability Gateway stay provider-agnostic.',
+      rule: 'TradeOps owns orchestration. Generation via AI Adapter (OpenAI primary). Cohere is enterprise retrieval (embed/rerank/classify), not the sole runtime.',
       aiAdapter: true,
-      primaryRuntime: 'openai',
-      optionalRuntimes: ['xai', 'gemini'] as const,
+      generationPrimary: 'openai',
+      retrievalPrimary: 'cohere',
+      optionalGenerationRuntimes: ['xai', 'gemini'] as const,
       competingSearchApis: ['serpapi', 'brave', 'bing', 'google_cse'] as const,
-      note: 'Do not call vendor AI SDKs from the frontend or random services — only through the AI Adapter and Search Manager.',
+      note: 'Call models only through AI Adapter + Retrieval Engine + Search Manager — never from the frontend.',
     },
   };
 }

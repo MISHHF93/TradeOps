@@ -68,7 +68,7 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
         lede={
           caseId
             ? 'Bound to a Commerce Case. Gateway + operator recommend the highest-value valid next step for the current stage — one AI, not a swarm of agents.'
-            : 'One AI Operator via AI Adapter (OpenAI primary). Search Manager + Capability Gateway. Text and validated JSON in every response. Operational truth only from connectors.'
+            : 'One AI Operator: OpenAI generation + Cohere enterprise retrieval (not sole runtime). Search Manager + Capability Gateway. Text + JSON. Operational truth only from connectors.'
         }
         currentStage={caseStage}
         breadcrumbs={[

@@ -179,20 +179,19 @@ export function AiGatewayConsole({
     <article className="panel" style={{ marginBottom: 16 }}>
       <h2 style={{ marginTop: 0 }}>TradeOps AI Gateway</h2>
       <p className="meta" style={{ marginTop: 0 }}>
-        One AI · AI Adapter (OpenAI primary) · Search Manager · Capability Gateway · connectors for
-        operational truth. Response always includes <code>output.text</code> and{' '}
+        One AI · Generation via AI Adapter (OpenAI primary) · Enterprise retrieval via Cohere · Search
+        Manager · Capability Gateway. Response always includes <code>output.text</code> and{' '}
         <code>output.json</code>.
       </p>
 
       {catalog?.platform ? (
         <p className="meta">
-          Runtime: <strong>{catalog.platform.aiProvider ?? 'openai'}</strong>
+          Generate: <strong>{catalog.platform.aiProvider ?? 'openai'}</strong>
           {' · '}
-          Model:{' '}
+          Retrieve:{' '}
           <strong>
-            {(catalog.platform as { openaiModel?: string; xaiModel?: string }).openaiModel ??
-              catalog.platform.xaiModel ??
-              '—'}
+            {(catalog as { retrieval?: { engine?: string; cohereConfigured?: boolean } }).retrieval
+              ?.engine ?? 'local'}
           </strong>
           {' · '}
           OpenAI:{' '}
@@ -200,9 +199,12 @@ export function AiGatewayConsole({
             ? 'key set'
             : 'missing'}
           {' · '}
-          xAI: {catalog.platform.xaiConfigured ? 'key set' : 'optional'}
+          Cohere:{' '}
+          {(catalog.platform as { cohereConfigured?: boolean }).cohereConfigured
+            ? 'key set'
+            : 'optional'}
           {' · '}
-          Tavily: {catalog.platform.tavilyConfigured ? 'key set' : 'optional'}
+          xAI: {catalog.platform.xaiConfigured ? 'key set' : 'optional'}
           {catalog.skills?.length ? (
             <>
               {' · '}

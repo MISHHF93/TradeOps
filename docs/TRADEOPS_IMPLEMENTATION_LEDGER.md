@@ -50,6 +50,8 @@
 | Prediction engine v1 | Operational foundations | Bias fit from outcomes; batch run → DemandForecast |
 | LLM free-form (xAI) | Optional | `XAI_API_KEY` — retrieval works without it |
 | Dense embeddings (xAI API) | Optional | Tries embeddings endpoint; falls back to local dense |
+| Industrial Commerce OS | Operational foundations | Verticals, industrial product profile, procurement engine, digital twin, industrial personas, ERP/PIM registry |
+| AI procurement evaluate | Operational foundations | Requirements match, quotes, substitutes, RFQ draft — award approval-gated |
 | Agency client hierarchy | Operational foundations | Create/list client orgs under parent |
 | Enterprise SSO / legal entities | Planned | Not built |
 | B2B negotiated catalogs | Planned | Not built |

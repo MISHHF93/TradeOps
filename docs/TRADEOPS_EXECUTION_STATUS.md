@@ -143,7 +143,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | 3 | Capability packs | **DONE foundations** |
 | 4 | Usage commercial model | **PARTIAL** (no Stripe) |
 | 5 | Enterprise structure | **PARTIAL** |
-| 6 | B2B workspace | **PLANNED** (page only) |
+| 6 | B2B / Industrial OS | **DONE foundations** | Industrial profile, procurement, twin, roles |
 | 7 | Customer intelligence | **DONE foundations** |
 | 8 | ATP | **DONE foundations** |
 | 9 | Channel profitability | **DONE foundations** |

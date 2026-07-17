@@ -34,10 +34,14 @@ describe('production connector catalog', () => {
       'avalara',
       'serpapi',
       'keepa-api',
+      'sap-s4hana',
+      'oracle-netsuite',
+      'salsify-pim',
+      'manhattan-wms',
     ]) {
       assert.ok(ids.has(id), `missing production connector ${id}`);
     }
-    assert.ok(list.length >= 30);
+    assert.ok(list.length >= 35);
     assert.ok(list.every((c) => c.isFixture === false));
   });
 

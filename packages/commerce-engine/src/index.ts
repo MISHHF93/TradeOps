@@ -21,3 +21,8 @@ export * from './production-isolation';
 export * from './intelligence-engine';
 export * from './workspace';
 export * from './prediction-engine';
+export * from './industrial-domains';
+export * from './industrial-product';
+export * from './procurement-engine';
+export * from './digital-twin';
+export * from './industrial-personas';

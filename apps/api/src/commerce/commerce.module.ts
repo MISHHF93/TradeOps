@@ -12,10 +12,12 @@ import { EcosystemService } from './ecosystem.service';
 import { LiveConnectorService } from './live-connector.service';
 import { OpsSyncScheduler } from './ops-sync.scheduler';
 import { WorkspaceService } from './workspace.service';
+import { IndustrialService } from './industrial.service';
+import { IndustrialController } from './industrial.controller';
 
 @Module({
   imports: [IdentityModule, forwardRef(() => BillingModule)],
-  controllers: [CommerceController],
+  controllers: [CommerceController, IndustrialController],
   providers: [
     CommerceService,
     ArtifactService,
@@ -27,6 +29,7 @@ import { WorkspaceService } from './workspace.service';
     ConnectorOpsService,
     EventFabricService,
     OpsSyncScheduler,
+    IndustrialService,
   ],
   exports: [
     CommerceService,
@@ -37,6 +40,7 @@ import { WorkspaceService } from './workspace.service';
     CommerceRuntimeService,
     LiveConnectorService,
     ConnectorOpsService,
+    IndustrialService,
   ],
 })
 export class CommerceModule {}

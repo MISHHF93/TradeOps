@@ -121,6 +121,7 @@ export class RagService {
     for (const p of products) {
       const opp = p.opportunities[0];
       const isFixture = p.sourcePlatform.startsWith('fixture');
+      const industrialBlob = extractIndustrialRagText(p);
       docs.push({
         id: `product:${p.id}`,
         sourceType: 'product',
@@ -130,12 +131,14 @@ export class RagService {
           p.description ?? '',
           `Category: ${p.category}`,
           p.brand ? `Brand: ${p.brand}` : '',
+          p.manufacturer ? `Manufacturer: ${p.manufacturer}` : '',
           `Source: ${p.sourcePlatform}`,
           `Supplier cost minor: ${p.supplierCostMinor}`,
           `Shipping minor: ${p.shippingCostMinor}`,
           `Target price minor: ${p.targetPriceMinor}`,
           `Currency: ${p.currency}`,
           `Inventory: ${p.inventoryQuantity}`,
+          industrialBlob,
           opp
             ? `Opportunity score ${opp.score}; signal ${opp.currentSignal}; margin bps ${opp.expectedMarginBps}`
             : '',
@@ -143,7 +146,8 @@ export class RagService {
         ]
           .filter(Boolean)
           .join('\n'),
-        tags: [p.category, p.sourcePlatform].filter(Boolean) as string[],
+        tags: [p.category, p.sourcePlatform, 'industrial']
+          .filter(Boolean) as string[],
         isFixture,
         observedAt: p.dataFreshnessAt?.toISOString?.() ?? p.updatedAt.toISOString(),
         metadata: { productId: p.id },
@@ -658,4 +662,38 @@ export class RagService {
   knowledgeDocs(entries: KnowledgeBaseEntry[]): RagDocument[] {
     return knowledgeEntriesToDocuments(entries);
   }
+}
+
+/** Flatten industrial profile fields into RAG-searchable text. */
+function extractIndustrialRagText(p: {
+  attributesJson?: unknown;
+  manufacturer?: string | null;
+}): string {
+  const attrs =
+    p.attributesJson && typeof p.attributesJson === 'object'
+      ? (p.attributesJson as Record<string, unknown>)
+      : {};
+  const ind = (attrs.industrial ?? {}) as Record<string, unknown>;
+  if (!ind || Object.keys(ind).length === 0) {
+    return p.manufacturer ? `Manufacturer: ${p.manufacturer}` : '';
+  }
+  const specs = Array.isArray(ind.technicalSpecifications)
+    ? (ind.technicalSpecifications as Array<{ key?: string; value?: string; unit?: string }>)
+        .map((s) => `${s.key}=${s.value}${s.unit ? s.unit : ''}`)
+        .join('; ')
+    : '';
+  return [
+    'Industrial profile:',
+    ind.oemPartNumber ? `OEM: ${ind.oemPartNumber}` : '',
+    ind.manufacturerPartNumber ? `MPN: ${ind.manufacturerPartNumber}` : '',
+    ind.manufacturer ? `Manufacturer: ${ind.manufacturer}` : '',
+    ind.gtin ? `GTIN: ${ind.gtin}` : '',
+    ind.moq != null ? `MOQ: ${ind.moq}` : '',
+    ind.leadTimeDays != null ? `Lead time days: ${ind.leadTimeDays}` : '',
+    ind.hazmatClass ? `Hazmat: ${ind.hazmatClass}` : '',
+    specs ? `Specs: ${specs}` : '',
+    Array.isArray(ind.verticals) ? `Verticals: ${(ind.verticals as string[]).join(',')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }

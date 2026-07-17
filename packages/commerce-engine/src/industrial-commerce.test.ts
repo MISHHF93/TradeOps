@@ -11,6 +11,7 @@ import {
   compareQuotations,
   evaluateProcurementCase,
   matchRequirements,
+  parseTechnicalRequirementsFromText,
 } from './procurement-engine';
 import { buildDigitalTwin, twinNeighborhood } from './digital-twin';
 import { listIndustrialRoles } from './industrial-personas';
@@ -90,6 +91,17 @@ describe('industrial product', () => {
 });
 
 describe('procurement engine', () => {
+  it('parses free-text technical requirements', () => {
+    const reqs = parseTechnicalRequirementsFromText(
+      'Need 24V IP67 sensor pressure 3000 psi lead time under 30 days stainless',
+    );
+    assert.ok(reqs.some((r) => r.key === 'voltage' && String(r.value) === '24'));
+    assert.ok(reqs.some((r) => r.key === 'ip' && String(r.value) === '67'));
+    assert.ok(reqs.some((r) => r.key === 'pressure'));
+    assert.ok(reqs.some((r) => r.key === 'leadTimeDays'));
+    assert.ok(reqs.some((r) => r.key === 'material'));
+  });
+
   it('matches requirements and compares quotes', () => {
     const profile = emptyIndustrialProfile({
       technicalSpecifications: [

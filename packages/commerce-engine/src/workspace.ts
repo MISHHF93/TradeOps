@@ -810,6 +810,7 @@ const PERSONA_MORE_NAV: Record<
   Array<{ id: string; href: string; label: string; kind?: NavKind }>
 > = {
   executive: [
+    { id: 'industrial', href: '/terminal/industrial', label: 'Industrial OS' },
     { id: 'process', href: '/terminal/process', label: 'Process cases' },
     { id: 'tasks', href: '/terminal/tasks', label: 'All tasks' },
     { id: 'cash', href: '/terminal/cashflow', label: 'Cash flow' },
@@ -818,6 +819,8 @@ const PERSONA_MORE_NAV: Record<
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   operator: [
+    { id: 'industrial', href: '/terminal/industrial', label: 'Industrial OS' },
+    { id: 'procure', href: '/terminal/industrial/procurement', label: 'Procurement' },
     { id: 'listings', href: '/terminal/listings', label: 'Listings' },
     { id: 'approvals', href: '/terminal/approvals', label: 'Approvals' },
     { id: 'payments', href: '/terminal/finance/payments', label: 'Payments' },
@@ -826,6 +829,7 @@ const PERSONA_MORE_NAV: Record<
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   researcher: [
+    { id: 'industrial', href: '/terminal/industrial/products', label: 'Industrial catalog' },
     { id: 'watchlist', href: '/terminal/watchlist', label: 'Watchlist' },
     { id: 'tasks', href: '/terminal/tasks', label: 'Tasks' },
     { id: 'objectives', href: '/terminal/objectives', label: 'Objectives' },
@@ -833,6 +837,7 @@ const PERSONA_MORE_NAV: Record<
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   analyst: [
+    { id: 'twin', href: '/terminal/industrial/twin', label: 'Digital twin' },
     { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities' },
     { id: 'watch', href: '/terminal/watchlist', label: 'Watchlist' },
     { id: 'process', href: '/terminal/process', label: 'Process / learn' },
@@ -840,6 +845,7 @@ const PERSONA_MORE_NAV: Record<
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   developer: [
+    { id: 'industrial', href: '/terminal/industrial', label: 'Industrial OS' },
     { id: 'objectives', href: '/terminal/objectives', label: 'Execution history' },
     { id: 'examples', href: '/terminal/live-examples', label: 'Live examples' },
     { id: 'process', href: '/terminal/process', label: 'Process cases' },
@@ -847,6 +853,7 @@ const PERSONA_MORE_NAV: Record<
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   administrator: [
+    { id: 'industrial', href: '/terminal/industrial', label: 'Industrial OS' },
     { id: 'agency', href: '/terminal/agency', label: 'Agency clients' },
     { id: 'onboarding', href: '/onboarding', label: 'Onboarding' },
     { id: 'plans', href: '/platform/plans', label: 'Plans' },

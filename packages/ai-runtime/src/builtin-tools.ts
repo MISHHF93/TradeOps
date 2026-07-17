@@ -231,6 +231,106 @@ export function registerBuiltinTools(): void {
   });
 
   registerTool({
+    name: 'evaluateIndustrialProcurement',
+    description:
+      'Evaluate industrial procurement for a product: technical fit, quote compare, substitutes, RFQ draft, risk. Award remains approval-gated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        quantity: { type: 'number' },
+        requirementText: {
+          type: 'string',
+          description: 'Free-text specs e.g. 24V IP67 3000 psi',
+        },
+      },
+      required: ['productId'],
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 45_000,
+    idempotent: true,
+    execute: async (input, ctx) => {
+      const evaluate = ctx.deps.evaluateIndustrialProcurement as
+        | ((args: {
+            organizationId: string;
+            productId: string;
+            quantity?: number;
+            requirementText?: string;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!evaluate) {
+        return {
+          note: 'Host did not inject evaluateIndustrialProcurement — use POST /api/v1/industrial/procurement/evaluate',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        quantity?: number;
+        requirementText?: string;
+      };
+      return evaluate({
+        organizationId: ctx.organizationId,
+        productId: String(i.productId ?? ''),
+        quantity: i.quantity,
+        requirementText: i.requirementText,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'searchIndustrialCompatibility',
+    description:
+      'Find substitute/compatible industrial parts by productId or free-text technical requirements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        requirementText: { type: 'string' },
+        take: { type: 'number' },
+      },
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input, ctx) => {
+      const search = ctx.deps.searchIndustrialCompatibility as
+        | ((args: {
+            organizationId: string;
+            productId?: string;
+            requirementText?: string;
+            take?: number;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!search) {
+        return {
+          note: 'Host did not inject searchIndustrialCompatibility — use POST /api/v1/industrial/compatibility/search',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        requirementText?: string;
+        take?: number;
+      };
+      return search({
+        organizationId: ctx.organizationId,
+        productId: i.productId,
+        requirementText: i.requirementText,
+        take: i.take,
+      });
+    },
+  });
+
+  registerTool({
     name: 'classifyArtifactPurpose',
     description:
       'Classify product artifact purpose/type (rules + optional xAI). Always a proposal requiring human review.',

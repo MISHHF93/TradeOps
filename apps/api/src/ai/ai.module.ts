@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module';
 import { CommerceModule } from '../commerce/commerce.module';
+// IndustrialService exported from CommerceModule
 import { IdentityModule } from '../identity/identity.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SaasModule } from '../saas/saas.module';

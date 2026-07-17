@@ -15,6 +15,73 @@ export type TechnicalRequirement = {
   required?: boolean;
 };
 
+/**
+ * Parse free-text technical requirements into structured specs.
+ * Examples: "24V IP67 pressure 3000 psi lead time under 30 days"
+ */
+export function parseTechnicalRequirementsFromText(text: string): TechnicalRequirement[] {
+  const t = text.trim();
+  if (!t) return [];
+  const reqs: TechnicalRequirement[] = [];
+  const push = (r: TechnicalRequirement) => {
+    if (!reqs.some((x) => x.key === r.key && String(x.value) === String(r.value))) {
+      reqs.push(r);
+    }
+  };
+
+  // voltage e.g. 24V, 110 V
+  const volt = t.match(/\b(\d+(?:\.\d+)?)\s*v(?:olts?)?\b/i);
+  if (volt) push({ key: 'voltage', operator: 'eq', value: volt[1]!, unit: 'V', required: true });
+
+  // IP rating
+  const ip = t.match(/\bip\s*[- ]?(\d{2})\b/i);
+  if (ip) push({ key: 'ip', operator: 'eq', value: ip[1]!, required: true });
+
+  // pressure psi/bar
+  const psi = t.match(/\b(\d+(?:\.\d+)?)\s*(psi|bar)\b/i);
+  if (psi) {
+    push({
+      key: 'pressure',
+      operator: 'gte',
+      value: Number(psi[1]),
+      unit: psi[2]!.toLowerCase(),
+      required: true,
+    });
+  }
+
+  // amps
+  const amp = t.match(/\b(\d+(?:\.\d+)?)\s*a(?:mps?)?\b/i);
+  if (amp) push({ key: 'amperage', operator: 'eq', value: amp[1]!, unit: 'A' });
+
+  // temperature range
+  const temp = t.match(/\b(-?\d+)\s*(?:to|–|-)\s*(-?\d+)\s*°?\s*c\b/i);
+  if (temp) {
+    push({ key: 'temp_min_c', operator: 'lte', value: Number(temp[1]), unit: 'C' });
+    push({ key: 'temp_max_c', operator: 'gte', value: Number(temp[2]), unit: 'C' });
+  }
+
+  // material
+  const mat = t.match(/\b(stainless|aluminum|brass|steel|nylon|ptfe|abs)\b/i);
+  if (mat) push({ key: 'material', operator: 'contains', value: mat[1]!.toLowerCase() });
+
+  // lead time
+  const lt = t.match(/\blead\s*time\s*(?:under|<|>|<=|max)?\s*(\d+)\s*days?\b/i);
+  if (lt) push({ key: 'leadTimeDays', operator: 'lte', value: Number(lt[1]), unit: 'days' });
+
+  // MOQ
+  const moq = t.match(/\bmoq\s*(?:of|=|:)?\s*(\d+)\b/i);
+  if (moq) push({ key: 'moq', operator: 'lte', value: Number(moq[1]) });
+
+  // generic key:value pairs "pressure:3000"
+  for (const m of t.matchAll(/\b([a-zA-Z][a-zA-Z0-9_]{1,24})\s*[:=]\s*([a-zA-Z0-9._/-]+)/g)) {
+    const key = m[1]!.toLowerCase();
+    if (['http', 'https', 'and', 'for', 'the'].includes(key)) continue;
+    push({ key, operator: 'eq', value: m[2]! });
+  }
+
+  return reqs;
+}
+
 export type SupplierQuoteLine = {
   supplierId?: string;
   supplierName: string;

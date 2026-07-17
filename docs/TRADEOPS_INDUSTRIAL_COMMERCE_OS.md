@@ -64,6 +64,16 @@ SAP S/4HANA, NetSuite, Infor CSI, Salsify, Akeneo, Windchill, Autodesk APS, Manh
 - RFQ award / PO submit remains approval-controlled  
 - Fixture data labeled  
 
+## Deepening (this iteration)
+
+- Free-text technical requirement parser (`parseTechnicalRequirementsFromText`)  
+- Compatibility / substitute search API  
+- Demo industrial profile bootstrap for local catalogs  
+- Industrial fields in RAG corpus  
+- AI tools: `evaluateIndustrialProcurement`, `searchIndustrialCompatibility`  
+- Persona More-nav links to Industrial OS  
+- Role workspace pages `/terminal/industrial/roles/[role]`  
+
 ## Residual
 
 - Full live SAP/NetSuite HTTP clients  

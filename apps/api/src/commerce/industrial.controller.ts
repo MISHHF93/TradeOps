@@ -89,4 +89,30 @@ export class IndustrialController {
     if (!nodeId?.trim()) return { error: 'nodeId is required' };
     return this.industrial.twinFocus(this.requireOrg(auth), nodeId.trim());
   }
+
+  @Post('bootstrap-demo')
+  @RequirePermissions('products:write')
+  bootstrapDemo(@CurrentAuth() auth: AuthContext) {
+    return this.industrial.bootstrapDemoProfiles(this.requireOrg(auth));
+  }
+
+  @Post('requirements/parse')
+  @RequirePermissions('products:read', 'ai:read')
+  parseRequirements(
+    @CurrentAuth() auth: AuthContext,
+    @Body() body: { text?: string },
+  ) {
+    this.requireOrg(auth);
+    return this.industrial.parseRequirements(body?.text ?? '');
+  }
+
+  @Post('compatibility/search')
+  @RequirePermissions('products:read', 'ai:read')
+  findCompatible(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: { productId?: string; requirementText?: string; take?: number },
+  ) {
+    return this.industrial.findCompatible(this.requireOrg(auth), body ?? {});
+  }
 }

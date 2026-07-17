@@ -3,6 +3,7 @@ import {
   ProcessPageHeader,
   ProcessRelatedLinks,
 } from '../../../components/commerce/process-chrome';
+import { BootstrapIndustrialButton } from '../../../components/industrial/bootstrap-industrial-button';
 import { terminalGet } from '../../../lib/terminal-api';
 
 export default async function IndustrialOsHomePage() {
@@ -57,6 +58,7 @@ export default async function IndustrialOsHomePage() {
               <Link href="/terminal/ai">AI Operator</Link> — xAI + RAG over industrial knowledge
             </li>
           </ul>
+          <BootstrapIndustrialButton />
         </article>
 
         <article className="panel">
@@ -67,7 +69,7 @@ export default async function IndustrialOsHomePage() {
             <ul className="meta">
               {(catalog.data.roles ?? []).slice(0, 10).map((r) => (
                 <li key={r.id}>
-                  <Link href={r.homeHref}>
+                  <Link href={`/terminal/industrial/roles/${r.id}`}>
                     <strong>{r.label}</strong>
                   </Link>
                   <div>{r.mission}</div>

@@ -34,6 +34,7 @@ import { HarmonizationService } from '../harmonization/harmonization.service';
 import { SaasService } from '../saas/saas.service';
 import { RagService } from './rag.service';
 import { PredictionService } from './prediction.service';
+import { IndustrialService } from '../commerce/industrial.service';
 
 /** Prisma JSON columns accept structured values at runtime; cast for strict InputJsonValue. */
 function asJson(value: unknown): object {
@@ -59,6 +60,7 @@ export class AiOperatorService implements OnModuleInit {
     @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
     private readonly rag: RagService,
     private readonly prediction: PredictionService,
+    private readonly industrial: IndustrialService,
   ) {}
 
   onModuleInit(): void {
@@ -1344,6 +1346,45 @@ export class AiOperatorService implements OnModuleInit {
                 limit,
               });
             },
+            evaluateIndustrialProcurement: async ({
+              organizationId,
+              productId,
+              quantity,
+              requirementText,
+            }: {
+              organizationId: string;
+              productId: string;
+              quantity?: number;
+              requirementText?: string;
+            }) => {
+              const { parseTechnicalRequirementsFromText } = await import(
+                '@tradeops/commerce-engine'
+              );
+              const requirements = requirementText
+                ? parseTechnicalRequirementsFromText(requirementText)
+                : [];
+              return this.industrial.evaluateProcurement(organizationId, {
+                productId,
+                quantity,
+                requirements,
+              });
+            },
+            searchIndustrialCompatibility: async ({
+              organizationId,
+              productId,
+              requirementText,
+              take,
+            }: {
+              organizationId: string;
+              productId?: string;
+              requirementText?: string;
+              take?: number;
+            }) =>
+              this.industrial.findCompatible(organizationId, {
+                productId,
+                requirementText,
+                take,
+              }),
             draftListing: async ({
               organizationId,
               productId,

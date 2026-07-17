@@ -313,7 +313,16 @@ export class LiveConnectorService {
   ): Promise<{ counts: Record<string, number> }> {
     const counts: Record<string, number> = {};
 
-    if (providerKey === 'shopify-graphql-admin' || providerKey === 'woocommerce-rest') {
+    const productCatalogProviders = new Set([
+      'shopify-graphql-admin',
+      'woocommerce-rest',
+      'bigcommerce-rest',
+      'ebay-sell',
+      'square-api',
+      'keepa-api',
+    ]);
+
+    if (productCatalogProviders.has(providerKey)) {
       const payload = data as {
         products?: Array<{
           externalId: string;
@@ -543,6 +552,56 @@ export class LiveConnectorService {
         },
       });
       counts.searchResults = items.length;
+    }
+
+    if (providerKey === 'paypal-rest') {
+      const payload = data as {
+        balances?: Array<{ currency: string; available: string; total: string }>;
+      };
+      await this.events.ingest({
+        organizationId,
+        eventType: 'SyncCompleted',
+        providerKey,
+        externalEventId: `paypal-balance-${Date.now()}`,
+        isFixture: false,
+        payload: {
+          kind: 'paypal_balances',
+          balances: payload.balances ?? [],
+          isLive: true,
+        },
+      });
+      counts.balanceSnapshots = (payload.balances ?? []).length;
+    }
+
+    if (providerKey === 'shipstation-api') {
+      const shipments = Array.isArray(data)
+        ? (data as Array<{
+            externalId: string;
+            trackingCode: string;
+            status: string;
+            carrier: string;
+          }>)
+        : [];
+      let n = 0;
+      for (const s of shipments.slice(0, 25)) {
+        const delayed = /error|exception|cancel/i.test(s.status);
+        await this.events.ingest({
+          organizationId,
+          eventType: delayed ? 'ShipmentDelayed' : 'WebhookReceived',
+          providerKey,
+          externalEventId: `shipstation-${s.externalId}`.slice(0, 128),
+          isFixture: false,
+          payload: {
+            kind: 'shipment',
+            trackingCode: s.trackingCode,
+            status: s.status,
+            carrier: s.carrier,
+            isLive: true,
+          },
+        });
+        n += 1;
+      }
+      counts.shipments = n;
     }
 
     return { counts };

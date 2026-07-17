@@ -9,8 +9,11 @@ import { FixtureSupplierConnector } from '@tradeops/connector-fixture-supplier';
 import {
   calculateUnitEconomics,
   evaluatePredictions,
+  filterForProductionWorkspace,
+  isFixtureSource,
   PIPELINE_STAGES,
   realizedContributionProfitMinor,
+  simulationBanner,
   type PipelineStageState,
 } from '@tradeops/commerce-engine';
 type CommerceSignalType =
@@ -456,7 +459,7 @@ export class CommerceService {
       orderBy: { score: 'desc' },
     });
 
-    return rows.map((o) => {
+    const mapped = rows.map((o) => {
       const p = o.product;
       const supplier = p.offers[0]?.supplier;
       return {
@@ -495,8 +498,24 @@ export class CommerceService {
         galleryImageUrls: Array.isArray(p.galleryImageUrlsJson)
           ? p.galleryImageUrlsJson
           : [],
+        isFixture: isFixtureSource(p.sourcePlatform),
       };
     });
+
+    const filtered = filterForProductionWorkspace(mapped);
+    const banner = simulationBanner();
+    return {
+      items: filtered.rows,
+      isolation: {
+        excludedFixtures: filtered.excludedFixtures,
+        simulationMode: filtered.simulationMode,
+        strict: filtered.strict,
+        banner: banner.active ? banner : null,
+        note: filtered.strict
+          ? 'Strict production workspace: fixture-sourced opportunities excluded from scanner.'
+          : 'Fixtures included (dev/simulation). Set TRADEOPS_PRODUCTION_WORKSPACE=1 to isolate.',
+      },
+    };
   }
 
   async productDetail(organizationId: string, productId: string) {
@@ -529,10 +548,12 @@ export class CommerceService {
   }
 
   async portfolio(organizationId: string) {
-    const products = await this.prisma.client.product.findMany({
+    const allProducts = await this.prisma.client.product.findMany({
       where: { organizationId },
       include: { listings: true, opportunities: true },
     });
+    const isolation = filterForProductionWorkspace(allProducts);
+    const products = isolation.rows;
     const orders = await this.prisma.client.customerOrder.findMany({ where: { organizationId } });
     const pos = await this.prisma.client.supplierPurchaseOrder.findMany({
       where: { organizationId },
@@ -552,10 +573,10 @@ export class CommerceService {
       }
     }
 
-    const fixtureCount = products.filter((p) =>
-      p.sourcePlatform.startsWith('fixture'),
-    ).length;
-    const liveProductCount = products.length - fixtureCount;
+    const fixtureCount =
+      isolation.excludedFixtures +
+      products.filter((p) => isFixtureSource(p.sourcePlatform)).length;
+    const liveProductCount = products.filter((p) => !isFixtureSource(p.sourcePlatform)).length;
 
     // Channel concentration from actual listing/channel data — never hardcode fixture
     const channelKeys = activeListings.flatMap((p) =>
@@ -608,7 +629,18 @@ export class CommerceService {
       dataClass: {
         fixtureProducts: fixtureCount,
         liveOrCanonicalProducts: liveProductCount,
-        simulationMode: process.env.TRADEOPS_SIMULATION_MODE === '1',
+        simulationMode: isolation.simulationMode,
+        productionStrict: isolation.strict,
+        excludedFixtures: isolation.excludedFixtures,
+      },
+      isolation: {
+        excludedFixtures: isolation.excludedFixtures,
+        simulationMode: isolation.simulationMode,
+        strict: isolation.strict,
+        banner: simulationBanner(),
+        note: isolation.strict
+          ? 'Strict production portfolio: fixture products excluded from KPI totals.'
+          : 'Fixtures included in portfolio totals (dev/simulation). Set TRADEOPS_PRODUCTION_WORKSPACE=1 to isolate.',
       },
       provenance: {
         revenue: {
@@ -1459,7 +1491,8 @@ export class CommerceService {
       await this.importFromFixtureSupplier(organizationId, userId);
     }
 
-    const rows = await this.scanner(organizationId);
+    const scan = await this.scanner(organizationId);
+    const rows = scan.items;
     const pick =
       rows.find((r) => r.currentSignal === 'BUY') ||
       rows.find((r) => r.currentSignal !== 'BLOCKED') ||

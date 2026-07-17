@@ -8,9 +8,11 @@
 
 ### Live operational data
 - Production connector registry (35+ providers)
-- Credential-gated live HTTP: Shopify, Stripe, FX, WooCommerce, EasyPost, SerpAPI
-- Webhook queue + normalizer + Ops scheduler
+- Credential-gated live HTTP (**12 adapters**): Shopify, Stripe, FX, WooCommerce, EasyPost, SerpAPI, BigCommerce, eBay Inventory, PayPal balances, ShipStation, Keepa, Square
+- Webhook queue + normalizer + Ops scheduler (orgs-with-installs + per-provider cooldown)
 - Ops Center health, live-sync, capability resolve
+- Production isolation on scanner/portfolio (`TRADEOPS_PRODUCTION_WORKSPACE`)
+- Demand forecast **baseline-ma-v2** (trend-aware SMA; still labeled non-neural)
 - No `connected` status without env credentials; stubs never fabricate payloads
 
 ### AI Execution Navigator
@@ -69,7 +71,7 @@ pnpm --filter @tradeops/api build
 pnpm --filter @tradeops/web typecheck
 ```
 
-Core package tests at close-out: **84** passing (14+3+13+54).
+Core package tests (2026-07-17): **87** passing (14+5+13+55). API build + web typecheck green.
 
 ---
 
@@ -77,10 +79,11 @@ Core package tests at close-out: **84** passing (14+3+13+54).
 
 | Item | Status |
 |------|--------|
-| HTTP adapters for remaining catalog vendors | PARTIAL — registry ready |
+| HTTP adapters for Amazon SP-API, carriers, ads, analytics, accounting | PARTIAL — registry ready |
 | OAuth install UIs per provider | PARTIAL — env/token path works |
 | Prometheus/Grafana/Sentry production hard-wire | PARTIAL — registry + telemetry hooks |
-| Full live-sync multi-org rate limiting | PARTIAL — env intervals exist |
+| Multi-org live-sync rate limiting | **DONE foundations** — cooldown + install-targeted orgs |
+| Scanner/portfolio production isolation | **DONE** — env-gated filter |
 
 See `TRADEOPS_CLOSEOUT_AUDIT.md` for the full matrix.
 

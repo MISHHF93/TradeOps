@@ -66,5 +66,12 @@ describe('production connector catalog', () => {
     assert.ok(runtime.every((r) => r.liveReady === false));
     assert.ok(CAPABILITY_PROVIDER_MAP.read_orders?.includes('shopify-graphql-admin'));
     assert.ok(LIVE_HTTP_IMPLEMENTED.has('stripe-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('bigcommerce-rest'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('ebay-sell'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('paypal-rest'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('shipstation-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('keepa-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('square-api'));
+    assert.equal(LIVE_HTTP_IMPLEMENTED.size, 12);
   });
 });

@@ -4,11 +4,14 @@ import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators'
 import type { AuthContext } from '../identity/types';
 import { EventFabricService } from '../events/event-fabric.service';
 import { AiOperatorService } from './ai-operator.service';
+import { RagService } from './rag.service';
+import type { RagSourceType } from '@tradeops/ai-runtime';
 
 @Controller('ai')
 export class AiController {
   constructor(
     private readonly operator: AiOperatorService,
+    private readonly rag: RagService,
     private readonly events: EventFabricService,
   ) {}
 
@@ -212,6 +215,59 @@ export class AiController {
         note: 'Knowledge is derived from prior OperatorRun execution packages — not external training data.',
       },
     };
+  }
+
+  // ─── RAG Engine (org-specific retrieval "training") ───────────────────────
+
+  @Get('rag/status')
+  @RequirePermissions('ai:read')
+  ragStatus(@CurrentAuth() auth: AuthContext) {
+    return this.rag.status(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Rebuild org sparse TF-IDF index from products, cases, runs, connectors, SOPs.
+   * This is continuous retrieval training — not GPU fine-tuning of model weights.
+   */
+  @Post('rag/train')
+  @RequirePermissions('ai:write')
+  ragTrain(@CurrentAuth() auth: AuthContext) {
+    return this.rag.train(auth.activeOrganizationId!, auth.userId);
+  }
+
+  /**
+   * Query the org RAG index. Optional grounded LLM answer when XAI_API_KEY is set
+   * and body.generate=true.
+   */
+  @Post('rag/query')
+  @RequirePermissions('ai:read')
+  ragQuery(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      query?: string;
+      topK?: number;
+      excludeFixtures?: boolean;
+      sourceTypes?: RagSourceType[];
+      generate?: boolean;
+      autoTrainIfMissing?: boolean;
+    },
+  ) {
+    const query = body.query?.trim();
+    if (!query) {
+      return {
+        error: 'query is required',
+        note: 'Ask a retrieval question against your trained org index.',
+      };
+    }
+    return this.rag.query(auth.activeOrganizationId!, {
+      query,
+      topK: body.topK,
+      excludeFixtures: body.excludeFixtures,
+      sourceTypes: body.sourceTypes,
+      generate: body.generate === true,
+      autoTrainIfMissing: body.autoTrainIfMissing !== false,
+    });
   }
 
   @Post('harmonize')

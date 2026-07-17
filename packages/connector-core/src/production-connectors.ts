@@ -858,6 +858,12 @@ export const LIVE_HTTP_IMPLEMENTED = new Set([
   'woocommerce-rest',
   'easypost-api',
   'serpapi',
+  'bigcommerce-rest',
+  'ebay-sell',
+  'paypal-rest',
+  'shipstation-api',
+  'keepa-api',
+  'square-api',
 ]);
 
 /**

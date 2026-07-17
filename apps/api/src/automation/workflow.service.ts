@@ -39,11 +39,61 @@ export class WorkflowService {
       where: { organizationId: input.organizationId },
     });
 
+    // Host-loaded evidence for operational/shadow templates (never invent scores/stock)
+    const opportunities = await this.prisma.client.opportunity.findMany({
+      where: { organizationId: input.organizationId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            title: true,
+            sourcePlatform: true,
+            inventoryQuantity: true,
+          },
+        },
+      },
+      orderBy: { score: 'desc' },
+      take: 100,
+    });
+
+    const scoredOpportunities = opportunities.map((o) => ({
+      productId: o.productId,
+      title: o.product.title,
+      score: o.score,
+      expectedMarginBps: o.expectedMarginBps,
+      currentSignal: o.currentSignal,
+      sourcePlatform: o.product.sourcePlatform,
+      isFixture: o.product.sourcePlatform.startsWith('fixture'),
+    }));
+
+    const listings = await this.prisma.client.listing.findMany({
+      where: {
+        organizationId: input.organizationId,
+        status: { in: ['active', 'draft', 'pending_approval'] },
+      },
+      include: {
+        product: {
+          select: { id: true, title: true, inventoryQuantity: true },
+        },
+      },
+      take: 100,
+    });
+
+    const inventorySnapshots = listings.map((l) => ({
+      productId: l.productId,
+      title: l.product.title,
+      quantity: l.product.inventoryQuantity ?? 0,
+      listingId: l.id,
+      listingStatus: l.status,
+    }));
+
     const result = runWorkflowTemplate(input.templateKey, {
       organizationId: input.organizationId,
       variables: input.variables,
       productCount,
       dryRun: input.dryRun !== false,
+      scoredOpportunities,
+      inventorySnapshots,
     });
 
     if (result.status === 'blocked' && result.message.includes('Unknown')) {
@@ -62,13 +112,17 @@ export class WorkflowService {
             ? 'awaiting_approval'
             : result.status === 'blocked'
               ? 'blocked'
-              : 'completed',
+              : result.status === 'partial'
+                ? 'completed'
+                : 'completed',
         planJson: {
           kind: 'workflow_template',
           templateKey: result.templateKey,
           version: result.version,
           stepsCompleted: result.stepsCompleted,
           stepsSkipped: result.stepsSkipped,
+          // Prisma InputJsonValue — structured evidence is runtime-safe
+          evidence: result.evidence as object,
         },
         toolTraceJson: [],
         decisionNote: result.message,

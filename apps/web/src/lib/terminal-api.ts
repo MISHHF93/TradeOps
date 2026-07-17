@@ -52,4 +52,28 @@ export type ScannerRow = {
   primaryImageUrl?: string | null;
   mediaCount?: number;
   galleryImageUrls?: string[];
+  isFixture?: boolean;
 };
+
+export type ScannerResponse = {
+  items: ScannerRow[];
+  isolation?: {
+    excludedFixtures: number;
+    simulationMode: boolean;
+    strict: boolean;
+    banner: { active: boolean; label: string; note: string } | null;
+    note: string;
+  };
+};
+
+/** Normalize scanner API (array legacy or { items } envelope). */
+export function normalizeScannerPayload(
+  data: ScannerRow[] | ScannerResponse | null | undefined,
+): { rows: ScannerRow[]; isolation: ScannerResponse['isolation'] | null } {
+  if (!data) return { rows: [], isolation: null };
+  if (Array.isArray(data)) return { rows: data, isolation: null };
+  if (Array.isArray(data.items)) {
+    return { rows: data.items, isolation: data.isolation ?? null };
+  }
+  return { rows: [], isolation: null };
+}

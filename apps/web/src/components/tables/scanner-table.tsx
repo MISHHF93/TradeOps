@@ -244,6 +244,12 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
                         )}
                         <div style={{ minWidth: 0 }}>
                           <Link href={`/terminal/products/${r.productId}`}>{r.product}</Link>
+                          {r.isFixture ||
+                          (r.sourcePlatform && r.sourcePlatform.startsWith('fixture')) ? (
+                            <div className="meta" style={{ margin: 0, color: 'var(--warning, #c90)' }}>
+                              TEST FIXTURE — not live marketplace data
+                            </div>
+                          ) : null}
                           {r.brand ? (
                             <div className="meta" style={{ margin: 0 }}>
                               {r.brand}
@@ -260,7 +266,14 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
                       </div>
                     </td>
                     <td>{r.category}</td>
-                    <td>{r.sourcePlatform}</td>
+                    <td>
+                      {r.sourcePlatform}
+                      {r.isFixture || r.sourcePlatform?.startsWith('fixture') ? (
+                        <div className="meta" style={{ margin: 0 }}>
+                          fixture
+                        </div>
+                      ) : null}
+                    </td>
                     <td>{r.supplier}</td>
                     <td>{formatMoney(r.supplierCostMinor, r.currency)}</td>
                     <td>{formatMoney(r.shippingCostMinor, r.currency)}</td>

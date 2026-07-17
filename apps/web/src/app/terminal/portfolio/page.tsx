@@ -44,6 +44,14 @@ export default async function PortfolioPage() {
       fixtureProducts: number;
       liveOrCanonicalProducts: number;
       simulationMode: boolean;
+      productionStrict?: boolean;
+      excludedFixtures?: number;
+    };
+    isolation?: {
+      excludedFixtures: number;
+      simulationMode: boolean;
+      strict: boolean;
+      note: string;
     };
     provenance?: Record<string, Provenance>;
   }>('/api/v1/terminal/portfolio');
@@ -81,9 +89,17 @@ export default async function PortfolioPage() {
 
       <SimulationBanner active={p.dataClass?.simulationMode} />
 
-      {p.dataClass && p.dataClass.fixtureProducts > 0 ? (
+      {p.isolation?.strict ? (
         <p className="pill" style={{ marginBottom: 12 }}>
-          TEST FIXTURE — {p.dataClass.fixtureProducts} product(s) from fixture sources
+          PRODUCTION ISOLATION — excluded {p.isolation.excludedFixtures} fixture product
+          {p.isolation.excludedFixtures === 1 ? '' : 's'} from KPI totals
+        </p>
+      ) : null}
+
+      {p.dataClass && p.dataClass.fixtureProducts > 0 && !p.isolation?.strict ? (
+        <p className="pill" style={{ marginBottom: 12 }}>
+          TEST FIXTURE — {p.dataClass.fixtureProducts} product(s) from fixture sources (included
+          in totals until TRADEOPS_PRODUCTION_WORKSPACE=1)
         </p>
       ) : null}
 

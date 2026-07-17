@@ -98,7 +98,46 @@ describe('AI operator cycle', () => {
   it('exposes registered tools without secrets', () => {
     const tools = listToolsPublic();
     assert.ok(tools.some((t) => t.name === 'calculateContributionProfit'));
+    assert.ok(tools.some((t) => t.name === 'forecastDemand'));
     assert.ok(tools.every((t) => t.actionClass !== 'prohibited' || t.approvalRequired));
+  });
+
+  it('forecastDemand tool returns baseline-ma-v2 and empty-history honesty', async () => {
+    const { getTool } = await import('./tool-registry');
+    const tool = getTool('forecastDemand');
+    assert.ok(tool);
+    const empty = (await tool!.execute(
+      { observations: '[]', horizonDays: 14 },
+      {
+        organizationId: 'org',
+        loopMode: 'shadow',
+        permissions: ['analytics:read', 'ai:read'],
+        deps: {},
+      },
+    )) as { expectedUnits: number; modelVersion: string; confidence: number };
+    assert.equal(empty.expectedUnits, 0);
+    assert.equal(empty.modelVersion, 'baseline-ma-v2');
+    assert.ok(empty.confidence <= 0.2);
+
+    const withHist = (await tool!.execute(
+      {
+        observations: JSON.stringify(
+          Array.from({ length: 14 }, (_, i) => ({
+            date: `2026-06-${String(i + 1).padStart(2, '0')}`,
+            units: 10,
+          })),
+        ),
+        horizonDays: 7,
+      },
+      {
+        organizationId: 'org',
+        loopMode: 'shadow',
+        permissions: ['analytics:read', 'ai:read'],
+        deps: {},
+      },
+    )) as { expectedUnits: number; modelVersion: string };
+    assert.ok(withHist.expectedUnits > 0);
+    assert.equal(withHist.modelVersion, 'baseline-ma-v2');
   });
 
   it('read-only evaluate returns ranked products without approval', async () => {

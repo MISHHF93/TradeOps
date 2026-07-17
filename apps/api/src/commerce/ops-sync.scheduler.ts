@@ -124,23 +124,86 @@ export class OpsSyncScheduler implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Credential-gated live HTTP — only runs when env secrets exist. */
+  /**
+   * Credential-gated live HTTP — only orgs with non-fixture installs that are
+   * live-ready or recently connected. Per-provider cooldown from lastLiveSyncAt
+   * respects rateLimitRpm / TRADEOPS_LIVE_SYNC_PROVIDER_COOLDOWN_MS.
+   */
   private async liveSyncAllOrgs() {
     if (!this.live) return;
     if (process.env.TRADEOPS_LIVE_SYNC_DISABLED === '1') return;
 
-    const orgs = await this.prisma.client.organization.findMany({
-      select: { id: true },
-      take: 10,
-      orderBy: { updatedAt: 'desc' },
-    });
-    for (const org of orgs) {
-      const result = await this.live.syncLive(org.id);
+    const cooldownMs = Number(
+      process.env.TRADEOPS_LIVE_SYNC_PROVIDER_COOLDOWN_MS ?? 300_000,
+    );
+    const now = Date.now();
+
+    // Prefer orgs that already have production connector installs
+    let orgIds: string[] = [];
+    try {
+      const installs = await this.prisma.client.connectorInstallation.findMany({
+        where: {
+          isFixture: false,
+          status: { in: ['connected', 'credentials_required', 'unhealthy'] },
+        },
+        select: { organizationId: true },
+        distinct: ['organizationId'],
+        take: 25,
+        orderBy: { updatedAt: 'desc' },
+      });
+      orgIds = installs.map((i) => i.organizationId);
+    } catch {
+      orgIds = [];
+    }
+
+    if (orgIds.length === 0) {
+      const orgs = await this.prisma.client.organization.findMany({
+        select: { id: true },
+        take: 5,
+        orderBy: { updatedAt: 'desc' },
+      });
+      orgIds = orgs.map((o) => o.id);
+    }
+
+    for (const organizationId of orgIds.slice(0, 10)) {
+      // Collect providers that are not in cooldown
+      let providerKeys: string[] | undefined;
+      try {
+        const installs = await this.prisma.client.connectorInstallation.findMany({
+          where: { organizationId, isFixture: false },
+          select: { providerKey: true, metadataJson: true, status: true },
+        });
+        const due = installs.filter((inst) => {
+          const meta =
+            inst.metadataJson && typeof inst.metadataJson === 'object'
+              ? (inst.metadataJson as Record<string, unknown>)
+              : {};
+          const last = meta.lastLiveSyncAt;
+          if (typeof last === 'string') {
+            const age = now - new Date(last).getTime();
+            if (Number.isFinite(age) && age < Math.max(60_000, cooldownMs)) {
+              return false;
+            }
+          }
+          return true;
+        });
+        providerKeys = due.map((d) => d.providerKey);
+        if (providerKeys.length === 0) {
+          continue;
+        }
+      } catch {
+        providerKeys = undefined;
+      }
+
+      const result = await this.live.syncLive(organizationId, {
+        providerKeys,
+      });
       const ok = result.results.filter((r) => r.ok).length;
-      if (ok > 0) {
+      const skipped = result.results.filter((r) => r.skipped).length;
+      if (ok > 0 || skipped > 0) {
         opsLog('live http sync', {
-          organizationId: org.id,
-          eventType: `ok=${ok}`,
+          organizationId,
+          eventType: `ok=${ok},skipped=${skipped}`,
         });
       }
     }

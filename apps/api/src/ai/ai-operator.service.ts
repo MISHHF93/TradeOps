@@ -30,6 +30,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EventFabricService } from '../events/event-fabric.service';
 import { HarmonizationService } from '../harmonization/harmonization.service';
 import { SaasService } from '../saas/saas.service';
+import { RagService } from './rag.service';
 
 /** Prisma JSON columns accept structured values at runtime; cast for strict InputJsonValue. */
 function asJson(value: unknown): object {
@@ -53,6 +54,7 @@ export class AiOperatorService implements OnModuleInit {
     private readonly billing: BillingService,
     private readonly commercePayments: CommercePaymentService,
     @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
+    private readonly rag: RagService,
   ) {}
 
   onModuleInit(): void {
@@ -90,6 +92,14 @@ export class AiOperatorService implements OnModuleInit {
           'executionStatus',
           'verification',
         ],
+      },
+      rag: {
+        train: 'POST /api/v1/ai/rag/train',
+        query: 'POST /api/v1/ai/rag/query',
+        status: 'GET /api/v1/ai/rag/status',
+        embeddingModel: 'rag-tfidf-v1',
+        optionalLlm: 'XAI_API_KEY → SpaceXAI/xAI grok grounded answers',
+        note: 'RAG train indexes org knowledge. This is continuous retrieval training — not GPU weight fine-tuning.',
       },
     };
   }
@@ -208,11 +218,36 @@ export class AiOperatorService implements OnModuleInit {
     executionPackage: ObjectiveExecutionPackage;
     summary: string;
     cycleResult?: Awaited<ReturnType<AiOperatorService['runObjective']>>;
+    rag?: {
+      trained: boolean;
+      hitCount: number;
+      citations: Array<{
+        title: string;
+        sourceType: string;
+        score: number;
+        isFixture: boolean;
+      }>;
+      groundedContextPreview: string;
+    } | null;
   }> {
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
 
     const snapshot = await this.buildNavigatorSnapshot(input.organizationId);
     const priorKnowledge = await this.loadPriorKnowledge(input.organizationId);
+
+    // Ground objective on org RAG index (auto-train if missing)
+    let ragGround: Awaited<ReturnType<RagService['groundObjective']>> | null =
+      null;
+    try {
+      ragGround = await this.rag.groundObjective(
+        input.organizationId,
+        input.objective,
+      );
+    } catch (e) {
+      this.logger.warn(
+        `RAG ground skipped: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
 
     const wantsCycle =
       input.runCycle !== false &&
@@ -289,6 +324,13 @@ export class AiOperatorService implements OnModuleInit {
               executionPackage,
               knowledgeBaseDelta: executionPackage.knowledgeBaseDelta,
               navigatorSummary: summarizeExecutionPackage(executionPackage),
+              rag: ragGround
+                ? {
+                    hitCount: ragGround.hits.length,
+                    topTitles: ragGround.hits.slice(0, 5).map((h) => h.title),
+                    groundedContext: ragGround.groundedContext.slice(0, 2500),
+                  }
+                : null,
             }),
           },
         });
@@ -316,6 +358,13 @@ export class AiOperatorService implements OnModuleInit {
             objectiveType: executionPackage.objective.objectiveType,
             finalAnswer: summarizeExecutionPackage(executionPackage),
             responseSummary: summarizeExecutionPackage(executionPackage),
+            rag: ragGround
+              ? {
+                  hitCount: ragGround.hits.length,
+                  topTitles: ragGround.hits.slice(0, 5).map((h) => h.title),
+                  groundedContext: ragGround.groundedContext.slice(0, 2500),
+                }
+              : null,
           }),
           toolTraceJson: [],
           decision: 'accept',
@@ -349,6 +398,19 @@ export class AiOperatorService implements OnModuleInit {
       executionPackage,
       summary: summarizeExecutionPackage(executionPackage),
       cycleResult,
+      rag: ragGround
+        ? {
+            trained: ragGround.trained,
+            hitCount: ragGround.hits.length,
+            citations: ragGround.hits.slice(0, 8).map((h) => ({
+              title: h.title,
+              sourceType: h.sourceType,
+              score: h.score,
+              isFixture: h.isFixture,
+            })),
+            groundedContextPreview: ragGround.groundedContext.slice(0, 1200),
+          }
+        : null,
     };
   }
 
@@ -376,16 +438,40 @@ export class AiOperatorService implements OnModuleInit {
         return { ...ex, ...readiness };
       }),
       productCount,
-      connectors: connectors.map((c) => ({
-        providerKey: c.providerKey,
-        status: c.status,
-        dataClass: c.isFixture ? 'TEST_FIXTURE' : 'CONNECTED',
-        label: c.isFixture
-          ? 'TEST FIXTURE — NOT LIVE DATA'
-          : `Connector ${c.providerKey}: ${c.status}`,
-      })),
+      connectors: connectors.map((c) => {
+        const status = String(c.status).toLowerCase();
+        const isFixture = c.isFixture;
+        // Honesty: never label credentials_required / unhealthy as CONNECTED
+        let dataClass:
+          | 'TEST_FIXTURE'
+          | 'CONNECTED'
+          | 'CREDENTIALS_REQUIRED'
+          | 'UNHEALTHY'
+          | 'REGISTERED';
+        if (isFixture) {
+          dataClass = 'TEST_FIXTURE';
+        } else if (status === 'connected') {
+          dataClass = 'CONNECTED';
+        } else if (status.includes('credential') || status === 'credentials_required') {
+          dataClass = 'CREDENTIALS_REQUIRED';
+        } else if (status === 'unhealthy' || status === 'error') {
+          dataClass = 'UNHEALTHY';
+        } else {
+          dataClass = 'REGISTERED';
+        }
+        return {
+          providerKey: c.providerKey,
+          status: c.status,
+          dataClass,
+          label: isFixture
+            ? 'TEST FIXTURE — NOT LIVE DATA'
+            : dataClass === 'CONNECTED'
+              ? `Live connector ${c.providerKey}: connected (env credentials present — not a success claim)`
+              : `Connector ${c.providerKey}: ${c.status}`,
+        };
+      }),
       honesty: {
-        note: 'Readiness is capability-based. Fixture connectors never count as live marketplace data.',
+        note: 'Readiness is capability-based. Fixture connectors never count as live marketplace data. CONNECTED means install status only — not a successful vendor sync.',
       },
     };
   }
@@ -1116,6 +1202,28 @@ export class AiOperatorService implements OnModuleInit {
                 })),
               };
             },
+            trainRagIndex: async ({ organizationId }: { organizationId: string }) =>
+              this.rag.train(organizationId, input.userId),
+            queryRagKnowledge: async ({
+              organizationId,
+              query,
+              topK,
+              excludeFixtures,
+              generate,
+            }: {
+              organizationId: string;
+              query: string;
+              topK?: number;
+              excludeFixtures?: boolean;
+              generate?: boolean;
+            }) =>
+              this.rag.query(organizationId, {
+                query,
+                topK,
+                excludeFixtures,
+                generate,
+                autoTrainIfMissing: true,
+              }),
             draftListing: async ({
               organizationId,
               productId,

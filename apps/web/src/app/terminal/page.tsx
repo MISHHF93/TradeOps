@@ -6,11 +6,20 @@ import {
 import { ScannerTable } from '../../components/scanner-table';
 import { TerminalToolbar } from '../../components/terminal-actions';
 import { PROCESS_LABELS } from '../../lib/process-ux';
-import { terminalGet, type ScannerRow } from '../../lib/terminal-api';
+import {
+  normalizeScannerPayload,
+  terminalGet,
+  type ScannerResponse,
+  type ScannerRow,
+} from '../../lib/terminal-api';
 
 export default async function ScannerPage() {
-  const result = await terminalGet<ScannerRow[]>('/api/v1/terminal/scanner');
-  const rows = result.ok ? result.data : [];
+  const result = await terminalGet<ScannerRow[] | ScannerResponse>(
+    '/api/v1/terminal/scanner',
+  );
+  const { rows, isolation } = result.ok
+    ? normalizeScannerPayload(result.data)
+    : { rows: [], isolation: null };
 
   return (
     <section>
@@ -28,6 +37,13 @@ export default async function ScannerPage() {
       />
 
       <ProcessRelatedLinks primary="discover" />
+
+      {isolation?.strict ? (
+        <p className="meta" style={{ marginBottom: 12 }}>
+          Production isolation on — excluded {isolation.excludedFixtures} fixture row
+          {isolation.excludedFixtures === 1 ? '' : 's'}.
+        </p>
+      ) : null}
 
       {!result.ok ? (
         <p className="form-error">
@@ -50,7 +66,7 @@ export default async function ScannerPage() {
 
       <ScannerTable rows={rows} />
       <p className="meta">
-        * Expected profit = unit contribution times 14d demand forecast (baseline-ma-v1). Not
+        * Expected profit = unit contribution times 14d demand forecast (baseline-ma-v2). Not
         realized P&amp;L. STALE = data older than 24h.
       </p>
     </section>

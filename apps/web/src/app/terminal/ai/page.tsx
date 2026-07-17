@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AiOperatorConsole } from '../../../components/ai-operator-console';
+import { RagConsole } from '../../../components/ai/rag-console';
 import {
   ProcessPageHeader,
   ProcessRelatedLinks,
@@ -114,6 +115,8 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
         caseContextHint={caseHint}
         initialObjective={presetObjective}
       />
+
+      <RagConsole />
 
       {tools.ok ? (
         <article className="panel" style={{ marginTop: 16 }}>

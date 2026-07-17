@@ -36,7 +36,17 @@
 | Commerce Process consolidation | Operational foundations | CommerceCase spine, stage transitions, next-action engine, `/terminal/process` board + journey, Listings/Fulfillment stage views, product CaseHandoff, Tasks + blockers + SOPs, AI case context, process-first nav, Terminal process summary, legacy pipeline/control-tower redirects |
 | Workflow templates | Partial | Dry-run / approval skips; metered |
 | Google weekend | Shadow operational | Live post blocked |
-| Shopify/Amazon/eBay live | Credential-blocked | Registry only |
+| Live HTTP adapters (12) | Operational foundations | Shopify, Stripe, FX, Woo, EasyPost, SerpAPI, BigCommerce, eBay, PayPal, ShipStation, Keepa, Square |
+| Shopify/Amazon/eBay live vendor data | Credential-blocked | HTTP ready; needs merchant tokens |
+| Production isolation (scanner/portfolio) | Operational | `TRADEOPS_PRODUCTION_WORKSPACE` filters fixtures |
+| Demand forecast baseline-ma-v2 | Operational | SMA × DOW × half-window trend; neural still STUB |
+| AI tool `forecastDemand` | Operational | Typed tool; empty history → zero units, low confidence |
+| Workflow discovery evidence | Operational foundations | Host Opportunity rows ranked; no invented scores |
+| Inventory protection shadow | Operational foundations | Draft pause/reduce; no external reconcile without approval |
+| Live-example connector honesty | Operational | CONNECTED only when install status is connected |
+| Fixture-skew intelligence | Operational | Majority fixtures in mixed catalog surface insight |
+| RAG Engine (org knowledge) | Operational foundations | TF-IDF train/query; optional xAI grounded answers; navigator auto-ground |
+| LLM free-form (xAI) | Optional | `XAI_API_KEY` — retrieval works without it |
 | Agency client hierarchy | Operational foundations | Create/list client orgs under parent |
 | Enterprise SSO / legal entities | Planned | Not built |
 | B2B negotiated catalogs | Planned | Not built |

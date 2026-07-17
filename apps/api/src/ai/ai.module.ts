@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { SaasModule } from '../saas/saas.module';
 import { AiController } from './ai.controller';
 import { AiOperatorService } from './ai-operator.service';
+import { RagService } from './rag.service';
 import { EventFabricService } from '../events/event-fabric.service';
 import { HarmonizationService } from '../harmonization/harmonization.service';
 
@@ -18,7 +19,17 @@ import { HarmonizationService } from '../harmonization/harmonization.service';
     forwardRef(() => SaasModule),
   ],
   controllers: [AiController],
-  providers: [AiOperatorService, EventFabricService, HarmonizationService],
-  exports: [AiOperatorService, EventFabricService, HarmonizationService],
+  providers: [
+    AiOperatorService,
+    RagService,
+    EventFabricService,
+    HarmonizationService,
+  ],
+  exports: [
+    AiOperatorService,
+    RagService,
+    EventFabricService,
+    HarmonizationService,
+  ],
 })
 export class AiModule {}

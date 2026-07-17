@@ -44,6 +44,14 @@ export default async function CashFlowPage() {
       fixtureProducts: number;
       liveOrCanonicalProducts: number;
       simulationMode: boolean;
+      productionStrict?: boolean;
+      excludedFixtures?: number;
+    };
+    isolation?: {
+      excludedFixtures: number;
+      simulationMode: boolean;
+      strict: boolean;
+      note: string;
     };
     provenance?: Record<string, Provenance>;
   }>('/api/v1/terminal/portfolio');
@@ -91,7 +99,13 @@ export default async function CashFlowPage() {
       <ProcessRelatedLinks primary="process" />
 
       <SimulationBanner active={p.dataClass?.simulationMode} />
-      {p.dataClass && p.dataClass.fixtureProducts > 0 ? (
+      {p.isolation?.strict ? (
+        <p className="pill" style={{ marginBottom: 12 }}>
+          PRODUCTION ISOLATION — fixture products excluded from book KPIs (
+          {p.isolation.excludedFixtures} excluded)
+        </p>
+      ) : null}
+      {p.dataClass && p.dataClass.fixtureProducts > 0 && !p.isolation?.strict ? (
         <p className="pill" style={{ marginBottom: 12 }}>
           TEST FIXTURE — {p.dataClass.fixtureProducts} fixture product(s) in book
         </p>

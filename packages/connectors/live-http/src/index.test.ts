@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { probeCredentials, liveSyncProvider } from './index';
+import {
+  probeCredentials,
+  liveSyncProvider,
+  LIVE_HTTP_ADAPTER_KEYS,
+} from './index';
 
 describe('live-http adapters', () => {
   it('probeCredentials reports missing env without fabricating ready', () => {
@@ -30,5 +34,34 @@ describe('live-http adapters', () => {
     const r = await liveSyncProvider('not-a-real-provider');
     assert.equal(r.ok, false);
     assert.ok(r.error);
+  });
+
+  it('new catalog adapters fail closed without credentials (never fabricate)', async () => {
+    const providers = [
+      'bigcommerce-rest',
+      'ebay-sell',
+      'paypal-rest',
+      'shipstation-api',
+      'keepa-api',
+      'square-api',
+    ] as const;
+    for (const key of providers) {
+      const r = await liveSyncProvider(key);
+      assert.equal(r.ok, false, key);
+      assert.equal(r.isLive, true, key);
+      assert.equal(r.data, undefined, key);
+      assert.match(String(r.error), /credentials_required|Missing|keepa requires/i, key);
+    }
+  });
+
+  it('LIVE_HTTP_ADAPTER_KEYS covers all dispatch-wired providers', () => {
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('shopify-graphql-admin'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('bigcommerce-rest'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('ebay-sell'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('paypal-rest'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('shipstation-api'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('keepa-api'));
+    assert.ok(LIVE_HTTP_ADAPTER_KEYS.includes('square-api'));
+    assert.equal(LIVE_HTTP_ADAPTER_KEYS.length, 12);
   });
 });

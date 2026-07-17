@@ -87,7 +87,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Live Examples framework | **DONE foundations** | catalog + readiness + `/terminal/live-examples` |
 | Watchlist | **DONE** | saved state on shared products/cases |
 | Unit economics / score / policy / baseline forecast | **DONE** | commerce-engine |
-| Neural forecasting | **STUB** | baseline MA only |
+| Neural forecasting | **STUB** | transparent baseline-ma-v2 (SMA×DOW×trend); not neural |
 | Billing charges | **DOC ONLY** | meters exist |
 
 ---
@@ -100,7 +100,8 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Full workspace `/terminal/ai` | **DONE** | |
 | Side panel on terminal pages | **DONE** | `AiSidePanel` |
 | Persist runs / shadow decisions | **DONE** | |
-| Free-form LLM | **OPTIONAL** | not required |
+| Free-form LLM | **OPTIONAL** | xAI when `XAI_API_KEY` set; not required for operator tools |
+| RAG engine (org train/query) | **DONE foundations** | TF-IDF index + `/ai/rag/*` + terminal panel; not GPU fine-tune |
 | Contextual product assistants | **PARTIAL** | product page + global panel |
 | Stage-aware AI with `commerceCaseId` | **DONE foundations** | preamble + product filter + suggested objectives |
 
@@ -110,7 +111,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| 6 workflow templates | **DONE** | metered runs |
+| 6 workflow templates | **DONE foundations** | Discovery ranks DB opportunities; inventory shadow drafts; metered |
 | Weekend Google shadow | **DONE** | live post blocked |
 | Visual builder / durable DAG | **DOC ONLY / PARTIAL** | |
 
@@ -121,7 +122,8 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Claim | Status |
 |-------|--------|
 | Fixture connectors | **DONE** |
-| Live Shopify/Amazon/eBay/Google | **BLOCKED** credentials |
+| Live HTTP adapters (12) | **DONE foundations** | Shopify, Stripe, FX, Woo, EasyPost, SerpAPI, BigCommerce, eBay, PayPal, ShipStation, Keepa, Square — credential-gated |
+| Live Shopify/Amazon/eBay/Google | **BLOCKED** credentials | Amazon/Google post still blocked; eBay HTTP ready when token set |
 | Harmonization + event fabric | **DONE foundations** |
 | Docker / compose / release readiness page | **DONE** |
 | Local full deploy (`pnpm start` + PGlite) | **DONE** | Windows path-quoted spawn fixed in `start.mjs` |

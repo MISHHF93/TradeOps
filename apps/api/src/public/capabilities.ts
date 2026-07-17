@@ -253,8 +253,18 @@ export function listCapabilities(input?: {
       path: '/terminal/ai',
       status: 'operational',
       description:
-        'Org-specific TF-IDF train/query over products, cases, runs, connectors. Optional xAI grounded answers with XAI_API_KEY. Not GPU fine-tuning.',
+        'Org-specific hybrid train/query over products, artifacts, cases, runs. xAI Grok answers when configured.',
       evidence: 'POST /api/v1/ai/rag/train · POST /api/v1/ai/rag/query · docs/TRADEOPS_RAG_ENGINE.md',
+    },
+    {
+      id: 'app.ai.xai',
+      surface: 'app',
+      name: 'xAI Grok free-form intelligence',
+      path: '/terminal/ai',
+      status: 'operational',
+      description:
+        'Primary LLM provider (SpaceXAI). Modes auto/tools_only/xai_rag/xai_rag_tools. RAG-grounded; probe via POST /ai/xai/probe.',
+      evidence: 'GET /api/v1/ai/status · packages/config/src/xai-config.ts · docs/TRADEOPS_XAI_CONFIGURATION.md',
     },
     {
       id: 'app.approvals',

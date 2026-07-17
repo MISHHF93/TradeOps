@@ -10,6 +10,7 @@ import {
   resolveLoopMode,
   runOperatorCycle,
   summarizeExecutionPackage,
+  synthesizeWithXai,
   type KnowledgeBaseEntry,
   type LiveExampleDefinition,
   type NavigatorPlatformSnapshot,
@@ -17,6 +18,7 @@ import {
   type OperationLoopMode,
   type OperatorProduct,
 } from '@tradeops/ai-runtime';
+import { resolveAiMode, shouldUseXai, xaiPublicStatus } from '@tradeops/config';
 import { LIVE_HTTP_IMPLEMENTED, listLiveFeeds } from '@tradeops/connector-core';
 import { BillingService } from '../billing/billing.service';
 import { CommercePaymentService } from '../billing/commerce-payment.service';
@@ -79,7 +81,8 @@ export class AiOperatorService implements OnModuleInit {
         authMode: f.authMode,
         capabilities: f.capabilities,
       })),
-      note: 'Tools are typed and permissioned. Consequential actions require approval. Fixture data is never labeled live. AI is an Objective Resolution Engine — start with objectives, not chat.',
+      note: 'Tools are typed and permissioned. Free-form intelligence is xAI Grok when configured, always RAG-grounded. Consequential actions require approval.',
+      xai: xaiPublicStatus(),
       navigator: {
         packageVersion: '1.0',
         sections: [
@@ -99,9 +102,29 @@ export class AiOperatorService implements OnModuleInit {
         train: 'POST /api/v1/ai/rag/train',
         query: 'POST /api/v1/ai/rag/query',
         status: 'GET /api/v1/ai/rag/status',
-        embeddingModel: 'rag-tfidf-v1',
-        optionalLlm: 'XAI_API_KEY → SpaceXAI/xAI grok grounded answers',
-        note: 'RAG train indexes org knowledge. This is continuous retrieval training — not GPU weight fine-tuning.',
+        platformStatus: 'GET /api/v1/ai/status',
+        embeddingModel: 'rag-tfidf-v1+dense',
+        llm: 'xAI Grok (XAI_API_KEY) — primary free-form provider',
+        note: 'RAG train indexes org knowledge. xAI synthesizes answers over retrieval — not GPU fine-tuning.',
+      },
+    };
+  }
+
+  async platformAiStatus(organizationId: string) {
+    const rag = this.rag.status(organizationId);
+    const xai = xaiPublicStatus();
+    return {
+      ...xai,
+      aiMode: resolveAiMode(),
+      usesXai: shouldUseXai(),
+      rag: {
+        trained: rag.trained,
+        embeddingMode: rag.embeddingMode,
+        embeddingModel: rag.embeddingModel,
+        stats: rag.stats,
+      },
+      honesty: {
+        note: 'Primary LLM is xAI. Without XAI_API_KEY the platform runs tools + local RAG only.',
       },
     };
   }
@@ -230,6 +253,13 @@ export class AiOperatorService implements OnModuleInit {
         isFixture: boolean;
       }>;
       groundedContextPreview: string;
+    } | null;
+    xaiSynthesis?: {
+      ok: boolean;
+      text?: string;
+      model?: string;
+      error?: string;
+      latencyMs?: number;
     } | null;
   }> {
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
@@ -395,6 +425,74 @@ export class AiOperatorService implements OnModuleInit {
       },
     });
 
+    // xAI synthesis over RAG + package (never bypasses approvals)
+    let xaiSynthesis: {
+      ok: boolean;
+      text?: string;
+      model?: string;
+      error?: string;
+      latencyMs?: number;
+    } | null = null;
+
+    if (shouldUseXai() && ragGround) {
+      const mode = resolveAiMode();
+      const shouldSynth =
+        mode === 'xai_rag' ||
+        mode === 'xai_rag_tools' ||
+        (mode as string) === 'xai_rag';
+      if (shouldSynth) {
+        try {
+          const recJson = JSON.stringify(
+            (executionPackage.recommendations ?? []).slice(0, 8),
+          );
+          const synth = await synthesizeWithXai({
+            objective: input.objective,
+            groundedContext: ragGround.groundedContext,
+            packageSummary: summarizeExecutionPackage(executionPackage),
+            recommendationsJson: recJson,
+          });
+          xaiSynthesis = {
+            ok: synth.ok,
+            text: synth.text,
+            model: synth.model,
+            error: synth.error,
+            latencyMs: synth.latencyMs,
+          };
+          if (runId && synth.ok && synth.text) {
+            const existing = await this.prisma.client.operatorRun.findFirst({
+              where: { id: runId, organizationId: input.organizationId },
+            });
+            if (existing) {
+              const prev = (existing.planJson ?? {}) as Record<string, unknown>;
+              await this.prisma.client.operatorRun.update({
+                where: { id: runId },
+                data: {
+                  planJson: asJson({
+                    ...prev,
+                    xaiSynthesis,
+                  }),
+                  decisionNote: [
+                    existing.decisionNote ?? '',
+                    '',
+                    '--- xAI synthesis ---',
+                    synth.text.slice(0, 2000),
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                    .slice(0, 4000),
+                },
+              });
+            }
+          }
+        } catch (e) {
+          xaiSynthesis = {
+            ok: false,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+      }
+    }
+
     return {
       runId,
       executionPackage,
@@ -413,6 +511,7 @@ export class AiOperatorService implements OnModuleInit {
             groundedContextPreview: ragGround.groundedContext.slice(0, 1200),
           }
         : null,
+      xaiSynthesis,
     };
   }
 

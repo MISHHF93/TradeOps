@@ -45,7 +45,7 @@ export function RagConsole() {
   const [query, setQuery] = useState(
     'Which products have the best margin and what should I evaluate next?',
   );
-  const [generate, setGenerate] = useState(false);
+  const [generate, setGenerate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -263,7 +263,7 @@ export function RagConsole() {
           checked={generate}
           onChange={(e) => setGenerate(e.target.checked)}
         />
-        Ground free-form answer with xAI (requires XAI_API_KEY)
+        Ground free-form answer with xAI Grok (on by default when XAI_API_KEY + mode allow)
       </label>
 
       <button

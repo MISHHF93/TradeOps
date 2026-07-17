@@ -7,7 +7,7 @@ import {
   tokenize,
   type RagDocument,
 } from './rag-engine';
-import { isLlmConfigured, resolveXaiApiKey } from './llm-client';
+import { isLlmConfigured, resolveXaiApiKeyFromEnv } from './llm-client';
 
 describe('rag engine', () => {
   const docs: RagDocument[] = [
@@ -107,10 +107,15 @@ describe('rag engine', () => {
 
   it('LLM key helpers fail closed without env', () => {
     const prev = process.env.XAI_API_KEY;
+    const prevMode = process.env.TRADEOPS_AI_MODE;
     delete process.env.XAI_API_KEY;
     delete process.env.GROK_API_KEY;
-    assert.equal(resolveXaiApiKey({}), undefined);
+    process.env.TRADEOPS_AI_MODE = 'auto';
+    assert.equal(resolveXaiApiKeyFromEnv({}), undefined);
     assert.equal(isLlmConfigured({}), false);
     if (prev) process.env.XAI_API_KEY = prev;
+    else delete process.env.XAI_API_KEY;
+    if (prevMode) process.env.TRADEOPS_AI_MODE = prevMode;
+    else delete process.env.TRADEOPS_AI_MODE;
   });
 });

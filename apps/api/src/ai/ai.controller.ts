@@ -23,6 +23,22 @@ export class AiController {
     return this.operator.getToolCatalog();
   }
 
+  /** Platform AI status — xAI config (no secrets) + RAG train state */
+  @Get('status')
+  @RequirePermissions('ai:read')
+  async aiStatus(@CurrentAuth() auth: AuthContext) {
+    return this.operator.platformAiStatus(auth.activeOrganizationId!);
+  }
+
+  @Post('xai/probe')
+  @RequirePermissions('ai:read')
+  async xaiProbe() {
+    const { probeXai } = await import('@tradeops/ai-runtime');
+    const probe = await probeXai();
+    const { xaiPublicStatus } = await import('@tradeops/config');
+    return { ...xaiPublicStatus(), probe };
+  }
+
   @Public()
   @Get('loop-modes')
   loopModes() {
@@ -274,7 +290,8 @@ export class AiController {
       topK: body.topK,
       excludeFixtures: body.excludeFixtures,
       sourceTypes: body.sourceTypes,
-      generate: body.generate === true,
+      // undefined → server defaultGenerate when xAI mode active
+      generate: body.generate,
       autoTrainIfMissing: body.autoTrainIfMissing !== false,
     });
   }

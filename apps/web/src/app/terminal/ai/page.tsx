@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { AiOperatorConsole } from '../../../components/ai-operator-console';
 import { PredictionConsole } from '../../../components/ai/prediction-console';
 import { RagConsole } from '../../../components/ai/rag-console';
+import { XaiStatusBar } from '../../../components/ai/xai-status-bar';
 import {
   ProcessPageHeader,
   ProcessRelatedLinks,
@@ -91,6 +92,8 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
       />
 
       <ProcessRelatedLinks primary="process" />
+
+      <XaiStatusBar />
 
       {caseId && caseHint ? (
         <article className="panel" style={{ marginBottom: 12 }}>

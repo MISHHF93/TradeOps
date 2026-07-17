@@ -100,8 +100,9 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Full workspace `/terminal/ai` | **DONE** | |
 | Side panel on terminal pages | **DONE** | `AiSidePanel` |
 | Persist runs / shadow decisions | **DONE** | |
-| Free-form LLM | **OPTIONAL** | xAI when `XAI_API_KEY` set; not required for operator tools |
-| RAG engine (org train/query) | **DONE** | Artifacts + hybrid dense + CSV export + `/ai/rag/*` + rebuild |
+| Free-form LLM (xAI Grok) | **DONE foundations** | Primary provider when key set; modes in `xai-config.ts` |
+| xAI platform status / probe | **DONE** | `GET /ai/status`, `POST /ai/xai/probe`, UI strip |
+| RAG engine (org train/query) | **DONE** | Artifacts + hybrid dense + CSV + xAI-grounded default generate |
 | Artifact corpus CSV | **DONE** | `artifacts-corpus.csv` at repo root; sample committed |
 | Prediction engine | **DONE foundations** | train/run/evaluate/export; DemandForecast rows; not neural |
 | Contextual product assistants | **PARTIAL** | product page + global panel |

@@ -10,7 +10,7 @@
 | **RAG train** | Re-index products, **artifacts**, cases, AI runs, connectors, SOPs | **Shipped** |
 | **Artifact CSV** | Export to repo-root `artifacts-corpus.csv` | **Shipped** |
 | **Hybrid dense** | Local hashing dense + TF-IDF; optional xAI embeddings when key set | **Shipped** |
-| **Grounded LLM** | Free-form answer via SpaceXAI/xAI using retrieved context | **Optional** (`XAI_API_KEY`) |
+| **Grounded LLM** | Free-form answer via **xAI Grok** over retrieved context | **Primary when key set** (`auto` → `xai_rag`) |
 | **GPU fine-tuning** | Update foundation model weights | **Out of scope** |
 
 ## Corpus sources

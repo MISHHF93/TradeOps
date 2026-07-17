@@ -18,6 +18,11 @@ import {
   type RagQueryResult,
   type RagSourceType,
 } from '@tradeops/ai-runtime';
+import {
+  shouldDefaultGenerate,
+  shouldUseXai,
+  xaiPublicStatus,
+} from '@tradeops/config';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,8 +30,8 @@ import { EventFabricService } from '../events/event-fabric.service';
 
 /**
  * Org-scoped RAG train / query service.
- * Train = reindex products, cases, runs, connectors into sparse TF-IDF index.
- * Optional xAI completion when XAI_API_KEY is set.
+ * xAI-first free-form answers when TRADEOPS_AI_MODE + XAI_API_KEY allow it.
+ * Local TF-IDF + dense always work offline.
  */
 @Injectable()
 export class RagService {
@@ -73,15 +78,18 @@ export class RagService {
 
   status(organizationId: string) {
     const index = this.getIndex(organizationId);
+    const xai = xaiPublicStatus();
     return {
       trained: Boolean(index),
       stats: index?.stats ?? null,
       llmConfigured: isLlmConfigured(),
       embeddingModel: index?.stats.modelVersion ?? 'rag-tfidf-v1',
       embeddingMode: index?.stats.embeddingMode ?? 'tfidf',
-      generationProvider: isLlmConfigured() ? 'xai' : null,
+      generationProvider: shouldUseXai() ? 'xai' : null,
+      defaultGenerate: shouldDefaultGenerate(),
+      xai,
       honesty: {
-        note: 'Train rebuilds an org-specific retrieval index (products, artifacts, cases, runs, connectors, SOPs). Not GPU fine-tuning. Optional free-form answers and dense API embeddings require XAI_API_KEY; local dense hybrid always available.',
+        note: 'RAG indexes org knowledge locally. When xAI is configured (mode xai_rag / auto+key), queries default to Grok-grounded answers over retrieved chunks. Not GPU fine-tuning.',
       },
     };
   }
@@ -424,7 +432,7 @@ export class RagService {
 
     // Optional xAI dense embeddings on first N docs (fail → local dense in buildRagIndex)
     let embeddingNote = 'local dense hybrid (hashing projection) + TF-IDF';
-    if (options?.tryXaiEmbeddings !== false && isLlmConfigured()) {
+    if (options?.tryXaiEmbeddings !== false && shouldUseXai()) {
       const batch = documents.slice(0, 40);
       const texts = batch.map((d) => `${d.title}\n${d.body}`.slice(0, 1500));
       const emb = await embedWithXai(texts);
@@ -489,14 +497,25 @@ export class RagService {
       topK?: number;
       excludeFixtures?: boolean;
       sourceTypes?: RagSourceType[];
-      /** When true and XAI_API_KEY set, generate grounded answer */
+      /**
+       * When undefined: use TRADEOPS_AI_DEFAULT_GENERATE + xAI mode.
+       * When true: require xAI for free-form answer.
+       * When false: retrieval only.
+       */
       generate?: boolean;
       autoTrainIfMissing?: boolean;
     },
   ): Promise<
     RagQueryResult & {
       answer?: string | null;
-      llm?: { ok: boolean; model?: string; error?: string; latencyMs?: number };
+      llm?: {
+        ok: boolean;
+        model?: string;
+        error?: string;
+        latencyMs?: number;
+        provider?: string;
+      };
+      xai?: ReturnType<typeof xaiPublicStatus>;
     }
   > {
     let index = this.getIndex(organizationId);
@@ -524,20 +543,57 @@ export class RagService {
       };
     }
 
-    const wantGenerate = Boolean(input.generate) && isLlmConfigured();
+    // xAI-first: default generate when mode allows and client did not pass generate:false
+    const wantGenerate =
+      input.generate === true
+        ? shouldUseXai()
+        : input.generate === false
+          ? false
+          : shouldDefaultGenerate();
+
     const result = queryRagIndex(index, input.query, {
       topK: input.topK,
       excludeFixtures: input.excludeFixtures,
       sourceTypes: input.sourceTypes,
       generationMode: wantGenerate
         ? 'llm_grounded'
-        : isLlmConfigured()
+        : shouldUseXai()
           ? 'retrieval_only'
           : 'unavailable',
     });
 
+    const xai = xaiPublicStatus();
+
     if (!wantGenerate) {
-      return { ...result, answer: null };
+      return {
+        ...result,
+        answer: null,
+        xai,
+        honesty: {
+          ...result.honesty,
+          note: shouldUseXai()
+            ? `${result.honesty.note} Generation off for this request (pass generate:true or enable TRADEOPS_AI_DEFAULT_GENERATE).`
+            : result.honesty.note,
+        },
+      };
+    }
+
+    if (result.hits.length === 0) {
+      return {
+        ...result,
+        answer: null,
+        xai,
+        llm: {
+          ok: false,
+          error: 'No retrieval hits — refusing free-form answer to avoid hallucination',
+          provider: 'xai',
+        },
+        honesty: {
+          ...result.honesty,
+          generationMode: 'retrieval_only',
+          note: 'No RAG hits for this query. Train the index or rephrase; Grok was not asked to invent knowledge.',
+        },
+      };
     }
 
     const llm = await completeWithXai({
@@ -556,18 +612,20 @@ export class RagService {
     return {
       ...result,
       answer: llm.ok ? llm.text ?? null : null,
+      xai,
       llm: {
         ok: llm.ok,
         model: llm.model,
         error: llm.error,
         latencyMs: llm.latencyMs,
+        provider: 'xai',
       },
       honesty: {
         ...result.honesty,
         generationMode: llm.ok ? 'llm_grounded' : 'retrieval_only',
         note: llm.ok
-          ? result.honesty.note
-          : `${result.honesty.note} LLM generation failed or skipped: ${llm.error ?? 'n/a'}`,
+          ? 'Answer grounded on retrieved org chunks via xAI Grok. Not live marketplace truth unless chunks are live-sourced.'
+          : `${result.honesty.note} xAI generation failed: ${llm.error ?? 'n/a'}`,
       },
     };
   }

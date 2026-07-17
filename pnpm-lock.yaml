@@ -167,6 +167,9 @@ importers:
       '@tradeops/commerce-engine':
         specifier: workspace:*
         version: link:../commerce-engine
+      '@tradeops/config':
+        specifier: workspace:*
+        version: link:../config
       '@tradeops/connector-core':
         specifier: workspace:*
         version: link:../connector-core

@@ -24,6 +24,20 @@ export {
   type TradeOpsAccessMode,
 } from './access-mode';
 
+export {
+  getXaiConfig,
+  isXaiConfigured,
+  parseAiMode,
+  resolveAiMode,
+  resolveXaiApiKey,
+  shouldDefaultGenerate,
+  shouldUseXai,
+  xaiPublicStatus,
+  type ResolvedAiMode,
+  type TradeOpsAiMode,
+  type XaiConfig,
+} from './xai-config';
+
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.

@@ -6,7 +6,12 @@ export type ConnectorFamily =
   | 'shipping'
   | 'advertising'
   | 'trend'
-  | 'review';
+  | 'review'
+  | 'accounting'
+  | 'observability'
+  | 'ai'
+  | 'tax'
+  | 'search';
 
 export type ConnectorCapability =
   | 'searchProducts'

@@ -552,25 +552,115 @@ export class CommerceService {
       }
     }
 
+    const fixtureCount = products.filter((p) =>
+      p.sourcePlatform.startsWith('fixture'),
+    ).length;
+    const liveProductCount = products.length - fixtureCount;
+
+    // Channel concentration from actual listing/channel data — never hardcode fixture
+    const channelKeys = activeListings.flatMap((p) =>
+      p.listings
+        .filter((l) => l.status === 'active')
+        .map((l) => p.sourcePlatform),
+    );
+    const marketplaceConcentration = this.concentration(
+      channelKeys.length ? channelKeys : [],
+    );
+
+    // Pending payouts: only when CommercePayout rows exist — never invent % of revenue
+    let pendingPayouts: number | null = null;
+    let payoutProvenanceOrigin: 'canonical_store' | 'unavailable' = 'unavailable';
+    try {
+      const payouts = await this.prisma.client.commercePayout.findMany({
+        where: {
+          organizationId,
+          status: { in: ['pending', 'in_transit'] },
+        },
+        take: 200,
+      });
+      if (payouts.length > 0) {
+        pendingPayouts = payouts.reduce((s, p) => s + p.netAmountMinor, 0);
+        payoutProvenanceOrigin = 'canonical_store';
+      }
+    } catch {
+      pendingPayouts = null;
+    }
+
+    const now = new Date().toISOString();
     return {
       activeProducts: activeListings.length,
       totalProducts: products.length,
       capitalCommittedMinor: capitalCommitted,
       outstandingSupplierPaymentsMinor: capitalCommitted,
-      pendingMarketplacePayoutsMinor: Math.round(revenue * 0.85),
+      /** null when no payout connector data — UI must show empty state, not fabricate */
+      pendingMarketplacePayoutsMinor: pendingPayouts,
       revenueMinor: revenue,
       grossProfitEstimateMinor: contribution,
       netProfitEstimateMinor: contribution,
       advertisingSpendMinor: products.reduce((s, p) => s + p.adAllocationMinor, 0),
       refundExposureMinor: products.reduce((s, p) => s + p.returnReserveMinor, 0),
       supplierConcentration: this.concentration(
-        products.map((p) => p.sourcePlatform + p.externalId.slice(0, 8)),
+        products.map((p) => p.sourcePlatform),
       ),
-      marketplaceConcentration: activeListings.length
-        ? { 'fixture-marketplace': activeListings.length }
-        : {},
+      marketplaceConcentration,
       categoryConcentration: this.concentration(products.map((p) => p.category)),
       currency: products[0]?.currency ?? 'USD',
+      dataClass: {
+        fixtureProducts: fixtureCount,
+        liveOrCanonicalProducts: liveProductCount,
+        simulationMode: process.env.TRADEOPS_SIMULATION_MODE === '1',
+      },
+      provenance: {
+        revenue: {
+          origin: 'canonical_store',
+          sourceLabel: 'CustomerOrder.totalMinor sum',
+          canonicalModel: 'CustomerOrder',
+          observedAt: now,
+          syncStatus: orders.length ? 'fresh' : 'never',
+          confidence: 1,
+          lineage: 'sum(customer_orders.total_minor) for organization',
+          isLiveOperational: true,
+          simulationLabel: null,
+        },
+        expectedContribution: {
+          origin: 'derived_model',
+          sourceLabel: 'Opportunity.expectedProfitMinor',
+          canonicalModel: 'Opportunity',
+          observedAt: now,
+          syncStatus: 'fresh',
+          confidence: 0.6,
+          lineage: 'sum of opportunity model estimates — not realized P&L',
+          isLiveOperational: true,
+          simulationLabel: fixtureCount > 0 ? 'Includes TEST FIXTURE products' : null,
+        },
+        pendingPayouts: {
+          origin: payoutProvenanceOrigin,
+          sourceLabel:
+            payoutProvenanceOrigin === 'canonical_store'
+              ? 'CommercePayout pending sum'
+              : 'No payout rows — connect payment connector',
+          sourceConnector: 'stripe-api / marketplace payouts',
+          canonicalModel: 'CommercePayout',
+          observedAt: now,
+          syncStatus: payoutProvenanceOrigin === 'canonical_store' ? 'fresh' : 'not_connected',
+          confidence: payoutProvenanceOrigin === 'canonical_store' ? 0.9 : 0,
+          lineage: 'Never derived as percentage of revenue',
+          isLiveOperational: payoutProvenanceOrigin === 'canonical_store',
+          simulationLabel: null,
+          refreshHint: 'Sync payouts from payment connector or leave unavailable',
+        },
+        advertisingAllocation: {
+          origin: 'canonical_store',
+          sourceLabel: 'Product.adAllocationMinor planning reserve',
+          canonicalModel: 'Product',
+          observedAt: now,
+          syncStatus: 'fresh',
+          confidence: 0.5,
+          lineage: 'Planning allocation on product — not live Google/Meta spend',
+          isLiveOperational: false,
+          simulationLabel: 'PLANNING — not live ad platform spend',
+        },
+      },
     };
   }
 

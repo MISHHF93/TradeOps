@@ -1,5 +1,6 @@
 /**
  * Client types for Workspace Resolver (persona-driven Commerce OS).
+ * Principle: One User · One Workspace · One Objective · One AI
  */
 
 export type OperatingPersona =
@@ -44,6 +45,54 @@ export type WorkspaceProcedure = {
   activeStepId: string | null;
 };
 
+export type WorkspaceSurface = {
+  principles: string[];
+  todaysPriorities: Array<{
+    id: string;
+    label: string;
+    href: string;
+    urgency: string;
+    reason: string;
+  }>;
+  aiBriefing: string;
+  activeObjectives: Array<{
+    id: string;
+    title: string;
+    href: string;
+    status: string;
+    kind: string;
+  }>;
+  recommendedActions: Array<{ label: string; href: string; reason: string }>;
+  keyKpis: Array<{
+    id: string;
+    label: string;
+    value: string | number;
+    href?: string;
+    tone?: string;
+  }>;
+  alerts: Array<{
+    id: string;
+    severity: string;
+    message: string;
+    href?: string;
+  }>;
+  everythingElseHint: string;
+  attentionScore?: number;
+  healthLabel?: string;
+  focusObjective?: string;
+  insights?: Array<{
+    id: string;
+    kind: string;
+    title: string;
+    detail: string;
+    urgencyScore: number;
+    confidence: number;
+    href: string;
+    suggestedObjective: string;
+    suggestedAiQuery?: string;
+  }>;
+};
+
 export type ResolvedWorkspace = {
   persona: OperatingPersona;
   personaLabel: string;
@@ -79,4 +128,14 @@ export type ResolvedWorkspace = {
   }>;
   aiContextPreamble: string;
   allPersonas: Array<{ id: OperatingPersona; label: string; homeHref: string }>;
+  surface?: WorkspaceSurface;
+  operatingPrinciple?: string;
+  intelligence?: {
+    generatedAt: string;
+    attentionScore: number;
+    healthLabel: string;
+    narrative: string;
+    focusObjective: string;
+    honesty?: { note?: string };
+  };
 };

@@ -122,11 +122,14 @@ export function ProcessPageHeader({
 export function ProcessRelatedLinks({
   primary = 'process',
 }: {
-  primary?: 'process' | 'tasks' | 'discover' | 'approvals';
+  primary?: 'process' | 'tasks' | 'discover' | 'approvals' | 'workspace' | 'ai';
 }) {
+  // Lean procedure spine only — not a second feature sidebar
   const links = [
+    { id: 'workspace' as const, href: '/terminal/workspace', label: 'Workspace' },
     { id: 'process' as const, href: '/terminal/process', label: PROCESS_LABELS.openProcess },
     { id: 'tasks' as const, href: '/terminal/tasks', label: PROCESS_LABELS.viewTasks },
+    { id: 'ai' as const, href: '/terminal/ai', label: 'AI' },
     { id: 'discover' as const, href: '/terminal', label: PROCESS_LABELS.discoverTitle },
     {
       id: 'approvals' as const,

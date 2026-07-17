@@ -6,7 +6,8 @@ import type { PrismaClient } from '@prisma/client';
 describe('checkDatabaseHealth', () => {
   it('reports up when the query succeeds', async () => {
     const client = {
-      $queryRaw: mock.fn(async () => [{ '?column?': 1 }]),
+      // Implementation uses $queryRawUnsafe for PGlite/pgbouncer compatibility
+      $queryRawUnsafe: mock.fn(async () => [{ '?column?': 1 }]),
     } as unknown as PrismaClient;
 
     const result = await checkDatabaseHealth(client);
@@ -16,7 +17,7 @@ describe('checkDatabaseHealth', () => {
 
   it('reports down when the query fails', async () => {
     const client = {
-      $queryRaw: mock.fn(async () => {
+      $queryRawUnsafe: mock.fn(async () => {
         throw new Error('connection refused');
       }),
     } as unknown as PrismaClient;

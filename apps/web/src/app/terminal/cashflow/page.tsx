@@ -1,35 +1,69 @@
-import { ChartLegend, Sparkline } from '../../../components/charts';
-import { Money } from '../../../components/commerce/money';
+import Link from 'next/link';
+import {
+  LiveEmptyState,
+  ProvenanceMeta,
+  SimulationBanner,
+} from '../../../components/commerce/provenance-meta';
+import {
+  ProcessPageHeader,
+  ProcessRelatedLinks,
+} from '../../../components/commerce/process-chrome';
 import { formatMoney } from '../../../lib/money';
+import { PROCESS_LABELS } from '../../../lib/process-ux';
 import { terminalGet } from '../../../lib/terminal-api';
 
+type Provenance = {
+  origin?: string;
+  sourceLabel?: string;
+  sourceConnector?: string | null;
+  observedAt?: string;
+  syncStatus?: string;
+  confidence?: number;
+  lineage?: string;
+  isLiveOperational?: boolean;
+  simulationLabel?: string | null;
+  refreshHint?: string | null;
+};
+
 /**
- * Cash view — deliberately separates revenue, contribution, committed cash, and pending payouts.
- * Never labels revenue as profit. Chart series: revenue=accent, profit=green (§11).
+ * Cash view — revenue ≠ profit. No illustrative/fake sparklines.
+ * Pending payouts only when CommercePayout exists.
  */
 export default async function CashFlowPage() {
   const portfolio = await terminalGet<{
     capitalCommittedMinor: number;
     outstandingSupplierPaymentsMinor: number;
-    pendingMarketplacePayoutsMinor: number;
+    pendingMarketplacePayoutsMinor: number | null;
     revenueMinor: number;
     grossProfitEstimateMinor: number;
     netProfitEstimateMinor: number;
     advertisingSpendMinor: number;
     refundExposureMinor: number;
     currency: string;
+    dataClass?: {
+      fixtureProducts: number;
+      liveOrCanonicalProducts: number;
+      simulationMode: boolean;
+    };
+    provenance?: Record<string, Provenance>;
   }>('/api/v1/terminal/portfolio');
 
   const orders = await terminalGet<
-    Array<{ totalMinor: number; status: string; currency: string }>
+    Array<{ totalMinor: number; status: string; currency: string; placedAt?: string }>
   >('/api/v1/orders');
 
   if (!portfolio.ok) {
-    return <p className="form-error">{portfolio.error}</p>;
+    return (
+      <section>
+        <p className="form-error">{portfolio.error}</p>
+        <Link href="/terminal/process">{PROCESS_LABELS.openProcess}</Link>
+      </section>
+    );
   }
 
   const p = portfolio.data;
   const c = p.currency;
+  const prov = p.provenance ?? {};
   const orderRevenue = orders.ok
     ? orders.data.reduce((s, o) => s + o.totalMinor, 0)
     : p.revenueMinor;
@@ -37,88 +71,103 @@ export default async function CashFlowPage() {
   const committed = p.capitalCommittedMinor;
   const pendingPayouts = p.pendingMarketplacePayoutsMinor;
   const atRisk = p.refundExposureMinor;
-  const availableEstimate = Math.max(0, pendingPayouts - committed - atRisk);
-
-  const spark = [
-    Math.max(0, p.revenueMinor * 0.6),
-    Math.max(0, p.revenueMinor * 0.75),
-    Math.max(0, orderRevenue * 0.9),
-    orderRevenue,
-  ];
 
   return (
     <section>
-      <header className="terminal-header">
-        <div>
-          <h1 className="workspace-title-active">Cash flow</h1>
-          <p className="lede">
-            Cash is not profit. Revenue is not profit. Contribution profit is after fees, COGS, shipping,
-            ads allocation, and return reserve — before fixed operating costs.
-          </p>
-        </div>
-      </header>
+      <ProcessPageHeader
+        pill="Canonical cash · not profit"
+        title="Cash flow"
+        lede="Cash is not profit. Revenue is not profit. Contribution estimates are after modeled fees/COGS/shipping/return reserve — before fixed opex. No fabricated charts."
+        breadcrumbs={[
+          { href: '/terminal/process', label: PROCESS_LABELS.boardTitle },
+          { label: 'Cash flow' },
+        ]}
+        toolbar={
+          <Link className="btn primary" href="/terminal/process">
+            {PROCESS_LABELS.openProcess}
+          </Link>
+        }
+      />
+      <ProcessRelatedLinks primary="process" />
 
-      <article className="chart-surface" style={{ marginBottom: 16 }}>
-        <ChartLegend series={['revenue', 'profit', 'loss', 'forecast', 'confidence']} />
-        <Sparkline values={spark} className="chart-sparkline" label="Revenue trend (illustrative)" />
-        <p className="meta" style={{ margin: '8px 0 0' }}>
-          Revenue series uses accent (analytical). Profit/loss use semantic green/red only.
+      <SimulationBanner active={p.dataClass?.simulationMode} />
+      {p.dataClass && p.dataClass.fixtureProducts > 0 ? (
+        <p className="pill" style={{ marginBottom: 12 }}>
+          TEST FIXTURE — {p.dataClass.fixtureProducts} fixture product(s) in book
         </p>
-      </article>
+      ) : null}
 
       <div className="detail-grid">
         <article className="panel">
           <h2>Inflows</h2>
           <ul className="kv">
             <li>
-              <span>Customer order revenue (realized book)</span>
+              <span>Customer order revenue (book)</span>
               <strong>{formatMoney(orderRevenue, c)}</strong>
             </li>
-            <li>
-              <span>Pending marketplace payouts (est.)</span>
-              <strong>{formatMoney(pendingPayouts, c)}</strong>
-            </li>
           </ul>
+          <ProvenanceMeta provenance={prov.revenue} compact />
+          {orders.ok && orders.data.length === 0 ? (
+            <LiveEmptyState
+              title="No orders yet"
+              reason="Revenue is the sum of CustomerOrder.totalMinor. Connect a marketplace and ingest orders, or use labeled fixture order ingest in simulation."
+              actionHref="/terminal/orders"
+              actionLabel="Open orders"
+            />
+          ) : null}
         </article>
 
         <article className="panel">
-          <h2>Outflows / commitments</h2>
+          <h2>Pending marketplace payouts</h2>
+          {pendingPayouts == null ? (
+            <LiveEmptyState
+              title="No payout data"
+              reason="We never invent pending payouts (e.g. % of revenue). Connect a payment connector and sync CommercePayout rows."
+              actionHref="/terminal/connectors"
+              actionLabel="Connector Health Center"
+            />
+          ) : (
+            <>
+              <strong className="text-accent" style={{ fontSize: '1.4rem' }}>
+                {formatMoney(pendingPayouts, c)}
+              </strong>
+              <ProvenanceMeta provenance={prov.pendingPayouts} />
+              {pendingPayouts > 0 ? (
+                <p className="meta">
+                  Estimated free cash after commitments/reserves:{' '}
+                  {formatMoney(
+                    Math.max(0, pendingPayouts - committed - atRisk),
+                    c,
+                  )}{' '}
+                  (derived from payout − PO commitments − refund reserve)
+                </p>
+              ) : null}
+            </>
+          )}
+        </article>
+
+        <article className="panel">
+          <h2>Outflows / reserves</h2>
           <ul className="kv">
             <li>
-              <span>Committed / outstanding supplier payments</span>
+              <span>Supplier PO commitments</span>
               <strong>{formatMoney(committed, c)}</strong>
             </li>
             <li>
-              <span>Advertising allocation (booked)</span>
+              <span>Refund exposure reserve</span>
+              <strong>{formatMoney(atRisk, c)}</strong>
+            </li>
+            <li>
+              <span>Ad allocation (planning)</span>
               <strong>{formatMoney(p.advertisingSpendMinor, c)}</strong>
             </li>
             <li>
-              <span>At-risk cash (return reserve)</span>
-              <strong>{formatMoney(atRisk, c)}</strong>
+              <span>Contribution estimate (model)</span>
+              <strong>{formatMoney(p.grossProfitEstimateMinor, c)}</strong>
             </li>
           </ul>
-        </article>
-
-        <article className="panel">
-          <h2>Profitability (not cash)</h2>
-          <ul className="kv">
-            <li>
-              <span>Contribution / net profit estimate</span>
-              <strong>
-                <Money minor={p.netProfitEstimateMinor} currency={c} signed />
-              </strong>
-            </li>
-            <li>
-              <span>Available cash estimate</span>
-              <strong>
-                <Money minor={availableEstimate} currency={c} signed />
-              </strong>
-            </li>
-          </ul>
-          <p className="meta">
-            Available ≈ pending payouts − committed supplier − return reserve. Improve with live
-            payout and bank connectors later.
-          </p>
+          <ProvenanceMeta provenance={prov.expectedContribution} compact />
+          <ProvenanceMeta provenance={prov.advertisingAllocation} compact />
         </article>
       </div>
     </section>

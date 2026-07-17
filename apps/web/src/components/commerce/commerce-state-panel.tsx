@@ -83,15 +83,16 @@ export function CommerceStatePanel({
     setErr(null);
     setMsg(null);
     try {
-      const res = await fetch(
-        `${getApiBaseUrl()}/api/v1/commerce/cases/${state.caseId}/transform`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ transformation: code }),
-        },
-      );
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/commerce/runtime/execute`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          caseId: state.caseId,
+          transformation: code,
+          source: 'user',
+        }),
+      });
       const body = (await res.json().catch(() => ({}))) as {
         message?: string;
         frictionDelta?: number;

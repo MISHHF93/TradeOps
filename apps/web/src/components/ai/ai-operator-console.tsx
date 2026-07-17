@@ -28,6 +28,90 @@ type Rec = {
   missingData?: string[];
 };
 
+type ExecutionPackage = {
+  packageVersion?: string;
+  objective?: {
+    goal?: string;
+    desiredOutcome?: string;
+    objectiveType?: string;
+    approvalRequired?: boolean;
+  };
+  currentState?: {
+    productCount?: number;
+    liveProductCount?: number;
+    fixtureProductCount?: number;
+    connectorSummary?: {
+      total?: number;
+      connected?: number;
+      credentialsRequired?: number;
+      fixtures?: number;
+    };
+    alreadyImplemented?: string[];
+    gaps?: string[];
+    loopMode?: string;
+  };
+  liveEvidence?: Array<{
+    id: string;
+    claim: string;
+    source: string;
+    sourceType: string;
+    confidence: number;
+    isLiveOperational: boolean;
+    simulationLabel?: string | null;
+  }>;
+  recommendations?: Array<{
+    id: string;
+    title: string;
+    description: string;
+    score: number;
+    impact: number;
+    effort: number;
+    confidence: number;
+    businessValue: number;
+    recommended: boolean;
+    tradeoffs?: string[];
+  }>;
+  executionPlan?: {
+    summary?: string;
+    tasks?: Array<{
+      id: string;
+      title: string;
+      horizon: string;
+      estimatedHours: number;
+      status: string;
+      affectedFiles?: string[];
+      apis?: string[];
+    }>;
+  };
+  timeline?: {
+    summary?: string;
+    immediate?: unknown[];
+    shortTerm?: unknown[];
+    longerTerm?: unknown[];
+  };
+  dependencies?: Array<{
+    id: string;
+    kind: string;
+    label: string;
+    required: boolean;
+    present: boolean;
+  }>;
+  risks?: Array<{
+    id: string;
+    category: string;
+    severity: string;
+    description: string;
+    mitigation: string;
+  }>;
+  executionStatus?: { overall?: string; blockedReason?: string | null };
+  verification?: {
+    overall?: string;
+    notes?: string;
+    criteria?: Array<{ id: string; description: string; status: string; measurable: string }>;
+  };
+  honesty?: { note?: string; liveOperationalEvidenceCount?: number };
+};
+
 type OperatorResponse = {
   runId?: string;
   status?: string;
@@ -50,6 +134,9 @@ type OperatorResponse = {
   honesty?: { note?: string; fixtureProductsPresent?: boolean; shadowByDefault?: boolean };
   message?: string;
   toolTrace?: Array<{ tool?: string; ok?: boolean }>;
+  executionPackage?: ExecutionPackage;
+  navigatorSummary?: string;
+  knowledgeBaseDelta?: unknown[];
 };
 
 type AiUiState =
@@ -87,12 +174,17 @@ const STATUS_LABEL: Record<AiUiState, string> = {
 export function AiOperatorConsole({
   commerceCaseId,
   caseContextHint,
+  initialObjective,
 }: {
   commerceCaseId?: string;
   caseContextHint?: string;
+  /** Pre-fill from intelligence engine / query param */
+  initialObjective?: string;
 } = {}) {
   const router = useRouter();
-  const [objective, setObjective] = useState(DEFAULT_OBJECTIVE);
+  const [objective, setObjective] = useState(
+    initialObjective?.trim() || DEFAULT_OBJECTIVE,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<OperatorResponse | null>(null);
@@ -254,11 +346,11 @@ export function AiOperatorConsole({
       }
     >
       <div className="ai-console-header">
-        <span className={`ai-avatar ${busy ? 'ai-pulse' : ''}`} aria-hidden title="AI Operator" />
+        <span className={`ai-avatar ${busy ? 'ai-pulse' : ''}`} aria-hidden title="AI Execution Navigator" />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <strong>AI Operator</strong>
+          <strong>AI Execution Navigator</strong>
           <p className="meta" style={{ margin: 0 }}>
-            Research is read-only · publish still requires approval
+            Objective → evidence → plan → verification · not a chatbot
           </p>
         </div>
         <span
@@ -307,7 +399,7 @@ export function AiOperatorConsole({
         onSubmit={(e) => void runOperator(e)}
       >
         <label>
-          Objective (natural language)
+          Business objective
           <textarea
             name="objective"
             className="ai-objective-input"
@@ -316,11 +408,16 @@ export function AiOperatorConsole({
             onChange={(e) => setObjective(e.target.value)}
             required
             disabled={busy}
+            placeholder="State the business goal and desired outcome…"
           />
         </label>
         <div className="terminal-toolbar">
           <button className="btn ai" type="submit" disabled={busy || !objective.trim()}>
-            {busy ? progressLabel : aiState === 'failed' ? 'Retry' : 'Run AI operator (shadow)'}
+            {busy
+              ? progressLabel
+              : aiState === 'failed'
+                ? 'Retry'
+                : 'Resolve objective'}
           </button>
           <button
             className="btn secondary"
@@ -332,8 +429,9 @@ export function AiOperatorConsole({
           </button>
         </div>
         <p className="meta">
-          “Find products worth evaluating” is READ_ONLY_ANALYSIS — no approval. Listing draft does
-          not publish. Publish is a separate approved action.
+          Starts an Execution Package: objective, current state, live evidence, ranked options,
+          engineering plan, timeline, dependencies, risks, status, verification. Research is
+          read-only; publish still requires approval.
         </p>
       </form>
 
@@ -342,11 +440,198 @@ export function AiOperatorConsole({
 
       {result ? (
         <div className="detail-grid" style={{ marginTop: 8 }}>
+          {result.executionPackage ? (
+            <article className="panel wide" data-section="execution-package">
+              <h2>Execution Package</h2>
+              <p className="meta">
+                v{result.executionPackage.packageVersion ?? '1.0'} · status{' '}
+                <strong className="text-accent">
+                  {result.executionPackage.executionStatus?.overall ?? result.status}
+                </strong>
+                {result.executionPackage.verification?.overall
+                  ? ` · verify ${result.executionPackage.verification.overall}`
+                  : ''}
+              </p>
+              <div className="detail-grid" style={{ marginTop: 8 }}>
+                <div>
+                  <h3>1. Objective</h3>
+                  <p>
+                    <strong>{result.executionPackage.objective?.goal}</strong>
+                  </p>
+                  <p className="meta">{result.executionPackage.objective?.desiredOutcome}</p>
+                </div>
+                <div>
+                  <h3>2. Current state</h3>
+                  <ul className="kv">
+                    <li>
+                      <span>Products</span>
+                      <strong>
+                        {result.executionPackage.currentState?.productCount ?? 0} (
+                        {result.executionPackage.currentState?.liveProductCount ?? 0} live /{' '}
+                        {result.executionPackage.currentState?.fixtureProductCount ?? 0} fixture)
+                      </strong>
+                    </li>
+                    <li>
+                      <span>Connectors</span>
+                      <strong>
+                        {result.executionPackage.currentState?.connectorSummary?.connected ?? 0} live
+                        ·{' '}
+                        {result.executionPackage.currentState?.connectorSummary
+                          ?.credentialsRequired ?? 0}{' '}
+                        need creds
+                      </strong>
+                    </li>
+                  </ul>
+                  {(result.executionPackage.currentState?.gaps?.length ?? 0) > 0 ? (
+                    <p className="meta">
+                      Gaps: {(result.executionPackage.currentState?.gaps ?? []).slice(0, 3).join(' · ')}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <h3 style={{ marginTop: 12 }}>3. Live evidence</h3>
+              <ul className="kv">
+                {(result.executionPackage.liveEvidence ?? []).slice(0, 6).map((e) => (
+                  <li key={e.id}>
+                    <span>
+                      {e.sourceType}
+                      {e.simulationLabel ? ` · ${e.simulationLabel}` : ''}
+                      {e.isLiveOperational ? ' · LIVE' : ''}
+                    </span>
+                    <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>
+                      {e.claim.slice(0, 160)}
+                      {e.claim.length > 160 ? '…' : ''}
+                      <span className="meta"> · conf {(e.confidence * 100).toFixed(0)}%</span>
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+
+              <h3 style={{ marginTop: 12 }}>4. Ranked options</h3>
+              <div className="table-wrap">
+                <table className="scanner-table" aria-label="Implementation options">
+                  <thead>
+                    <tr>
+                      <th>Option</th>
+                      <th>Score</th>
+                      <th>Impact</th>
+                      <th>Effort</th>
+                      <th>Value</th>
+                      <th>Conf</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(result.executionPackage.recommendations ?? []).map((o) => (
+                      <tr key={o.id} className={o.recommended ? 'row-accent' : undefined}>
+                        <td style={{ whiteSpace: 'normal' }}>
+                          {o.recommended ? <span className="truth-label">TOP</span> : null}{' '}
+                          <strong>{o.title}</strong>
+                          <div className="meta">{o.description.slice(0, 140)}</div>
+                        </td>
+                        <td>{o.score}</td>
+                        <td>{o.impact}</td>
+                        <td>{o.effort}</td>
+                        <td>{o.businessValue}</td>
+                        <td>
+                          <ConfidenceMeter value={o.confidence} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 style={{ marginTop: 12 }}>5–6. Plan & timeline</h3>
+              <p className="meta">{result.executionPackage.executionPlan?.summary}</p>
+              <p className="meta">{result.executionPackage.timeline?.summary}</p>
+              <ul className="kv">
+                {(result.executionPackage.executionPlan?.tasks ?? []).slice(0, 8).map((t) => (
+                  <li key={t.id}>
+                    <span>
+                      {t.horizon} · {t.status} · ~{t.estimatedHours}h
+                    </span>
+                    <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>{t.title}</strong>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="detail-grid" style={{ marginTop: 12 }}>
+                <div>
+                  <h3>7. Dependencies</h3>
+                  <ul className="kv">
+                    {(result.executionPackage.dependencies ?? []).map((d) => (
+                      <li key={d.id}>
+                        <span>
+                          {d.kind}
+                          {d.required ? ' · required' : ''}
+                        </span>
+                        <strong>
+                          {d.label}
+                          {d.present ? ' ✓' : ' ✗'}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>8. Risks</h3>
+                  <ul className="kv">
+                    {(result.executionPackage.risks ?? []).map((r) => (
+                      <li key={r.id}>
+                        <span>
+                          {r.category} · {r.severity}
+                        </span>
+                        <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>
+                          {r.description}
+                          <span className="meta"> — {r.mitigation}</span>
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <h3 style={{ marginTop: 12 }}>9–10. Status & verification</h3>
+              <p>
+                <strong className="text-accent">
+                  {result.executionPackage.executionStatus?.overall}
+                </strong>
+                {' · '}
+                {result.executionPackage.verification?.notes}
+              </p>
+              <ul className="kv">
+                {(result.executionPackage.verification?.criteria ?? []).map((c) => (
+                  <li key={c.id}>
+                    <span>{c.status}</span>
+                    <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>
+                      {c.description}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+              {result.executionPackage.honesty?.note ? (
+                <p className="meta" style={{ marginTop: 8 }}>
+                  {result.executionPackage.honesty.note}
+                </p>
+              ) : null}
+              {result.runId ? (
+                <Link
+                  className="btn secondary"
+                  href={`/terminal/objectives/${result.runId}`}
+                  style={{ marginTop: 12 }}
+                >
+                  Open durable objective record
+                </Link>
+              ) : null}
+            </article>
+          ) : null}
+
           <article className="panel">
             <h2>Response</h2>
             <p>
               <strong className="text-accent">
-                {result.responseSummary ?? result.decisionNote}
+                {result.navigatorSummary ?? result.responseSummary ?? result.decisionNote}
               </strong>
             </p>
             <ul className="kv">

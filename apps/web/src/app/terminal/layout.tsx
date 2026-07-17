@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { LogoutButton } from '../../components/auth-forms';
+import { SimulationBanner } from '../../components/commerce/provenance-meta';
 import { FounderMenu } from '../../components/founder-menu';
 import { TerminalShell } from '../../components/layout/terminal-shell';
 import { getAccessMode, isFounderDirectAccess } from '../../lib/access-mode';
@@ -72,6 +73,16 @@ export default async function TerminalLayout({ children }: { children: ReactNode
     (tenant.ok ? tenant.data.membership?.role : null) ??
     (founder ? 'owner' : '—');
 
+  const simulationMode =
+    process.env.TRADEOPS_SIMULATION_MODE === '1' ||
+    process.env.NEXT_PUBLIC_TRADEOPS_SIMULATION_MODE === '1';
+
+  // Production workspace honesty: any installed fixture connector is labeled
+  const hasFixtureConnectors =
+    connectors.ok &&
+    Array.isArray(connectors.data) &&
+    connectors.data.some((c) => c.isFixture);
+
   return (
     <TerminalShell
       founderDirect={founder}
@@ -88,6 +99,13 @@ export default async function TerminalLayout({ children }: { children: ReactNode
       }
       logoutSlot={!founder ? <LogoutButton /> : undefined}
     >
+      <SimulationBanner active={simulationMode} />
+      {hasFixtureConnectors && !simulationMode ? (
+        <p className="pill" style={{ margin: '0 0 12px' }}>
+          TEST FIXTURE connectors installed — fixture products/orders are labeled and are not live
+          marketplace data. Set TRADEOPS_SIMULATION_MODE=1 to mark the whole workspace as Simulation.
+        </p>
+      ) : null}
       {children}
     </TerminalShell>
   );

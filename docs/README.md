@@ -11,6 +11,9 @@
 | [TRADEOPS_PRODUCT_POSITIONING.md](./TRADEOPS_PRODUCT_POSITIONING.md) | **Canonical product stance** — AI Commerce OS, not investment platform |
 | [TRADEOPS_SIX_PILLARS.md](./TRADEOPS_SIX_PILLARS.md) | **Six pillars** — intelligence, ops, connectors, AI, billing, enterprise |
 | [TRADEOPS_COMMERCE_STATE_ENGINE.md](./TRADEOPS_COMMERCE_STATE_ENGINE.md) | **Commerce State Engine** — friction, matching, transformations |
+| [TRADEOPS_COMMERCE_RUNTIME.md](./TRADEOPS_COMMERCE_RUNTIME.md) | **Commerce Runtime** — single execution engine for all processes |
+| [TRADEOPS_OPS_CENTER.md](./TRADEOPS_OPS_CENTER.md) | **Ops Center** — connector registry, health, event bus |
+| [TRADEOPS_LIVE_DATA_INVENTORY.md](./TRADEOPS_LIVE_DATA_INVENTORY.md) | **Live data** — provenance, no fabricated KPIs |
 | [TRADEOPS_PERSONA_WORKSPACES.md](./TRADEOPS_PERSONA_WORKSPACES.md) | Persona workspaces + dynamic sidebar |
 | [TRADEOPS_ECOSYSTEM_ARCHITECTURE_AUDIT.md](./TRADEOPS_ECOSYSTEM_ARCHITECTURE_AUDIT.md) | Full COS audit + consolidate/keep/defer |
 | [TRADEOPS_ECOSYSTEM_STRATEGY.md](./TRADEOPS_ECOSYSTEM_STRATEGY.md) | Ecosystem flywheel & partner value |

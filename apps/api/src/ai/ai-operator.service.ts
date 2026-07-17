@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
 import {
+  buildExecutionPackage,
   describeLoopModes,
   evaluateExampleReadiness,
   getLiveExample,
@@ -8,15 +9,20 @@ import {
   registerBuiltinTools,
   resolveLoopMode,
   runOperatorCycle,
+  summarizeExecutionPackage,
+  type KnowledgeBaseEntry,
   type LiveExampleDefinition,
+  type NavigatorPlatformSnapshot,
+  type ObjectiveExecutionPackage,
   type OperationLoopMode,
   type OperatorProduct,
 } from '@tradeops/ai-runtime';
-import { listLiveFeeds } from '@tradeops/connector-core';
+import { LIVE_HTTP_IMPLEMENTED, listLiveFeeds } from '@tradeops/connector-core';
 import { BillingService } from '../billing/billing.service';
 import { CommercePaymentService } from '../billing/commerce-payment.service';
 import { CommerceService } from '../commerce/commerce.service';
 import { CommerceCaseService } from '../commerce/commerce-case.service';
+import { CommerceRuntimeService } from '../commerce/commerce-runtime.service';
 import { EcosystemService } from '../commerce/ecosystem.service';
 import { WorkspaceService } from '../commerce/workspace.service';
 import { AuditService } from '../identity/audit.service';
@@ -43,6 +49,7 @@ export class AiOperatorService implements OnModuleInit {
     private readonly commerceCases: CommerceCaseService,
     private readonly ecosystem: EcosystemService,
     private readonly workspace: WorkspaceService,
+    private readonly runtime: CommerceRuntimeService,
     private readonly billing: BillingService,
     private readonly commercePayments: CommercePaymentService,
     @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
@@ -68,7 +75,280 @@ export class AiOperatorService implements OnModuleInit {
         authMode: f.authMode,
         capabilities: f.capabilities,
       })),
-      note: 'Tools are typed and permissioned. Consequential actions require approval. Fixture data is never labeled live.',
+      note: 'Tools are typed and permissioned. Consequential actions require approval. Fixture data is never labeled live. AI is an Objective Resolution Engine — start with objectives, not chat.',
+      navigator: {
+        packageVersion: '1.0',
+        sections: [
+          'objective',
+          'currentState',
+          'liveEvidence',
+          'recommendations',
+          'executionPlan',
+          'timeline',
+          'dependencies',
+          'risks',
+          'executionStatus',
+          'verification',
+        ],
+      },
+    };
+  }
+
+  /**
+   * Platform snapshot for the Execution Navigator (no fabricated live claims).
+   */
+  async buildNavigatorSnapshot(
+    organizationId: string,
+  ): Promise<NavigatorPlatformSnapshot> {
+    const products = await this.prisma.client.product.findMany({
+      where: { organizationId },
+      select: { id: true, sourcePlatform: true },
+      take: 200,
+    });
+    const fixtureProductCount = products.filter((p) =>
+      p.sourcePlatform.startsWith('fixture'),
+    ).length;
+    const connectors = await this.prisma.client.connectorInstallation.findMany({
+      where: { organizationId },
+      take: 80,
+    });
+    const openCases = await this.prisma.client.commerceCase.count({
+      where: {
+        organizationId,
+        stageStatus: { notIn: ['completed', 'failed'] },
+      },
+    });
+    const recentRuns = await this.prisma.client.operatorRun.count({
+      where: { organizationId },
+    });
+
+    const hasLiveHttpReady = [...LIVE_HTTP_IMPLEMENTED].filter((id) => {
+      // Credential presence from env (same rule as live-http package)
+      const envMap: Record<string, string[]> = {
+        'shopify-graphql-admin': ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN'],
+        'stripe-api': ['STRIPE_SECRET_KEY'],
+        'open-exchange-rates': ['OPENEXCHANGERATES_APP_ID'],
+        'woocommerce-rest': [
+          'WOOCOMMERCE_URL',
+          'WOOCOMMERCE_CONSUMER_KEY',
+          'WOOCOMMERCE_CONSUMER_SECRET',
+        ],
+        'easypost-api': ['EASYPOST_API_KEY'],
+        serpapi: ['SERPAPI_API_KEY'],
+      };
+      const keys = envMap[id] ?? [];
+      return keys.length > 0 && keys.every((k) => Boolean(process.env[k]?.trim()));
+    });
+
+    return {
+      productCount: products.length,
+      fixtureProductCount,
+      liveProductCount: products.length - fixtureProductCount,
+      connectors: connectors.map((c) => ({
+        providerKey: c.providerKey,
+        status: String(c.status),
+        isFixture: c.isFixture || c.providerKey.startsWith('fixture'),
+      })),
+      openCommerceCases: openCases,
+      recentOperatorRuns: recentRuns,
+      simulationMode:
+        process.env.TRADEOPS_SIMULATION_MODE === '1' ||
+        process.env.TRADEOPS_SIMULATION_MODE === 'true',
+      hasLiveHttpReady,
+    };
+  }
+
+  /**
+   * Load prior knowledge from recent completed objective packages.
+   */
+  async loadPriorKnowledge(
+    organizationId: string,
+    take = 20,
+  ): Promise<KnowledgeBaseEntry[]> {
+    const runs = await this.prisma.client.operatorRun.findMany({
+      where: {
+        organizationId,
+        status: { in: ['completed', 'awaiting_approval'] },
+      },
+      orderBy: { completedAt: 'desc' },
+      take,
+      select: { id: true, planJson: true },
+    });
+    const entries: KnowledgeBaseEntry[] = [];
+    for (const run of runs) {
+      const plan = (run.planJson ?? {}) as {
+        executionPackage?: { knowledgeBaseDelta?: KnowledgeBaseEntry[] };
+        knowledgeBaseDelta?: KnowledgeBaseEntry[];
+      };
+      const delta =
+        plan.executionPackage?.knowledgeBaseDelta ?? plan.knowledgeBaseDelta ?? [];
+      for (const e of delta) {
+        entries.push({ ...e, runId: e.runId ?? run.id });
+      }
+    }
+    return entries.slice(0, 40);
+  }
+
+  /**
+   * Objective Resolution Engine — produces the full 10-section Execution Package.
+   * Optionally runs the product operator cycle when the objective is commerce evaluation.
+   */
+  async resolveObjective(input: {
+    organizationId: string;
+    userId?: string | null;
+    objective: string;
+    loopMode?: OperationLoopMode;
+    forceShadow?: boolean;
+    permissions?: string[];
+    commerceCaseId?: string;
+    /** When true (default for analysis objectives), also run operator cycle */
+    runCycle?: boolean;
+  }): Promise<{
+    runId: string | null;
+    executionPackage: ObjectiveExecutionPackage;
+    summary: string;
+    cycleResult?: Awaited<ReturnType<AiOperatorService['runObjective']>>;
+  }> {
+    await this.saas.assertAiEvaluationAllowed(input.organizationId);
+
+    const snapshot = await this.buildNavigatorSnapshot(input.organizationId);
+    const priorKnowledge = await this.loadPriorKnowledge(input.organizationId);
+
+    const wantsCycle =
+      input.runCycle !== false &&
+      /\b(find|search|evaluat|recommend|scan|opportunit|product|margin|listing|publish|procure|purchase)\b/i.test(
+        input.objective,
+      );
+
+    let cycleResult:
+      | Awaited<ReturnType<AiOperatorService['runObjective']>>
+      | undefined;
+    let runId: string | null = null;
+
+    if (wantsCycle) {
+      cycleResult = await this.runObjective({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        objective: input.objective,
+        loopMode: input.loopMode,
+        forceShadow: input.forceShadow !== false,
+        permissions: input.permissions,
+        commerceCaseId: input.commerceCaseId,
+      });
+      runId = cycleResult.runId ?? null;
+    }
+
+    // Rebuild package with cycle data + attach to run if present
+    const cycleForPackage = cycleResult
+      ? {
+          plan: cycleResult.plan,
+          toolTrace: cycleResult.toolTrace ?? [],
+          recommendations: cycleResult.recommendations ?? [],
+          critic: cycleResult.critic,
+          auditor: cycleResult.auditor,
+          decision: cycleResult.decision,
+          decisionNote: cycleResult.decisionNote,
+          loopMode: cycleResult.loopMode as OperationLoopMode,
+          objectiveType: cycleResult.objectiveType,
+          riskClass: cycleResult.riskClass,
+          approvalRequired: cycleResult.approvalRequired,
+          timeline: cycleResult.timeline ?? [],
+          sources: cycleResult.sources ?? [],
+          responseSummary: cycleResult.responseSummary ?? '',
+          candidateStats: cycleResult.candidateStats ?? {
+            retrieved: 0,
+            normalized: 0,
+            rejectedMissingCost: 0,
+            passedPolicy: 0,
+            ranked: 0,
+          },
+          filtersApplied: cycleResult.filtersApplied ?? {},
+        }
+      : null;
+
+    const executionPackage = buildExecutionPackage({
+      objective: input.objective,
+      loopMode: (cycleResult?.loopMode as OperationLoopMode) ?? input.loopMode ?? 'shadow',
+      snapshot,
+      cycle: cycleForPackage as import('@tradeops/ai-runtime').OperatorCycleResult | null,
+      priorKnowledge,
+      runId,
+    });
+
+    if (runId) {
+      const existing = await this.prisma.client.operatorRun.findFirst({
+        where: { id: runId, organizationId: input.organizationId },
+      });
+      if (existing) {
+        const prev = (existing.planJson ?? {}) as Record<string, unknown>;
+        await this.prisma.client.operatorRun.update({
+          where: { id: runId },
+          data: {
+            planJson: asJson({
+              ...prev,
+              executionPackage,
+              knowledgeBaseDelta: executionPackage.knowledgeBaseDelta,
+              navigatorSummary: summarizeExecutionPackage(executionPackage),
+            }),
+          },
+        });
+      }
+    } else {
+      // Persist navigation-only run for knowledge continuity
+      const navRun = await this.prisma.client.operatorRun.create({
+        data: {
+          organizationId: input.organizationId,
+          userId: input.userId ?? null,
+          objective: input.objective,
+          loopMode: input.loopMode ?? 'shadow',
+          status:
+            executionPackage.executionStatus.overall === 'completed'
+              ? 'completed'
+              : executionPackage.executionStatus.overall === 'failed'
+                ? 'failed'
+                : executionPackage.executionStatus.overall === 'blocked'
+                  ? 'blocked'
+                  : 'completed',
+          planJson: asJson({
+            executionPackage,
+            knowledgeBaseDelta: executionPackage.knowledgeBaseDelta,
+            navigatorSummary: summarizeExecutionPackage(executionPackage),
+            objectiveType: executionPackage.objective.objectiveType,
+            finalAnswer: summarizeExecutionPackage(executionPackage),
+            responseSummary: summarizeExecutionPackage(executionPackage),
+          }),
+          toolTraceJson: [],
+          decision: 'accept',
+          decisionNote: 'Execution Navigator resolution (no product cycle)',
+          completedAt: new Date(),
+        },
+      });
+      runId = navRun.id;
+      executionPackage.runId = runId;
+    }
+
+    await this.events.ingest({
+      organizationId: input.organizationId,
+      eventType: 'ai.objective.resolved',
+      providerKey: 'tradeops-ai-navigator',
+      externalEventId: `nav-${runId}-${Date.now()}`,
+      loopMode: executionPackage.currentState.loopMode,
+      isFixture: snapshot.fixtureProductCount > 0 && snapshot.liveProductCount === 0,
+      payload: {
+        runId,
+        objectiveType: executionPackage.objective.objectiveType,
+        status: executionPackage.executionStatus.overall,
+        verification: executionPackage.verification.overall,
+        knowledgeEntries: executionPackage.knowledgeBaseDelta.length,
+        topOption: executionPackage.recommendations.find((r) => r.recommended)?.id,
+      },
+    });
+
+    return {
+      runId,
+      executionPackage,
+      summary: summarizeExecutionPackage(executionPackage),
+      cycleResult,
     };
   }
 
@@ -687,9 +967,10 @@ export class AiOperatorService implements OnModuleInit {
     // Server-side entitlement enforcement (never UI-only)
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
 
-    // Persona workspace context — AI inherits who/what/which procedures
+    // Commerce Runtime + persona — AI is Runtime Optimizer, not a chatbot
     let workspacePreamble = '';
     let allowedAiTools: string[] = [];
+    let runtimePreamble = '';
     if (input.userId) {
       try {
         const ws = await this.workspace.resolve({
@@ -701,6 +982,17 @@ export class AiOperatorService implements OnModuleInit {
         allowedAiTools = ws.allowedAiTools;
       } catch {
         // Workspace optional if membership missing
+      }
+      try {
+        const rt = await this.runtime.getAiContext({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          caseId: input.commerceCaseId?.trim() || null,
+          founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+        });
+        runtimePreamble = rt.contextPreamble;
+      } catch {
+        // Runtime optional on cold start
       }
     }
 
@@ -726,7 +1018,9 @@ export class AiOperatorService implements OnModuleInit {
       };
       objective = `${ctx.contextPreamble}\n\nOperator objective:\n${input.objective}`;
     }
-    if (workspacePreamble) {
+    if (runtimePreamble) {
+      objective = `${runtimePreamble}\n\n${objective}`;
+    } else if (workspacePreamble) {
       objective = `${workspacePreamble}\n\n${objective}`;
     }
 
@@ -986,6 +1280,25 @@ export class AiOperatorService implements OnModuleInit {
         }
       }
 
+      // Execution Navigator package (objective → verified outcome)
+      let executionPackage: ObjectiveExecutionPackage | null = null;
+      try {
+        const snapshot = await this.buildNavigatorSnapshot(input.organizationId);
+        const priorKnowledge = await this.loadPriorKnowledge(input.organizationId);
+        executionPackage = buildExecutionPackage({
+          objective: input.objective,
+          loopMode: effectiveMode,
+          snapshot,
+          cycle,
+          priorKnowledge,
+          runId: run.id,
+        });
+      } catch (navErr) {
+        this.logger.warn(
+          `Execution package build failed: ${navErr instanceof Error ? navErr.message : String(navErr)}`,
+        );
+      }
+
       // Persist timeline + response as plan envelope (ObjectiveExecution equivalent)
       const planEnvelope = {
         ...cycle.plan,
@@ -999,6 +1312,11 @@ export class AiOperatorService implements OnModuleInit {
         approvalRequired: cycle.approvalRequired,
         liveExampleId: input.liveExampleId ?? null,
         finalAnswer: cycle.responseSummary,
+        executionPackage: executionPackage ?? undefined,
+        knowledgeBaseDelta: executionPackage?.knowledgeBaseDelta,
+        navigatorSummary: executionPackage
+          ? summarizeExecutionPackage(executionPackage)
+          : undefined,
       };
 
       const runStatus =
@@ -1081,14 +1399,18 @@ export class AiOperatorService implements OnModuleInit {
         recommendations: cycle.recommendations,
         storedRecommendationIds: recRows.map((r) => r.id),
         resultsPath: `/terminal/opportunities?runId=${run.id}`,
+        executionPackage: executionPackage ?? undefined,
+        navigatorSummary: executionPackage
+          ? summarizeExecutionPackage(executionPackage)
+          : undefined,
         honesty: {
           fixtureProductsPresent: products.some((p) => p.sourcePlatform.startsWith('fixture')),
           liveCredentialsPresent: hasLiveGoogle,
           shadowByDefault: effectiveMode === 'shadow',
           note:
             cycle.objectiveType === 'READ_ONLY_ANALYSIS'
-              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval.'
-              : 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval.',
+              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval. Full Execution Package attached for objective navigation.'
+              : 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval. Execution Package tracks plan → verification.',
         },
       };
     } catch (error) {

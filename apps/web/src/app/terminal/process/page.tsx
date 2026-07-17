@@ -5,6 +5,10 @@ import {
   ProcessPageHeader,
   ProcessRelatedLinks,
 } from '../../../components/commerce/process-chrome';
+import {
+  RuntimeBanner,
+  type RuntimeOrgView,
+} from '../../../components/commerce/runtime-banner';
 import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { ProcessSyncButton } from '../../../components/terminal/process-actions';
 import { formatMoney } from '../../../lib/money';
@@ -41,6 +45,7 @@ type ProcessResponse = {
 
 export default async function CommerceProcessPage() {
   const result = await terminalGet<ProcessResponse>('/api/v1/commerce/process');
+  const runtimeRes = await terminalGet<RuntimeOrgView>('/api/v1/commerce/runtime');
   const stateBoard = await terminalGet<{
     summary?: {
       total: number;
@@ -76,13 +81,14 @@ export default async function CommerceProcessPage() {
   const data = result.data;
   const stages = data.stages ?? [];
   const engine = stateBoard.ok ? stateBoard.data : null;
+  const runtime = runtimeRes.ok ? runtimeRes.data : null;
 
   return (
     <section>
       <ProcessPageHeader
-        pill={PROCESS_LABELS.boardPill}
+        pill="Commerce Runtime · process board"
         title={PROCESS_LABELS.boardTitle}
-        lede={PROCESS_LABELS.boardLede}
+        lede="Every case is a process under the Commerce Runtime. Ask: what is executing? What is the next valid transformation?"
         breadcrumbs={[
           { href: '/terminal/workspace', label: 'Workspace' },
           { label: PROCESS_LABELS.boardTitle },
@@ -104,6 +110,8 @@ export default async function CommerceProcessPage() {
       />
 
       <ProcessRelatedLinks primary="process" />
+
+      <RuntimeBanner runtime={runtime} />
 
       <ProcessKpiStrip
         items={[

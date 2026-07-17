@@ -22,6 +22,7 @@
     "@tradeops/connector-fixture-marketplace": "workspace:*",
     "@tradeops/connector-fixture-supplier": "workspace:*",
     "@tradeops/connector-google-merchant": "workspace:*",
+    "@tradeops/connector-live-http": "workspace:*",
     "@tradeops/contracts": "workspace:*",
     "@tradeops/database": "workspace:*",
     "@tradeops/domain": "workspace:*",

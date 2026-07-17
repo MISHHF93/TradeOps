@@ -7,6 +7,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
   StreamableFile,
 } from '@nestjs/common';
@@ -15,9 +16,13 @@ import { CurrentAuth, RequirePermissions } from '../identity/decorators';
 import type { AuthContext } from '../identity/types';
 import { ArtifactService } from './artifact.service';
 import { CommerceCaseService } from './commerce-case.service';
+import { CommerceRuntimeService } from './commerce-runtime.service';
 import { CommerceService } from './commerce.service';
+import { ConnectorOpsService } from './connector-ops.service';
 import { EcosystemService } from './ecosystem.service';
+import { LiveConnectorService } from './live-connector.service';
 import { WorkspaceService } from './workspace.service';
+import { LIVE_DATA_INVENTORY, simulationBanner } from '@tradeops/commerce-engine';
 import type { BusinessCapability } from '@tradeops/connector-core';
 
 @Controller()
@@ -28,7 +33,231 @@ export class CommerceController {
     private readonly cases: CommerceCaseService,
     private readonly ecosystem: EcosystemService,
     private readonly workspace: WorkspaceService,
+    private readonly runtime: CommerceRuntimeService,
+    private readonly ops: ConnectorOpsService,
+    private readonly liveConnectors: LiveConnectorService,
   ) {}
+
+  /** Real-Time Commerce Operations Center — connector health + registry */
+  @Get('ops/connectors/health')
+  @RequirePermissions('connectors:read')
+  opsConnectorHealth(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.ops.healthCenter(auth.activeOrganizationId!);
+  }
+
+  @Get('ops/connectors/registry')
+  @RequirePermissions('connectors:read')
+  opsConnectorRegistry(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.ops.registry(auth.activeOrganizationId!);
+  }
+
+  @Get('ops/capabilities/resolve')
+  @RequirePermissions('connectors:read')
+  opsResolveCapability(
+    @CurrentAuth() auth: AuthContext,
+    @Query('capability') capability?: string,
+  ) {
+    this.requireOrg(auth);
+    if (!capability?.trim()) {
+      throw new BadRequestException('query capability is required');
+    }
+    return this.ops.resolveBusinessCapability(
+      auth.activeOrganizationId!,
+      capability.trim(),
+    );
+  }
+
+  @Post('ops/connectors/:providerKey/probe')
+  @RequirePermissions('connectors:read')
+  opsProbe(
+    @CurrentAuth() auth: AuthContext,
+    @Param('providerKey') providerKey: string,
+  ) {
+    this.requireOrg(auth);
+    return this.ops.probe(auth.activeOrganizationId!, providerKey);
+  }
+
+  @Post('ops/connectors/reconcile-all')
+  @RequirePermissions('connectors:read')
+  opsReconcileAll(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.ops.reconcileAll(auth.activeOrganizationId!);
+  }
+
+  /** Production connector catalog — credential status, never secrets. */
+  @Get('ops/connectors/production')
+  @RequirePermissions('connectors:read')
+  opsProductionCatalog(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return {
+      catalog: this.liveConnectors.catalog(),
+      descriptors: this.liveConnectors.listDescriptors(),
+    };
+  }
+
+  /** Bootstrap org installs from production registry (env-gated status). */
+  @Post('ops/connectors/ensure-registry')
+  @RequirePermissions('connectors:read')
+  opsEnsureRegistry(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.liveConnectors.ensureRegistryInstalls(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Credential-gated live HTTP sync → canonical models + bus events.
+   * Never fabricates data when credentials are missing.
+   */
+  @Post('ops/connectors/live-sync')
+  @RequirePermissions('connectors:read')
+  opsLiveSync(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body?: { providerKeys?: string[]; searchQuery?: string },
+  ) {
+    this.requireOrg(auth);
+    return this.ops.syncLive(auth.activeOrganizationId!, {
+      providerKeys: body?.providerKeys,
+      searchQuery: body?.searchQuery,
+    });
+  }
+
+  /** AI Capability Registry resolve (business capability → provider). */
+  @Get('ops/capabilities/live-resolve')
+  @RequirePermissions('connectors:read')
+  opsLiveCapabilityResolve(
+    @CurrentAuth() auth: AuthContext,
+    @Query('capability') capability?: string,
+  ) {
+    this.requireOrg(auth);
+    if (!capability?.trim()) {
+      throw new BadRequestException('query capability is required');
+    }
+    return this.liveConnectors.resolveCapability(
+      auth.activeOrganizationId!,
+      capability.trim(),
+    );
+  }
+
+  /**
+   * Webhook ingress (fixture + signed live). Queues receipt for durable processing.
+   * Body: { topic, payload?, organizationId? } — org defaults to active session.
+   */
+  @Post('ops/webhooks/:providerKey')
+  @RequirePermissions('connectors:read')
+  async opsWebhookIngest(
+    @CurrentAuth() auth: AuthContext,
+    @Param('providerKey') providerKey: string,
+    @Body()
+    body: {
+      topic?: string;
+      payload?: Record<string, unknown>;
+      isFixture?: boolean;
+      signatureValid?: boolean;
+    },
+  ) {
+    this.requireOrg(auth);
+    if (!body.topic?.trim()) throw new BadRequestException('topic is required');
+    return this.ops.ingestWebhook({
+      organizationId: auth.activeOrganizationId!,
+      providerKey,
+      topic: body.topic.trim(),
+      body: body.payload ?? (body as unknown as Record<string, unknown>),
+      signatureValid: body.signatureValid ?? null,
+      isFixture: body.isFixture ?? providerKey.startsWith('fixture'),
+    });
+  }
+
+  @Post('ops/webhooks/process')
+  @RequirePermissions('connectors:read')
+  opsWebhookProcess(
+    @CurrentAuth() auth: AuthContext,
+    @Body() body: { limit?: number },
+  ) {
+    this.requireOrg(auth);
+    return this.ops.processWebhookBatch(
+      auth.activeOrganizationId!,
+      body?.limit ?? 20,
+    );
+  }
+
+  @Get('ops/webhooks/dlq')
+  @RequirePermissions('connectors:read')
+  opsWebhookDlq(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.ops.listDeadLetters(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Commerce Runtime — "What process is currently executing?"
+   * Single orchestration surface for cases, transforms, capabilities, events.
+   */
+  @Get('commerce/runtime')
+  @RequirePermissions('products:read', 'org:read')
+  commerceRuntime(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.runtime.getOrgRuntime({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
+  }
+
+  @Get('commerce/runtime/cases/:caseId')
+  @RequirePermissions('products:read')
+  commerceRuntimeCase(
+    @CurrentAuth() auth: AuthContext,
+    @Param('caseId', ParseUUIDPipe) caseId: string,
+  ) {
+    this.requireOrg(auth);
+    return this.runtime.getCaseRuntime({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      caseId,
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
+  }
+
+  @Post('commerce/runtime/execute')
+  @RequirePermissions('products:write')
+  commerceRuntimeExecute(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      caseId?: string;
+      transformation?: string;
+      source?: 'user' | 'ai' | 'automation' | 'connector' | 'system';
+    },
+  ) {
+    this.requireOrg(auth);
+    if (!body.caseId?.trim()) throw new BadRequestException('caseId is required');
+    if (!body.transformation?.trim()) {
+      throw new BadRequestException('transformation is required');
+    }
+    return this.runtime.execute({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      caseId: body.caseId.trim(),
+      transformation: body.transformation.trim(),
+      source: body.source ?? 'user',
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
+  }
+
+  @Get('commerce/runtime/events')
+  @RequirePermissions('products:read')
+  commerceRuntimeEvents(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.runtime.listEvents(auth.activeOrganizationId!);
+  }
+
+  @Get('commerce/runtime/capabilities')
+  @RequirePermissions('connectors:read')
+  commerceRuntimeCapabilities(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.runtime.listCapabilities(auth.activeOrganizationId!);
+  }
 
   /**
    * Workspace Resolver — persona, procedures, dynamic nav, AI context.
@@ -55,6 +284,34 @@ export class CommerceController {
   @RequirePermissions('org:read')
   workspaceInventory() {
     return this.workspace.inventory();
+  }
+
+  /**
+   * AI-first navigation — natural language → persona-aware route.
+   * Primary discovery layer when the capability is not in Focus nav.
+   */
+  @Get('workspace/navigate')
+  @RequirePermissions('org:read')
+  async workspaceNavigate(
+    @CurrentAuth() auth: AuthContext,
+    @Query('q') q?: string,
+  ) {
+    this.requireOrg(auth);
+    return this.workspace.navigate(auth.activeOrganizationId!, auth.userId, q ?? '');
+  }
+
+  /**
+   * Operational intelligence brief — ranked insights, attention score, focus objective.
+   */
+  @Get('workspace/intelligence')
+  @RequirePermissions('org:read')
+  workspaceIntelligence(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.workspace.intelligence({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
   }
 
   @Post('workspace/persona')
@@ -179,12 +436,15 @@ export class CommerceController {
     if (!body.transformation?.trim()) {
       throw new BadRequestException('transformation is required');
     }
-    return this.cases.applyTransformation(
-      auth.activeOrganizationId!,
+    // All transforms enter Commerce Runtime (events + gates + state)
+    return this.runtime.execute({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
       caseId,
-      body.transformation.trim(),
-      auth.userId,
-    );
+      transformation: body.transformation.trim(),
+      source: 'user',
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
   }
 
   @Get('connectors')
@@ -192,6 +452,23 @@ export class CommerceController {
   listConnectors(@CurrentAuth() auth: AuthContext) {
     this.requireOrg(auth);
     return this.commerce.listConnectors(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Live Data Inventory — every major metric origin (live / derived / fixture / unavailable).
+   */
+  @Get('ops/live-data-inventory')
+  @RequirePermissions('org:read')
+  liveDataInventory() {
+    const sim = simulationBanner();
+    return {
+      inventory: LIVE_DATA_INVENTORY,
+      simulationMode: sim.active,
+      workspaceMode: sim,
+      honesty: {
+        note: 'Production workspaces must not invent KPIs. Unavailable metrics show empty states. Fixtures labeled TEST FIXTURE. Live connectors report health via /ops/connectors/health.',
+      },
+    };
   }
 
   /** Business-capability board for AI + UI (not raw vendor APIs) */

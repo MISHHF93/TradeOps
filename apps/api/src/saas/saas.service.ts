@@ -536,6 +536,11 @@ export class SaasService {
     );
     const expectedProfit = opportunities.reduce((sum, o) => sum + o.expectedProfitMinor, 0);
 
+    const now = new Date().toISOString();
+    const fixtureTop = opportunities.filter((o) =>
+      o.product.sourcePlatform.startsWith('fixture'),
+    ).length;
+
     return {
       mode: 'founder',
       summary: {
@@ -554,6 +559,13 @@ export class SaasService {
         expectedProfitMinor: o.expectedProfitMinor,
         expectedMarginBps: o.expectedMarginBps,
         isFixture: o.product.sourcePlatform.startsWith('fixture'),
+        sourcePlatform: o.product.sourcePlatform,
+        dataFreshnessAt: o.product.dataFreshnessAt?.toISOString?.() ?? null,
+        evidence: {
+          productId: o.productId,
+          opportunityId: o.id,
+          sourcePlatform: o.product.sourcePlatform,
+        },
       })),
       urgentActions: [
         approvals > 0 ? `${approvals} approval(s) waiting` : null,
@@ -561,6 +573,30 @@ export class SaasService {
         listings === 0 && products > 0 ? 'Draft a listing for a top opportunity' : null,
       ].filter(Boolean),
       note: 'Founder cockpit prioritizes what to sell, cash, and pending actions. Not a full P&L.',
+      provenance: {
+        counts: {
+          origin: 'canonical_store',
+          sourceLabel: 'Prisma counts (Product, CustomerOrder, Approval, Listing)',
+          canonicalModel: 'Product|CustomerOrder|Approval|Listing',
+          observedAt: now,
+          isLiveOperational: true,
+          confidence: 1,
+          lineage: 'organization-scoped COUNT queries',
+          simulationLabel: null,
+        },
+        topOpportunities: {
+          origin: fixtureTop > 0 ? 'fixture' : 'derived_model',
+          sourceLabel: 'Opportunity ordered by score',
+          canonicalModel: 'Opportunity+Product',
+          observedAt: now,
+          isLiveOperational: true,
+          confidence: 0.7,
+          lineage: 'opportunity.score DESC take 5; expectedProfit from model not realized P&L',
+          simulationLabel:
+            fixtureTop > 0 ? 'TEST FIXTURE — includes fixture-sourced products' : null,
+        },
+      },
+      simulationMode: process.env.TRADEOPS_SIMULATION_MODE === '1',
     };
   }
 
@@ -579,10 +615,11 @@ export class SaasService {
       returnReserveMinor: product.returnReserveMinor,
     };
 
+    // Modeled channel fees — NOT live fee APIs until connectors provide them
     const comparison = recommendBestChannel([
       {
         channelKey: 'shopify-direct',
-        displayName: 'Shopify direct',
+        displayName: 'Shopify direct (modeled)',
         ...base,
         marketplaceFeeMinor: Math.round(product.targetPriceMinor * 0.02),
         paymentFeeMinor: product.paymentFeeMinor || Math.round(product.targetPriceMinor * 0.029),
@@ -593,7 +630,7 @@ export class SaasService {
       },
       {
         channelKey: 'amazon',
-        displayName: 'Amazon',
+        displayName: 'Amazon (modeled)',
         ...base,
         marketplaceFeeMinor: product.marketplaceFeeMinor || Math.round(product.targetPriceMinor * 0.15),
         paymentFeeMinor: Math.round(product.targetPriceMinor * 0.02),
@@ -604,7 +641,7 @@ export class SaasService {
       },
       {
         channelKey: 'ebay',
-        displayName: 'eBay',
+        displayName: 'eBay (modeled)',
         ...base,
         marketplaceFeeMinor: Math.round(product.targetPriceMinor * 0.13),
         paymentFeeMinor: Math.round(product.targetPriceMinor * 0.03),
@@ -620,7 +657,14 @@ export class SaasService {
       title: product.title,
       ...comparison,
       disclaimer:
-        'Estimates use channel fee heuristics and product costs. Not a guarantee of sales or payout timing.',
+        'SIMULATION — modeled channel fee heuristics from product costs, not live Shopify/Amazon fee APIs. Connect channel connectors for live economics.',
+      provenance: {
+        origin: 'derived_model',
+        sourceLabel: 'Modeled fee assumptions',
+        isLiveOperational: false,
+        simulationLabel: 'SIMULATION — modeled channel fees',
+        lineage: 'recommendBestChannel() with static fee rates × Product costs',
+      },
     };
   }
 

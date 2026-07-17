@@ -95,6 +95,8 @@ export type RecommendationDraft = {
   /** Product evaluation card fields (read-only analysis) */
   productCard?: Record<string, unknown>;
   nextActions?: string[];
+  /** Deep links for UI evidence navigation */
+  actionHrefs?: Record<string, string>;
 };
 
 export type CriticResult = {

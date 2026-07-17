@@ -153,6 +153,32 @@ async function main() {
     if (typeof p.summary?.totalOpen !== 'number') throw new Error('missing summary');
   });
 
+  await must('commerce runtime (what is executing)', async () => {
+    const r = await json(`${API}/api/v1/commerce/runtime`);
+    if (!r.answer || typeof r.answer !== 'string') throw new Error('missing runtime answer');
+    if (!Array.isArray(r.transformationCatalog)) throw new Error('missing transformation catalog');
+  });
+
+  await must('commerce runtime capabilities', async () => {
+    const r = await json(`${API}/api/v1/commerce/runtime/capabilities`);
+    if (!Array.isArray(r.providers)) throw new Error('missing capability providers');
+  });
+
+  await must('ops connector health center', async () => {
+    const r = await json(`${API}/api/v1/ops/connectors/health`);
+    if (!r.summary || typeof r.summary.total !== 'number') {
+      throw new Error('missing health summary');
+    }
+    if (!r.connectors?.length) throw new Error('empty connector registry');
+  });
+
+  await must('ops capability resolve discover_products', async () => {
+    const r = await json(
+      `${API}/api/v1/ops/capabilities/resolve?capability=discover_products`,
+    );
+    if (!r.capability) throw new Error(JSON.stringify(r).slice(0, 200));
+  });
+
   await must('commerce tasks + blockers + SOPs', async () => {
     const t = await json(`${API}/api/v1/commerce/tasks`);
     if (!Array.isArray(t.tasks)) throw new Error('missing tasks');

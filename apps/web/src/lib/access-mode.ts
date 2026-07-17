@@ -31,10 +31,10 @@ export function isFounderDirectAccess(): boolean {
 }
 
 /**
- * Default landing for founder / post-auth: Process board (operating spine).
- * Personas remain available at /terminal/workspace.
+ * Default landing for founder / post-auth: Workspace Resolver entry.
+ * Resolves to persona home (intelligence surface). Process remains at /terminal/process.
  */
-export const FOUNDER_WORKSPACE_PATH = '/terminal/process';
+export const FOUNDER_WORKSPACE_PATH = '/terminal/workspace';
 
 export function authRouteRedirectTarget(): string {
   return FOUNDER_WORKSPACE_PATH;

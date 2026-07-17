@@ -74,6 +74,11 @@ export class AiController {
       exampleId?: string;
       /** Optional commerce case binding for stage-aware operation */
       commerceCaseId?: string;
+      /**
+       * When true, use full Objective Resolution Engine (Execution Package).
+       * Default true — every interaction starts with an objective package.
+       */
+      navigate?: boolean;
     },
   ) {
     if (body.exampleId?.trim()) {
@@ -88,6 +93,59 @@ export class AiController {
     const objective =
       body.objective?.trim() ||
       'Find products worth evaluating.';
+
+    // Default: Objective Resolution Engine (execution navigator)
+    // Flatten so existing AI console still receives cycle fields + package.
+    if (body.navigate !== false) {
+      return this.operator.resolveObjective({
+        organizationId: auth.activeOrganizationId!,
+        userId: auth.userId,
+        objective,
+        loopMode: body.loopMode,
+        forceShadow: body.forceShadow !== false,
+        permissions: [...(auth.permissions ?? [])],
+        commerceCaseId: body.commerceCaseId?.trim(),
+        runCycle: true,
+      }).then((resolved) => {
+        const cycle = resolved.cycleResult;
+        return {
+          runId: resolved.runId,
+          status: cycle?.status ?? resolved.executionPackage.executionStatus.overall,
+          loopMode: cycle?.loopMode ?? resolved.executionPackage.currentState.loopMode,
+          objectiveType:
+            cycle?.objectiveType ?? resolved.executionPackage.objective.objectiveType,
+          riskClass: cycle?.riskClass ?? resolved.executionPackage.objective.riskClass,
+          approvalRequired:
+            cycle?.approvalRequired ??
+            resolved.executionPackage.objective.approvalRequired,
+          decision: cycle?.decision ?? 'accept',
+          decisionNote:
+            cycle?.decisionNote ?? resolved.executionPackage.verification.notes,
+          responseSummary: cycle?.responseSummary ?? resolved.summary,
+          plan: cycle?.plan ?? {
+            steps: resolved.executionPackage.executionPlan.tasks.map((t) => t.title),
+            toolsToCall: [],
+            interpretation: resolved.executionPackage.objective.goal,
+          },
+          timeline: cycle?.timeline ?? [],
+          sources: cycle?.sources ?? [],
+          candidateStats: cycle?.candidateStats,
+          filtersApplied: cycle?.filtersApplied,
+          critic: cycle?.critic,
+          auditor: cycle?.auditor,
+          toolTrace: cycle?.toolTrace,
+          recommendations:
+            cycle?.recommendations ??
+            resolved.executionPackage.productRecommendations,
+          resultsPath: cycle?.resultsPath ?? `/terminal/objectives/${resolved.runId}`,
+          honesty: cycle?.honesty ?? resolved.executionPackage.honesty,
+          executionPackage: resolved.executionPackage,
+          navigatorSummary: resolved.summary,
+          knowledgeBaseDelta: resolved.executionPackage.knowledgeBaseDelta,
+        };
+      });
+    }
+
     return this.operator.runObjective({
       organizationId: auth.activeOrganizationId!,
       userId: auth.userId,
@@ -97,6 +155,63 @@ export class AiController {
       permissions: [...(auth.permissions ?? [])],
       commerceCaseId: body.commerceCaseId?.trim(),
     });
+  }
+
+  /**
+   * AI Execution Navigator — resolve an objective into a 10-section Execution Package.
+   * Does not require chat; starts from business objective.
+   */
+  @Post('navigator/resolve')
+  @RequirePermissions('ai:write', 'products:read')
+  resolveNavigator(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      objective?: string;
+      loopMode?: OperationLoopMode;
+      forceShadow?: boolean;
+      commerceCaseId?: string;
+      /** Skip product operator cycle (state + plan only) */
+      runCycle?: boolean;
+    },
+  ) {
+    const objective = body.objective?.trim();
+    if (!objective) {
+      return {
+        error: 'objective is required',
+        note: 'Start with a business objective, not a free-form chat question.',
+      };
+    }
+    return this.operator.resolveObjective({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      objective,
+      loopMode: body.loopMode,
+      forceShadow: body.forceShadow !== false,
+      permissions: [...(auth.permissions ?? [])],
+      commerceCaseId: body.commerceCaseId?.trim(),
+      runCycle: body.runCycle !== false,
+    });
+  }
+
+  /** Prior knowledge distilled from completed objectives */
+  @Get('navigator/knowledge')
+  @RequirePermissions('ai:read')
+  async navigatorKnowledge(
+    @CurrentAuth() auth: AuthContext,
+    @Query('take') take?: string,
+  ) {
+    const entries = await this.operator.loadPriorKnowledge(
+      auth.activeOrganizationId!,
+      Math.min(Number(take ?? 20) || 20, 50),
+    );
+    return {
+      count: entries.length,
+      entries,
+      honesty: {
+        note: 'Knowledge is derived from prior OperatorRun execution packages — not external training data.',
+      },
+    };
   }
 
   @Post('harmonize')

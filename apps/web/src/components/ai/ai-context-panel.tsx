@@ -79,7 +79,11 @@ type Rec = {
   productCard?: Record<string, unknown>;
   nextActions?: string[];
   missingData?: string[];
-  evidence?: Record<string, unknown>;
+  evidence?: Record<string, unknown> & {
+    isFixtureSource?: boolean;
+    evidenceLinks?: Array<{ kind: string; id: string; href: string; label: string }>;
+  };
+  actionHrefs?: Record<string, string>;
 };
 
 type OperatorResponse = {
@@ -150,7 +154,9 @@ export function AiContextPanel({
   const quick =
     (workspace?.persona && PERSONA_QUICK[workspace.persona]) || DEFAULT_QUICK;
   const [objective, setObjective] = useState(
-    workspace?.currentObjective?.slice(0, 280) || quick[0]!,
+    workspace?.surface?.focusObjective?.slice(0, 400) ||
+      workspace?.currentObjective?.slice(0, 280) ||
+      quick[0]!,
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,6 +164,14 @@ export function AiContextPanel({
   const [progressLabel, setProgressLabel] = useState('Run objective');
   const [result, setResult] = useState<OperatorResponse | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+
+  // Keep objective aligned with intelligent workspace focus when it arrives
+  useEffect(() => {
+    const focus = workspace?.surface?.focusObjective?.trim();
+    if (focus && !busy && aiState === 'idle') {
+      setObjective(focus.slice(0, 400));
+    }
+  }, [workspace?.surface?.focusObjective, busy, aiState]);
 
   // Restore last run after refresh — re-derive state from server fields (never trust stale labels)
   useEffect(() => {
@@ -529,6 +543,30 @@ export function AiContextPanel({
                       <p className="meta" style={{ margin: '0 0 6px' }}>
                         {r.rationale}
                       </p>
+                      {r.evidence?.isFixtureSource ? (
+                        <p className="pill" style={{ margin: '0 0 6px' }}>
+                          TEST FIXTURE evidence — not live marketplace data
+                        </p>
+                      ) : null}
+                      {Array.isArray(r.evidence?.evidenceLinks) &&
+                      r.evidence.evidenceLinks.length > 0 ? (
+                        <p className="meta" style={{ margin: '0 0 6px' }}>
+                          Evidence:{' '}
+                          {r.evidence.evidenceLinks.map((l, i) => (
+                            <span key={l.href}>
+                              {i > 0 ? ' · ' : null}
+                              <Link href={l.href}>{l.label}</Link>
+                            </span>
+                          ))}
+                        </p>
+                      ) : r.productId ? (
+                        <p className="meta" style={{ margin: '0 0 6px' }}>
+                          Evidence:{' '}
+                          <Link href={`/terminal/products/${r.productId}`}>Product twin</Link>
+                        </p>
+                      ) : (
+                        <p className="meta">No product evidence — recommendation not actionable.</p>
+                      )}
                       {(r.missingData?.length ?? 0) > 0 ? (
                         <p className="meta">Missing: {(r.missingData ?? []).slice(0, 3).join(', ')}</p>
                       ) : null}

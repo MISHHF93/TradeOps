@@ -56,6 +56,9 @@ importers:
       '@tradeops/connector-google-merchant':
         specifier: workspace:*
         version: link:../../packages/connectors/google-merchant
+      '@tradeops/connector-live-http':
+        specifier: workspace:*
+        version: link:../../packages/connectors/live-http
       '@tradeops/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -237,6 +240,15 @@ importers:
       '@tradeops/connector-core':
         specifier: workspace:*
         version: link:../../connector-core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/connectors/live-http:
     devDependencies:
       '@types/node':
         specifier: ^22.10.5

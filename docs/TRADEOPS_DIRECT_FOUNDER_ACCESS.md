@@ -6,7 +6,7 @@ When `TRADEOPS_ACCESS_MODE=founder_direct`:
 
 1. API bootstraps (idempotent) founder user + organization + owner membership.
 2. Requests without a session cookie receive the founder `AuthContext` server-side.
-3. Web root `/` redirects to `/terminal/cockpit`.
+3. Web root `/` redirects to `/terminal/workspace` → active **persona home** (intelligence surface).
 4. `/login`, `/register`, `/signup`, `/onboarding`, `/verify-email`, `/forgot-password` redirect to the workspace.
 5. Login/register buttons are hidden; founder menu is shown instead.
 6. RBAC and `organizationId` scoping still apply (founder is **owner** of one org).

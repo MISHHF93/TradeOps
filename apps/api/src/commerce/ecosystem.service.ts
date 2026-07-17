@@ -4,6 +4,7 @@ import {
   businessCapabilitiesFromTechnical,
   listConnectorManifests,
   listLiveFeeds,
+  listProductionRuntime,
   selectProvidersForCapabilities,
   type BusinessCapability,
   type CapabilityAdvertisement,
@@ -67,9 +68,32 @@ export class EcosystemService {
       };
     });
 
+    // Production catalog overlays (business capabilities + env-backed status)
+    const fromProduction: CapabilityAdvertisement[] = listProductionRuntime().map((r) => {
+      const inst = installByKey.get(r.id);
+      return {
+        providerKey: r.id,
+        displayName: r.displayName,
+        family: String(r.category),
+        isFixture: false,
+        authMode: r.authMethod,
+        apiVersion: r.apiVersion,
+        docsUrl: r.docsUrl,
+        status: inst?.status ?? r.status,
+        health: r.liveReady ? 'ok' : 'credentials_required',
+        businessCapabilities: r.businessCapabilities,
+        technicalCapabilities: r.technicalCapabilities,
+        supportedOperations: r.technicalCapabilities,
+        notes: r.lastSyncHint,
+        rateLimitHint: r.rateLimitRpm
+          ? `~${r.rateLimitRpm} rpm`
+          : 'Respect provider rate limits',
+      };
+    });
+
     // Dedupe by providerKey (prefer install-backed manifest)
     const byKey = new Map<string, CapabilityAdvertisement>();
-    for (const a of [...fromFeeds, ...fromManifests]) {
+    for (const a of [...fromFeeds, ...fromProduction, ...fromManifests]) {
       const prev = byKey.get(a.providerKey);
       if (!prev || (!prev.isFixture && a.isFixture === false && a.technicalCapabilities.length > 0)) {
         byKey.set(a.providerKey, { ...prev, ...a, ...(prev ? { businessCapabilities: a.businessCapabilities } : {}) });

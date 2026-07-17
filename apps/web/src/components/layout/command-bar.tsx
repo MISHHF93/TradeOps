@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { FOUNDER_WORKSPACE_PATH } from '../../lib/access-mode';
+import { getApiBaseUrl } from '../../lib/api';
 import { CommandPaletteHost } from './command-palette';
 import { ThemeToggle } from './theme-toggle';
 
@@ -27,56 +28,81 @@ export function CommandBar({
   const router = useRouter();
   const [q, setQ] = useState('');
 
-  function onSearch(e: FormEvent) {
+  async function onSearch(e: FormEvent) {
     e.preventDefault();
-    const query = q.trim().toLowerCase();
+    const query = q.trim();
     if (!query) return;
     if (query.startsWith('/')) {
       router.push(query);
       return;
     }
+    // AI-first navigation: server intent catalog when available
+    try {
+      const res = await fetch(
+        `${getApiBaseUrl()}/api/v1/workspace/navigate?q=${encodeURIComponent(query)}`,
+        { credentials: 'include', headers: { Accept: 'application/json' } },
+      );
+      if (res.ok) {
+        const body = (await res.json()) as {
+          matched?: boolean;
+          href?: string;
+          note?: string;
+        };
+        if (body.href) {
+          if (!body.matched && body.href.includes('/ai')) {
+            router.push(`/terminal/ai?objective=${encodeURIComponent(query)}`);
+            return;
+          }
+          router.push(body.href);
+          return;
+        }
+      }
+    } catch {
+      // fall through to local heuristics
+    }
+    const lower = query.toLowerCase();
     if (
-      query.includes('process') ||
-      query.includes('case') ||
-      query.includes('board') ||
-      query.includes('lifecycle')
+      lower.includes('process') ||
+      lower.includes('case') ||
+      lower.includes('board') ||
+      lower.includes('lifecycle')
     ) {
       router.push('/terminal/process');
       return;
     }
-    if (query.includes('task') || query.includes('blocker')) {
+    if (lower.includes('task') || lower.includes('blocker')) {
       router.push('/terminal/tasks');
       return;
     }
     if (
-      query.includes('scan') ||
-      query.includes('discover') ||
-      query.includes('product')
+      lower.includes('scan') ||
+      lower.includes('discover') ||
+      lower.includes('product')
     ) {
       router.push('/terminal');
       return;
     }
-    if (query.includes('order') || query.includes('fulfill')) {
-      router.push(query.includes('fulfill') ? '/terminal/fulfillment' : '/terminal/orders');
+    if (lower.includes('order') || lower.includes('fulfill') || lower.includes('ship')) {
+      router.push(lower.includes('fulfill') || lower.includes('ship') ? '/terminal/fulfillment' : '/terminal/orders');
       return;
     }
-    if (query.includes('ai') || query.includes('operator')) {
+    if (lower.includes('ai') || lower.includes('operator')) {
       router.push('/terminal/ai');
       return;
     }
-    if (query.includes('cash') || query.includes('portfolio')) {
-      router.push(query.includes('cash') ? '/terminal/cashflow' : '/terminal/portfolio');
+    if (lower.includes('cash') || lower.includes('portfolio') || lower.includes('revenue')) {
+      router.push(lower.includes('cash') ? '/terminal/cashflow' : '/terminal/portfolio');
       return;
     }
-    if (query.includes('approv')) {
+    if (lower.includes('approv') || lower.includes('decision')) {
       router.push('/terminal/approvals');
       return;
     }
-    if (query.includes('connect')) {
+    if (lower.includes('connect')) {
       router.push('/terminal/connectors');
       return;
     }
-    if (query.includes('persona') || query.includes('workspace')) {
+    if (lower.includes('persona') || lower.includes('workspace')) {
       router.push('/terminal/workspace');
       return;
     }

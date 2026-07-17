@@ -20,7 +20,7 @@
 With `TRADEOPS_ACCESS_MODE=founder_direct` (default):
 
 1. `npm start`
-2. Open **http://localhost:3000** → redirects to **`/terminal/cockpit`**
+2. Open **http://localhost:3000** → **`/terminal/workspace`** → active **persona home** (intelligence surface)
 3. No login, register, or onboarding
 
 See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md).
@@ -61,17 +61,27 @@ Open (with default `founder_direct`):
 
 | URL | What |
 |-----|------|
-| http://localhost:3000 | **307 → `/terminal/cockpit`** (no login) |
-| http://localhost:3000/terminal/cockpit | Founder command center |
-| http://localhost:3000/terminal | Scanner / operator terminal |
-| http://localhost:3000/terminal/live-examples | Live online examples catalog |
-| http://localhost:3000/terminal/products/:id | Product digital twin + media artifacts |
-| http://localhost:3000/terminal/ai | AI operator (shadow by default) |
-| http://localhost:3000/terminal/automations | Weekend Google automation (shadow by default) |
-| http://localhost:3000/terminal/pipeline | Commerce pipeline board |
+| http://localhost:3000 | → `/terminal/workspace` → **persona home** (intelligence) |
+| http://localhost:3000/terminal/workspace | Resolver entry (redirects to persona home) |
+| http://localhost:3000/terminal/workspace?switch=1 | Switch persona |
+| http://localhost:3000/terminal/process | Commerce Process board (shared spine) |
+| http://localhost:3000/terminal/ai | AI Execution Navigator (shadow by default) |
+| http://localhost:3000/terminal/objectives | Durable objective / Execution Package history |
+| http://localhost:3000/terminal/connectors | Connector Ops Center |
+| http://localhost:3000/terminal | Discover / product scan |
+| http://localhost:3000/terminal/cockpit | Redirect → executive workspace |
 | http://localhost:3000/tools | Free calculators (profit · score · policy) |
 | http://localhost:3000/status | Capability honesty board |
 | http://localhost:4000/api/v1/health/live | API process liveness |
+
+### See intelligence + AI objective quickly
+
+1. Open persona home — ranked priorities + health score  
+2. Click **Resolve focus objective** or **Ask AI** on an insight  
+3. Or: `GET http://localhost:4000/api/v1/workspace/intelligence` (with session/cookies)  
+
+Optional simulation: `TRADEOPS_SIMULATION_MODE=1` labels fixture data.  
+Optional live connectors: set `SHOPIFY_*`, `STRIPE_SECRET_KEY`, etc., then `POST /api/v1/ops/connectors/live-sync`.
 
 Set `TRADEOPS_ACCESS_MODE=authenticated` to restore marketing `/` + login/register UX.
 

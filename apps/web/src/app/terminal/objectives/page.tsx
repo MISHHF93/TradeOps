@@ -24,8 +24,9 @@ export default async function ObjectivesPage() {
         <div>
           <h1 className="workspace-title-active">Objectives</h1>
           <p className="lede">
-            Durable AI objective executions (OperatorRun). Reopen any run to restore timeline,
-            recommendations, and final answer.
+            Durable Execution Navigator records (OperatorRun). Each objective resolves to a
+            structured package: evidence, ranked options, plan, risks, and verification — not a
+            chat transcript.
           </p>
         </div>
         <div className="terminal-toolbar">

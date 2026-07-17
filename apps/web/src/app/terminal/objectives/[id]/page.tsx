@@ -2,6 +2,45 @@ import Link from 'next/link';
 import { ConfidenceMeter, Money } from '../../../../components/commerce/money';
 import { terminalGet } from '../../../../lib/terminal-api';
 
+type ExecutionPackage = {
+  objective?: { goal?: string; desiredOutcome?: string };
+  currentState?: {
+    productCount?: number;
+    liveProductCount?: number;
+    gaps?: string[];
+    connectorSummary?: { connected?: number; credentialsRequired?: number };
+  };
+  liveEvidence?: Array<{
+    id: string;
+    claim: string;
+    sourceType: string;
+    confidence: number;
+    isLiveOperational: boolean;
+  }>;
+  recommendations?: Array<{
+    id: string;
+    title: string;
+    score: number;
+    recommended: boolean;
+    impact: number;
+    effort: number;
+  }>;
+  executionPlan?: {
+    summary?: string;
+    tasks?: Array<{ id: string; title: string; horizon: string; status: string }>;
+  };
+  timeline?: { summary?: string };
+  dependencies?: Array<{ label: string; present: boolean; required: boolean }>;
+  risks?: Array<{ severity: string; description: string; mitigation: string }>;
+  executionStatus?: { overall?: string };
+  verification?: {
+    overall?: string;
+    notes?: string;
+    criteria?: Array<{ description: string; status: string }>;
+  };
+  honesty?: { note?: string };
+};
+
 type RunDetail = {
   id: string;
   objective: string;
@@ -16,11 +55,13 @@ type RunDetail = {
     sources?: Array<{ name: string; status: string; detail?: string }>;
     responseSummary?: string;
     finalAnswer?: string;
+    navigatorSummary?: string;
     candidateStats?: { retrieved: number; ranked: number; normalized: number };
     filtersApplied?: Record<string, unknown>;
     objectiveType?: string;
     approvalRequired?: boolean;
     liveExampleId?: string | null;
+    executionPackage?: ExecutionPackage;
   };
   toolTraceJson?: unknown;
   recommendations: Array<{
@@ -57,10 +98,7 @@ export default async function ObjectiveDetailPage({
 
   const run = result.data;
   const plan = run.planJson ?? {};
-  // Keep opportunities as the ranked commerce view; this page is the durable execution record
-  if (plan.objectiveType === 'READ_ONLY_ANALYSIS' && run.recommendations?.length) {
-    // stay on this page — show full execution (also link to opportunities)
-  }
+  const pkg = plan.executionPackage;
 
   return (
     <section>
@@ -68,8 +106,11 @@ export default async function ObjectiveDetailPage({
         <div>
           <h1 className="workspace-title-active">Objective execution</h1>
           <p className="lede">
-            Durable record <code>{run.id.slice(0, 8)}</code> · status{' '}
+            Execution Navigator record <code>{run.id.slice(0, 8)}</code> · status{' '}
             <strong className="text-accent">{run.status}</strong>
+            {pkg?.executionStatus?.overall
+              ? ` · package ${pkg.executionStatus.overall}`
+              : ''}
           </p>
         </div>
         <div className="terminal-toolbar">
@@ -119,12 +160,24 @@ export default async function ObjectiveDetailPage({
           </ul>
         </article>
         <article className="panel">
-          <h2>Final AI answer</h2>
+          <h2>Navigator summary</h2>
           <p>
             <strong className="text-accent">
-              {plan.finalAnswer ?? plan.responseSummary ?? run.decisionNote ?? '—'}
+              {plan.navigatorSummary ??
+                plan.finalAnswer ??
+                plan.responseSummary ??
+                run.decisionNote ??
+                '—'}
             </strong>
           </p>
+          {pkg?.objective?.goal ? (
+            <p className="meta">
+              Goal: {pkg.objective.goal}
+              {pkg.objective.desiredOutcome
+                ? ` → ${pkg.objective.desiredOutcome}`
+                : ''}
+            </p>
+          ) : null}
           {plan.candidateStats ? (
             <ul className="kv">
               <li>
@@ -146,6 +199,85 @@ export default async function ObjectiveDetailPage({
           ) : null}
         </article>
       </div>
+
+      {pkg ? (
+        <article className="panel" style={{ marginTop: 16 }}>
+          <h2>Execution Package</h2>
+          <ul className="kv">
+            <li>
+              <span>State</span>
+              <strong>
+                {pkg.currentState?.productCount ?? 0} products (
+                {pkg.currentState?.liveProductCount ?? 0} live) ·{' '}
+                {pkg.currentState?.connectorSummary?.connected ?? 0} live connectors
+              </strong>
+            </li>
+            <li>
+              <span>Verification</span>
+              <strong>
+                {pkg.verification?.overall ?? '—'} — {pkg.verification?.notes ?? ''}
+              </strong>
+            </li>
+            <li>
+              <span>Plan</span>
+              <strong style={{ whiteSpace: 'normal' }}>
+                {pkg.executionPlan?.summary ?? pkg.timeline?.summary ?? '—'}
+              </strong>
+            </li>
+          </ul>
+          {(pkg.recommendations?.length ?? 0) > 0 ? (
+            <>
+              <h3 style={{ marginTop: 12 }}>Ranked options</h3>
+              <ul className="kv">
+                {pkg.recommendations!.map((o) => (
+                  <li key={o.id}>
+                    <span>
+                      score {o.score}
+                      {o.recommended ? ' · TOP' : ''}
+                    </span>
+                    <strong>{o.title}</strong>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {(pkg.liveEvidence?.length ?? 0) > 0 ? (
+            <>
+              <h3 style={{ marginTop: 12 }}>Evidence</h3>
+              <ul className="kv">
+                {pkg.liveEvidence!.slice(0, 8).map((e) => (
+                  <li key={e.id}>
+                    <span>
+                      {e.sourceType}
+                      {e.isLiveOperational ? ' · LIVE' : ''} ·{' '}
+                      {(e.confidence * 100).toFixed(0)}%
+                    </span>
+                    <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>
+                      {e.claim.slice(0, 180)}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {(pkg.risks?.length ?? 0) > 0 ? (
+            <>
+              <h3 style={{ marginTop: 12 }}>Risks</h3>
+              <ul className="kv">
+                {pkg.risks!.map((r, i) => (
+                  <li key={`${r.severity}-${i}`}>
+                    <span>{r.severity}</span>
+                    <strong style={{ whiteSpace: 'normal', fontWeight: 500 }}>
+                      {r.description} — {r.mitigation}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {pkg.honesty?.note ? <p className="meta">{pkg.honesty.note}</p> : null}
+        </article>
+      ) : null}
 
       {plan.sources?.length ? (
         <article className="panel" style={{ marginTop: 16 }}>

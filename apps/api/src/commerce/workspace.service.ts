@@ -3,6 +3,8 @@ import {
   OPERATING_PERSONAS,
   PERSONA_DEFINITIONS,
   listWorkspaceInventory,
+  resolveAiNavigation,
+  resolveOperatingPersona,
   resolveWorkspace,
   type OperatingPersona,
   type ResolvedWorkspace,
@@ -11,8 +13,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CommerceCaseService } from './commerce-case.service';
 
 /**
- * Workspace Resolver — loads org state and assembles persona workspace.
- * Same backend services for all personas; presentation/nav/AI context change.
+ * Intelligent Workspace Resolver —
+ * Login → persona → live signals → intelligence engine → nav + AI + surface.
  */
 @Injectable()
 export class WorkspaceService {
@@ -25,6 +27,20 @@ export class WorkspaceService {
     return listWorkspaceInventory();
   }
 
+  /**
+   * AI-first navigation: natural language → workspace route.
+   */
+  async navigate(organizationId: string, userId: string, query: string) {
+    const membership = await this.prisma.client.membership.findUnique({
+      where: { organizationId_userId: { organizationId, userId } },
+    });
+    const persona = resolveOperatingPersona(membership?.workspacePersona, {
+      systemRole: membership?.role,
+      founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+    });
+    return resolveAiNavigation(query, persona);
+  }
+
   listPersonas() {
     return OPERATING_PERSONAS.map((id) => ({
       id,
@@ -32,6 +48,26 @@ export class WorkspaceService {
       mission: PERSONA_DEFINITIONS[id].mission,
       homeHref: PERSONA_DEFINITIONS[id].homeHref,
     }));
+  }
+
+  /**
+   * Full intelligence brief for proactive UI / AI (same signals as resolve).
+   */
+  async intelligence(input: {
+    organizationId: string;
+    userId: string;
+    founderDirect?: boolean;
+  }) {
+    const ws = await this.resolve(input);
+    return {
+      persona: ws.persona,
+      homeHref: ws.homeHref,
+      intelligence: ws.intelligence,
+      surface: ws.surface,
+      currentObjective: ws.currentObjective,
+      recommendedNextAction: ws.recommendedNextAction,
+      aiContextPreamble: ws.aiContextPreamble,
+    };
   }
 
   async resolve(input: {
@@ -54,7 +90,18 @@ export class WorkspaceService {
       },
     });
 
-    const [pendingApprovals, connectors, taskBoard, processBoard] = await Promise.all([
+    const [
+      pendingApprovals,
+      connectors,
+      taskBoard,
+      processBoard,
+      products,
+      openOrders,
+      topOpps,
+      recentRuns,
+      failedRuns,
+      signals,
+    ] = await Promise.all([
       this.prisma.client.approval.count({
         where: { organizationId: input.organizationId, status: 'pending' },
       }),
@@ -64,6 +111,36 @@ export class WorkspaceService {
       }),
       this.cases.listTasks(input.organizationId),
       this.cases.listProcess(input.organizationId),
+      this.prisma.client.product.findMany({
+        where: { organizationId: input.organizationId },
+        select: { id: true, sourcePlatform: true },
+        take: 200,
+      }),
+      this.prisma.client.customerOrder.count({
+        where: {
+          organizationId: input.organizationId,
+          status: { in: ['pending', 'paid'] },
+        },
+      }).catch(() => 0),
+      this.prisma.client.opportunity.findMany({
+        where: { organizationId: input.organizationId },
+        orderBy: { score: 'desc' },
+        take: 20,
+        select: { score: true },
+      }),
+      this.prisma.client.operatorRun.count({
+        where: { organizationId: input.organizationId },
+      }),
+      this.prisma.client.operatorRun.count({
+        where: { organizationId: input.organizationId, status: 'failed' },
+      }),
+      this.prisma.client.commerceSignal
+        .groupBy({
+          by: ['signal'],
+          where: { organizationId: input.organizationId },
+          _count: true,
+        })
+        .catch(() => [] as Array<{ signal: string; _count: number }>),
     ]);
 
     const tasks = taskBoard.tasks ?? [];
@@ -78,6 +155,36 @@ export class WorkspaceService {
           String(c.status).includes('expir') ||
           c.status === 'unhealthy'),
     ).length;
+
+    const liveConnectorCount = connectors.filter(
+      (c) =>
+        !String(c.providerKey).startsWith('fixture') &&
+        (c.status === 'connected' || String(c.status).includes('sync')),
+    ).length;
+
+    const fixtureProductCount = products.filter((p) =>
+      p.sourcePlatform.startsWith('fixture'),
+    ).length;
+    const liveProductCount = products.length - fixtureProductCount;
+
+    const stalledCaseCount = openCases.filter((c) =>
+      /block|wait|fail/i.test(String(c.stageStatus)),
+    ).length;
+
+    const highOpportunityCount = topOpps.filter((o) => Number(o.score) >= 60).length;
+    const topOpportunityScore =
+      topOpps.length > 0 ? Math.round(Number(topOpps[0]!.score)) : null;
+
+    let signalBuyCount = 0;
+    let signalBlockedCount = 0;
+    if (Array.isArray(signals)) {
+      for (const row of signals) {
+        const s = String(row.signal).toUpperCase();
+        const n = typeof row._count === 'number' ? row._count : 0;
+        if (s.includes('BUY') || s.includes('WATCH')) signalBuyCount += n;
+        if (s.includes('BLOCK')) signalBlockedCount += n;
+      }
+    }
 
     return resolveWorkspace({
       organizationId: input.organizationId,
@@ -105,6 +212,23 @@ export class WorkspaceService {
         stageStatus: c.stageStatus,
         nextActionLabel: c.nextActionLabel,
       })),
+      intelligence: {
+        productCount: products.length,
+        fixtureProductCount,
+        liveProductCount,
+        openOrderCount: typeof openOrders === 'number' ? openOrders : 0,
+        stalledCaseCount,
+        highOpportunityCount,
+        topOpportunityScore,
+        liveConnectorCount,
+        recentObjectiveCount: recentRuns,
+        failedRunCount: failedRuns,
+        signalBuyCount,
+        signalBlockedCount,
+        simulationMode:
+          process.env.TRADEOPS_SIMULATION_MODE === '1' ||
+          process.env.TRADEOPS_SIMULATION_MODE === 'true',
+      },
     });
   }
 

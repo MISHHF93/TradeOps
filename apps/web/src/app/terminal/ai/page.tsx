@@ -7,11 +7,12 @@ import {
 import { PROCESS_LABELS, stageTitle } from '../../../lib/process-ux';
 import { terminalGet } from '../../../lib/terminal-api';
 
-type Props = { searchParams: Promise<{ caseId?: string }> };
+type Props = { searchParams: Promise<{ caseId?: string; objective?: string }> };
 
 export default async function AiWorkspacePage({ searchParams }: Props) {
   const sp = await searchParams;
   const caseId = sp.caseId?.trim();
+  const presetObjective = sp.objective?.trim();
 
   const tools = await terminalGet<{
     tools: Array<{
@@ -108,7 +109,11 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
         </article>
       ) : null}
 
-      <AiOperatorConsole commerceCaseId={caseId} caseContextHint={caseHint} />
+      <AiOperatorConsole
+        commerceCaseId={caseId}
+        caseContextHint={caseHint}
+        initialObjective={presetObjective}
+      />
 
       {tools.ok ? (
         <article className="panel" style={{ marginTop: 16 }}>

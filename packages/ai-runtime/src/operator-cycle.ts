@@ -531,11 +531,34 @@ export async function runOperatorCycle(input: {
         sourcePlatform: p.sourcePlatform,
         isFixtureSource: isFixture,
         dataFreshnessAt: p.dataFreshnessAt,
+        dataFreshnessAtIso:
+          typeof p.dataFreshnessAt === 'string'
+            ? p.dataFreshnessAt
+            : p.dataFreshnessAt &&
+                typeof p.dataFreshnessAt === 'object' &&
+                'toISOString' in (p.dataFreshnessAt as object)
+              ? String((p.dataFreshnessAt as { toISOString: () => string }).toISOString())
+              : null,
         dataConfidence: p.dataConfidence,
         reviewCount: p.reviewCount,
         rating: p.rating,
         opportunityScore: opp.score,
         policyOutcome: policy.outcome,
+        /** Traceable links for production UI — never ungrounded advice */
+        evidenceLinks: [
+          {
+            kind: 'product',
+            id: p.productId,
+            href: `/terminal/products/${p.productId}`,
+            label: p.title,
+          },
+          {
+            kind: 'source',
+            id: p.sourcePlatform,
+            href: '/terminal/connectors',
+            label: isFixture ? `TEST FIXTURE · ${p.sourcePlatform}` : p.sourcePlatform,
+          },
+        ],
         why: [
           unit.netMarginBps >= (filters.minMarginBps ?? 0)
             ? 'sufficient margin after estimated fees'
@@ -616,6 +639,12 @@ export async function runOperatorCycle(input: {
         : classification.wantsDraft
           ? ['create_listing_draft', 'view_product']
           : ['view_product'],
+      /** Explicit hrefs for UI — production workspace must deep-link evidence */
+      actionHrefs: {
+        view_product: `/terminal/products/${p.productId}`,
+        process: '/terminal/process',
+        connectors: '/terminal/connectors',
+      },
     });
 
     // Only invoke draftListing tool when objective asks for drafts — never for pure research

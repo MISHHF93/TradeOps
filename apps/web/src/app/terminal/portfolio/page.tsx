@@ -1,5 +1,29 @@
+import Link from 'next/link';
+import {
+  LiveEmptyState,
+  ProvenanceMeta,
+  SimulationBanner,
+} from '../../../components/commerce/provenance-meta';
+import {
+  ProcessPageHeader,
+  ProcessRelatedLinks,
+} from '../../../components/commerce/process-chrome';
 import { formatMoney } from '../../../lib/money';
+import { PROCESS_LABELS } from '../../../lib/process-ux';
 import { terminalGet } from '../../../lib/terminal-api';
+
+type Provenance = {
+  origin?: string;
+  sourceLabel?: string;
+  sourceConnector?: string | null;
+  observedAt?: string;
+  syncStatus?: string;
+  confidence?: number;
+  lineage?: string;
+  isLiveOperational?: boolean;
+  simulationLabel?: string | null;
+  refreshHint?: string | null;
+};
 
 export default async function PortfolioPage() {
   const result = await terminalGet<{
@@ -7,30 +31,62 @@ export default async function PortfolioPage() {
     totalProducts: number;
     capitalCommittedMinor: number;
     outstandingSupplierPaymentsMinor: number;
-    pendingMarketplacePayoutsMinor: number;
+    pendingMarketplacePayoutsMinor: number | null;
     revenueMinor: number;
     grossProfitEstimateMinor: number;
     netProfitEstimateMinor: number;
     advertisingSpendMinor: number;
     refundExposureMinor: number;
     categoryConcentration: Record<string, number>;
+    marketplaceConcentration?: Record<string, number>;
     currency: string;
+    dataClass?: {
+      fixtureProducts: number;
+      liveOrCanonicalProducts: number;
+      simulationMode: boolean;
+    };
+    provenance?: Record<string, Provenance>;
   }>('/api/v1/terminal/portfolio');
 
   if (!result.ok) {
-    return <p className="form-error">{result.error}</p>;
+    return (
+      <section>
+        <p className="form-error">{result.error}</p>
+        <Link href="/terminal/process">{PROCESS_LABELS.openProcess}</Link>
+      </section>
+    );
   }
 
   const p = result.data;
   const c = p.currency;
+  const prov = p.provenance ?? {};
 
   return (
     <section>
-      <h1 className="workspace-title-active">Portfolio</h1>
-      <p className="lede">
-        Active commerce book. Revenue is not profit. Estimates use opportunity models until realized
-        orders settle.
-      </p>
+      <ProcessPageHeader
+        pill="Canonical store · portfolio"
+        title="Portfolio"
+        lede="Active commerce book from org database. Revenue is not profit. Estimates use opportunity models until orders settle. Never invents payouts."
+        breadcrumbs={[
+          { href: '/terminal/process', label: PROCESS_LABELS.boardTitle },
+          { label: 'Portfolio' },
+        ]}
+        toolbar={
+          <Link className="btn primary" href="/terminal/process">
+            {PROCESS_LABELS.openProcess}
+          </Link>
+        }
+      />
+      <ProcessRelatedLinks primary="process" />
+
+      <SimulationBanner active={p.dataClass?.simulationMode} />
+
+      {p.dataClass && p.dataClass.fixtureProducts > 0 ? (
+        <p className="pill" style={{ marginBottom: 12 }}>
+          TEST FIXTURE — {p.dataClass.fixtureProducts} product(s) from fixture sources
+        </p>
+      ) : null}
+
       <div className="detail-grid">
         <article className="panel">
           <h2>Exposure</h2>
@@ -44,21 +100,18 @@ export default async function PortfolioPage() {
               <strong>{p.totalProducts}</strong>
             </li>
             <li>
-              <span>Capital committed</span>
+              <span>Capital committed (POs)</span>
               <strong>{formatMoney(p.capitalCommittedMinor, c)}</strong>
             </li>
             <li>
               <span>Outstanding supplier payments</span>
               <strong>{formatMoney(p.outstandingSupplierPaymentsMinor, c)}</strong>
             </li>
-            <li>
-              <span>Pending marketplace payouts</span>
-              <strong>{formatMoney(p.pendingMarketplacePayoutsMinor, c)}</strong>
-            </li>
           </ul>
         </article>
+
         <article className="panel">
-          <h2>P&amp;L (clear labels)</h2>
+          <h2>P&amp;L (labeled)</h2>
           <ul className="kv">
             <li>
               <span>Revenue (orders)</span>
@@ -73,7 +126,7 @@ export default async function PortfolioPage() {
               <strong>{formatMoney(p.netProfitEstimateMinor, c)}</strong>
             </li>
             <li>
-              <span>Advertising allocation</span>
+              <span>Advertising allocation (planning)</span>
               <strong>{formatMoney(p.advertisingSpendMinor, c)}</strong>
             </li>
             <li>
@@ -81,8 +134,33 @@ export default async function PortfolioPage() {
               <strong>{formatMoney(p.refundExposureMinor, c)}</strong>
             </li>
           </ul>
+          <ProvenanceMeta provenance={prov.revenue} compact />
+          <ProvenanceMeta provenance={prov.expectedContribution} compact />
+          <ProvenanceMeta provenance={prov.advertisingAllocation} compact />
         </article>
+
         <article className="panel">
+          <h2>Pending marketplace payouts</h2>
+          {p.pendingMarketplacePayoutsMinor == null ? (
+            <LiveEmptyState
+              title="No payout data"
+              reason="Payouts are only shown when CommercePayout rows exist from a payment connector. We never invent payouts as a percentage of revenue."
+              actionHref="/terminal/connectors"
+              actionLabel="Open Connector Health Center"
+            />
+          ) : (
+            <>
+              <strong className="text-accent" style={{ fontSize: '1.4rem' }}>
+                {formatMoney(p.pendingMarketplacePayoutsMinor, c)}
+              </strong>
+              <ProvenanceMeta provenance={prov.pendingPayouts} />
+            </>
+          )}
+        </article>
+      </div>
+
+      {Object.keys(p.categoryConcentration ?? {}).length > 0 ? (
+        <article className="panel" style={{ marginTop: 16 }}>
           <h2>Category concentration</h2>
           <ul className="kv">
             {Object.entries(p.categoryConcentration).map(([k, v]) => (
@@ -93,7 +171,7 @@ export default async function PortfolioPage() {
             ))}
           </ul>
         </article>
-      </div>
+      ) : null}
     </section>
   );
 }

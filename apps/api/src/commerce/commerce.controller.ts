@@ -630,6 +630,20 @@ export class CommerceController {
     );
   }
 
+  /** AI product category classification (rules + optional xAI) — proposal only */
+  @Post('products/:productId/classify')
+  @RequirePermissions('products:read', 'ai:read')
+  classifyProduct(
+    @CurrentAuth() auth: AuthContext,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() body: { useXai?: boolean },
+  ) {
+    this.requireOrg(auth);
+    return this.artifacts.classifyProduct(auth.activeOrganizationId!, productId, {
+      useXai: body?.useXai !== false,
+    });
+  }
+
   @Get('products/:productId/artifacts/listing-media-plan')
   @RequirePermissions('products:read')
   listingMediaPlan(

@@ -76,6 +76,9 @@ export function isLlmConfigured(
   return Boolean(resolveXaiApiKey(env)) && shouldUseXai(env);
 }
 
+// re-export for classifiers that import from this module
+export { shouldUseXai };
+
 function resolveRuntimeConfig(options: LlmClientOptions = {}): {
   apiKey: string | undefined;
   baseUrl: string;

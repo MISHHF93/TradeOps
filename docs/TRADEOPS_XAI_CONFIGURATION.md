@@ -56,12 +56,24 @@ TRADEOPS_AI_DEFAULT_GENERATE=1
 | RAG service | `apps/api/src/ai/rag.service.ts` |
 | Operator synthesis | `AiOperatorService.resolveObjective` |
 
+## Classifiers (rules + optional Grok)
+
+| Classifier | API / tool | Notes |
+|------------|------------|--------|
+| Artifact purpose / type | analyze artifact + `classifyArtifactPurpose` | Proposal only |
+| Artifact content heuristics | `POST …/artifacts/:id/analyze` | Hybrid when xAI on |
+| Product category | `POST …/products/:id/classify` | Does not auto-write DB |
+| Objective intent | tool `classifyObjectiveIntent` | Routes research vs publish |
+
+Policy **blocked** outcomes stay rule fail-closed — Grok never unblocks weapons/etc.
+
 ## Honesty
 
 - No key / disabled → tools + local RAG only.  
 - No RAG hits → **no free-form answer** (refuses hallucination).  
 - Fixture chunks labeled.  
-- Not GPU fine-tuning of Grok weights.
+- Not GPU fine-tuning of Grok weights.  
+- All classifications: `proposal: true`, `humanReviewRequired: true`.
 
 ## Docs
 

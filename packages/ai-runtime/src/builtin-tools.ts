@@ -231,6 +231,104 @@ export function registerBuiltinTools(): void {
   });
 
   registerTool({
+    name: 'classifyArtifactPurpose',
+    description:
+      'Classify product artifact purpose/type (rules + optional xAI). Always a proposal requiring human review.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        mimeType: { type: 'string' },
+        purpose: { type: 'string' },
+        artifactType: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyArtifactPurpose } = await import('./ai-classifiers');
+      const i = input as Record<string, unknown>;
+      return classifyArtifactPurpose({
+        title: i.title != null ? String(i.title) : null,
+        description: i.description != null ? String(i.description) : null,
+        mimeType: i.mimeType != null ? String(i.mimeType) : null,
+        purpose: i.purpose != null ? String(i.purpose) : null,
+        artifactType: i.artifactType != null ? String(i.artifactType) : null,
+        useXai: i.useXai !== false,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'classifyProductCategory',
+    description:
+      'Propose a product category (rules + optional xAI). Proposal only — does not write Product.category.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        category: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+      required: ['title'],
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyProductCategory } = await import('./ai-classifiers');
+      const i = input as Record<string, unknown>;
+      return classifyProductCategory({
+        title: String(i.title ?? ''),
+        description: i.description != null ? String(i.description) : undefined,
+        category: i.category != null ? String(i.category) : undefined,
+        useXai: i.useXai !== false,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'classifyObjectiveIntent',
+    description:
+      'Classify an operator objective intent (research, publish, procurement, …). Proposal for routing only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        objective: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+      required: ['objective'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 20_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyObjectiveIntent } = await import('./ai-classifiers');
+      const i = input as { objective?: string; useXai?: boolean };
+      return classifyObjectiveIntent(String(i.objective ?? ''), i.useXai !== false);
+    },
+  });
+
+  registerTool({
     name: 'runPredictionEngine',
     description:
       'Run transparent demand/profit/signal predictions for top opportunities (or a productId). Writes DemandForecast rows. Empty history → zero units, low confidence.',

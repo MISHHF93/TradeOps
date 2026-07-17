@@ -14,6 +14,7 @@ out
 .env
 .env.local
 .env.*.local
+.env.bak-*
 !.env.example
 
 # Logs / coverage
@@ -64,3 +65,7 @@ predictions.csv
 # Prisma backup files
 packages/database/prisma/*.bak
 *.prisma.bak
+
+.env.bak-*
+.env.local
+

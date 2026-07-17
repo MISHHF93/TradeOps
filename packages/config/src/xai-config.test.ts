@@ -52,18 +52,18 @@ describe('xai config', () => {
   it('public status never includes api key', () => {
     const st = xaiPublicStatus({
       XAI_API_KEY: 'secret-should-not-leak',
-      XAI_CHAT_MODEL: 'grok-4.5',
+      XAI_CHAT_MODEL: 'grok-3',
     } as NodeJS.ProcessEnv);
     assert.equal(st.configured, true);
     assert.equal(st.provider, 'xai');
-    assert.equal(st.chatModel, 'grok-4.5');
+    assert.equal(st.chatModel, 'grok-3');
     assert.ok(!JSON.stringify(st).includes('secret-should-not-leak'));
   });
 
   it('getXaiConfig defaults base URL and model', () => {
     const c = getXaiConfig({ XAI_API_KEY: 'k' } as NodeJS.ProcessEnv);
     assert.equal(c.baseUrl, 'https://api.x.ai/v1');
-    assert.equal(c.chatModel, 'grok-4.5');
+    assert.equal(c.chatModel, 'grok-3');
     assert.equal(c.provider, 'xai');
   });
 

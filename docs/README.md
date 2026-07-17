@@ -23,6 +23,7 @@
 | [TRADEOPS_NORMALIZATION_ARCHITECTURE.md](./TRADEOPS_NORMALIZATION_ARCHITECTURE.md) | External → canonical mapping |
 | [TRADEOPS_AI_OPERATING_MODEL.md](./TRADEOPS_AI_OPERATING_MODEL.md) | AI as operational manager |
 | [TRADEOPS_XAI_CONFIGURATION.md](./TRADEOPS_XAI_CONFIGURATION.md) | **xAI-first AI config** — Grok + modes + RAG grounding |
+| [TRADEOPS_AI_UNIFIED_STACK.md](./TRADEOPS_AI_UNIFIED_STACK.md) | **One AI + Tavily + Capability Gateway** — text/JSON envelope |
 | [TRADEOPS_INDUSTRIAL_COMMERCE_OS.md](./TRADEOPS_INDUSTRIAL_COMMERCE_OS.md) | **Industrial AI Commerce OS** — B2B procurement, twin, verticals |
 | [TRADEOPS_RAG_ENGINE.md](./TRADEOPS_RAG_ENGINE.md) | **RAG engine** — artifacts, CSV, hybrid dense, xAI answers |
 | [TRADEOPS_PREDICTIVE_ENGINE.md](./TRADEOPS_PREDICTIVE_ENGINE.md) | **Prediction engine** — demand/profit/signal train·run·eval |

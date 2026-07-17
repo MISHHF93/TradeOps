@@ -1,6 +1,6 @@
 # TradeOps Execution Status vs Markdown
 
-**Date:** 2026-07-17 (rescan #5 — process consolidation + doc alignment)  
+**Date:** 2026-07-17 (rescan #6 — multi-tenancy + integration hub + internet security)  
 **Purpose:** Single source of truth for “what the docs describe” vs “what is actually built and runnable.”  
 **Method:** Full markdown inventory + filesystem checks + live API/web smoke.  
 **Full file inventory:** [TRADEOPS_MARKDOWN_SCAN.md](./TRADEOPS_MARKDOWN_SCAN.md)  
@@ -69,7 +69,10 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Team-level ACLs on every commerce row | **PARTIAL** | models + APIs; progressive row filters |
 | Cross-tenant HTTP e2e matrix | **PARTIAL** | domain/API isolation tests exist |
 | Email verify / password reset | **DOC ONLY** | public multi-tenant launch gap |
-| Credential vault UI | **DOC ONLY** | env for Google today |
+| Credential vault UI | **DONE foundations** | `/terminal/integrations` — env key presence only, never secret values |
+| Integration hub | **DONE foundations** | Production catalog + usage quotas + paste instructions |
+| Internet security (loopback bind) | **DONE** | `API_HOST=127.0.0.1`, security boot assert |
+| Vendor API key paste templates | **DONE** | `docs/env-api-keys.paste.env`, `env.vendors.template` |
 | Segment onboarding | **DONE foundations** | redirected under founder_direct |
 | Plans / quotas / meters | **DONE foundations** | no Stripe charges |
 
@@ -106,7 +109,8 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Full workspace `/terminal/ai` | **DONE** | |
 | Side panel on terminal pages | **DONE** | `AiSidePanel` |
 | Persist runs / shadow decisions | **DONE** | |
-| Free-form LLM (xAI Grok) | **DONE foundations** | Primary provider when key set; modes in `xai-config.ts` |
+| Free-form LLM (xAI Grok) | **DONE foundations** | Sole LLM provider when key set; modes in `xai-config.ts` |
+| Unified AI stack (xAI + Tavily + gateway) | **DONE foundations** | Search Manager, capabilities, text+JSON envelope, `POST /ai/gateway/run` |
 | xAI platform status / probe | **DONE** | `GET /ai/status`, `POST /ai/xai/probe`, UI strip |
 | RAG engine (org train/query) | **DONE** | Artifacts + hybrid dense + CSV + xAI-grounded default generate |
 | Artifact corpus CSV | **DONE** | `artifacts-corpus.csv` at repo root; sample committed |
@@ -155,7 +159,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | 9 | Channel profitability | **DONE foundations** |
 | 10 | Agentic readiness | **DONE foundations** |
 | 11 | Control tower | **DONE foundations** |
-| 12 | Integration hub | **PLANNED** |
+| 12 | Integration hub | **DONE foundations** |
 | 13 | BYOD | **PLANNED** |
 | 14 | AI governance depth | **PARTIAL** |
 | 15 | Segment onboarding | **DONE foundations** |

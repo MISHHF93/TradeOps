@@ -49,6 +49,14 @@ export {
   type XaiConfig,
 } from './xai-config';
 
+export {
+  getAiPlatformConfig,
+  aiPlatformPublicStatus,
+  type AiPlatformConfig,
+  type AiProviderId,
+  type SearchProviderId,
+} from './ai-platform-config';
+
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.

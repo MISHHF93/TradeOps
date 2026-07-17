@@ -101,7 +101,8 @@ export function getXaiConfig(
 ): XaiConfig {
   const apiKey = resolveXaiApiKey(env);
   const baseUrl = (env.XAI_BASE_URL ?? 'https://api.x.ai/v1').replace(/\/$/, '');
-  const chatModel = (env.XAI_CHAT_MODEL ?? 'grok-4.5').trim() || 'grok-4.5';
+  const chatModel =
+    (env.XAI_MODEL ?? env.XAI_CHAT_MODEL ?? 'grok-3').trim() || 'grok-3';
   const embedRaw = (env.XAI_EMBED_MODEL ?? '').trim();
   const timeoutMs = Math.max(
     5_000,

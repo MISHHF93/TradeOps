@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import type { OperationLoopMode } from '@tradeops/ai-runtime';
+import { gatewayCatalogPublic, runAiGateway } from '@tradeops/ai-runtime';
+import { aiPlatformPublicStatus } from '@tradeops/config';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
 import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
@@ -28,7 +30,48 @@ export class AiController {
   @Get('status')
   @RequirePermissions('ai:read')
   async aiStatus(@CurrentAuth() auth: AuthContext) {
-    return this.operator.platformAiStatus(requireOrgId(auth));
+    const base = await this.operator.platformAiStatus(requireOrgId(auth));
+    return {
+      ...base,
+      unifiedStack: aiPlatformPublicStatus(),
+    };
+  }
+
+  /**
+   * Unified AI Gateway catalog — one AI, capabilities + response contract.
+   * Frontend should not need vendor REST knowledge.
+   */
+  @Get('gateway')
+  @RequirePermissions('ai:read')
+  gatewayCatalog() {
+    return gatewayCatalogPublic();
+  }
+
+  /**
+   * Single entry: objective → Grok + Search Manager + envelope (text + JSON).
+   */
+  @Post('gateway/run')
+  @RequirePermissions('ai:write', 'ai:read')
+  async gatewayRun(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      objective?: string;
+      conversationId?: string;
+      disableSearch?: boolean;
+      operationalContext?: Record<string, unknown>;
+    },
+  ) {
+    const tenantId = requireOrgId(auth);
+    const objective = body.objective?.trim() || 'Summarize current commerce priorities.';
+    return runAiGateway({
+      tenantId,
+      userId: auth.userId,
+      conversationId: body.conversationId,
+      objective,
+      disableSearch: body.disableSearch,
+      operationalContext: body.operationalContext,
+    });
   }
 
   @Post('xai/probe')

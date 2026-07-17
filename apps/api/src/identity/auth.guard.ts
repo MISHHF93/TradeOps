@@ -12,17 +12,11 @@ import type { SystemRole } from '@tradeops/contracts';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from './decorators';
+import { FounderAccessService } from './founder-access.service';
 import { SessionService } from './session.service';
 import type { AuthContext } from './types';
 
 type AuthedRequest = Request & { auth?: AuthContext; cookies?: Record<string, string> };
-
-const DEMO_EMAIL = 'founder@tradeops.local';
-const DEMO_ORG_SLUG = 'demo-commerce';
-const BYPASS_SESSION_ID = '00000000-0000-4000-a000-0000000000b1';
-/** Avoid re-querying demo identity on every request (PGlite is slow under serial load). */
-const BYPASS_AUTH_TTL_MS = 60_000;
-let bypassAuthCache: { at: number; auth: AuthContext } | null = null;
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -30,6 +24,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
     private readonly prisma: PrismaService,
+    private readonly founderAccess: FounderAccessService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -43,7 +38,7 @@ export class AuthGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<AuthedRequest>();
     const token = request.cookies?.[this.sessions.cookieName];
-    const bypass = isAuthBypassEnabled();
+    const direct = isAuthBypassEnabled();
 
     // Prefer a real session cookie when present.
     if (token) {
@@ -51,19 +46,19 @@ export class AuthGuard implements CanActivate {
         await this.attachSessionAuth(request, token);
         return true;
       } catch (error) {
-        if (!bypass) {
+        if (!direct) {
           if (error instanceof UnauthorizedException) {
             throw error;
           }
           throw new UnauthorizedException('Authentication required');
         }
-        // Fall through to bypass identity when cookie is missing/invalid.
+        // Fall through to founder identity when cookie is invalid and direct mode is on.
       }
-    } else if (!bypass) {
+    } else if (!direct) {
       throw new UnauthorizedException('Authentication required');
     }
 
-    request.auth = await this.resolveBypassAuth();
+    request.auth = await this.founderAccess.resolveFounderAuth();
     return true;
   }
 
@@ -86,7 +81,6 @@ export class AuthGuard implements CanActivate {
         role = membership.role as SystemRole;
         permissions = permissionsForRole(role);
       } else {
-        // Stale active org — clear for this request context
         session.activeOrganizationId = null;
       }
     }
@@ -101,65 +95,6 @@ export class AuthGuard implements CanActivate {
       displayName: session.user.displayName,
     };
   }
-
-  /**
-   * Impersonate the seeded demo owner (or the first user with a membership).
-   * Requires `pnpm run setup:db` so commerce data is org-scoped correctly.
-   */
-  private async resolveBypassAuth(): Promise<AuthContext> {
-    if (bypassAuthCache && Date.now() - bypassAuthCache.at < BYPASS_AUTH_TTL_MS) {
-      return { ...bypassAuthCache.auth };
-    }
-
-    const userInclude = {
-      memberships: {
-        include: { organization: true },
-        orderBy: { createdAt: 'asc' as const },
-      },
-    };
-
-    let user = await this.prisma.client.user.findUnique({
-      where: { email: DEMO_EMAIL },
-      include: userInclude,
-    });
-
-    if (!user) {
-      user = await this.prisma.client.user.findFirst({
-        include: userInclude,
-        orderBy: { createdAt: 'asc' },
-      });
-    }
-
-    if (!user) {
-      throw new UnauthorizedException(
-        'AUTH_BYPASS is enabled but no users exist. Run: pnpm run setup:db',
-      );
-    }
-
-    const membership =
-      user.memberships.find((m) => m.organization.slug === DEMO_ORG_SLUG) ??
-      user.memberships[0] ??
-      null;
-
-    if (!membership) {
-      throw new UnauthorizedException(
-        'AUTH_BYPASS is enabled but the user has no organization. Run: pnpm run setup:db',
-      );
-    }
-
-    const role = membership.role as SystemRole;
-    const auth: AuthContext = {
-      userId: user.id,
-      sessionId: BYPASS_SESSION_ID,
-      activeOrganizationId: membership.organizationId,
-      role,
-      permissions: permissionsForRole(role),
-      email: user.email,
-      displayName: user.displayName,
-    };
-    bypassAuthCache = { at: Date.now(), auth };
-    return { ...auth };
-  }
 }
 
 @Injectable()
@@ -167,10 +102,6 @@ export class PermissionsGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    if (isAuthBypassEnabled()) {
-      return true;
-    }
-
     const required = this.reflector.getAllAndOverride<string[] | undefined>(PERMISSIONS_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -181,6 +112,9 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<AuthedRequest>();
     const auth = request.auth;
+
+    // Public routes never hit here with required perms without auth context;
+    // founder_direct still attaches owner permissions — enforce them (org ownership elsewhere).
     if (!auth) {
       throw new UnauthorizedException('Authentication required');
     }

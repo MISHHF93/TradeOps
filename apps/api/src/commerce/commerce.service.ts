@@ -24,6 +24,8 @@ type CommerceSignalType =
 type PolicyOutcome = 'approved' | 'approved_with_conditions' | 'manual_review' | 'blocked';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../identity/audit.service';
+import { CommercePaymentService } from '../billing/commerce-payment.service';
+import { ArtifactService } from './artifact.service';
 import { deriveProductIntelligence } from './commerce.scoring';
 
 @Injectable()
@@ -34,6 +36,8 @@ export class CommerceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly artifacts: ArtifactService,
+    private readonly commercePayments: CommercePaymentService,
   ) {}
 
   async ensureFixtureConnectors(organizationId: string) {
@@ -141,6 +145,24 @@ export class CommerceService {
         hasActiveListing: false,
       });
 
+      const primaryImage =
+        offer.imageUrl ??
+        offer.imageUrls?.[0] ??
+        offer.media?.find((m) => m.kind === 'image')?.url ??
+        null;
+      const gallery =
+        offer.imageUrls?.length
+          ? offer.imageUrls
+          : (offer.media ?? [])
+              .filter((m) => m.kind === 'image')
+              .map((m) => m.url);
+      const mediaPayload = offer.media ?? [];
+      const attributes = {
+        ...(offer.attributes ?? {}),
+        brand: offer.brand ?? offer.attributes?.brand,
+        manufacturer: offer.manufacturer ?? offer.attributes?.manufacturer,
+      };
+
       const product = await this.prisma.client.product.upsert({
         where: {
           organizationId_sourcePlatform_externalId: {
@@ -169,6 +191,23 @@ export class CommerceService {
           reviewCount: offer.reviewCount,
           dataConfidence: offer.dataConfidence,
           dataFreshnessAt: new Date(offer.collectedAt),
+          brand: offer.brand ?? null,
+          manufacturer: offer.manufacturer ?? null,
+          condition:
+            typeof offer.attributes?.condition === 'string'
+              ? offer.attributes.condition
+              : 'new',
+          countryOfOrigin:
+            typeof offer.attributes?.countryOfOrigin === 'string'
+              ? offer.attributes.countryOfOrigin
+              : null,
+          primaryImageUrl: primaryImage,
+          galleryImageUrlsJson: gallery as object,
+          mediaJson: mediaPayload as object,
+          attributesJson: attributes as object,
+          mediaCount: mediaPayload.length || gallery.length,
+          schemaVersion: '2',
+          sourceProvenance: `${offer.sourcePlatform}:${offer.externalId}`,
         },
         update: {
           title: offer.title,
@@ -183,6 +222,15 @@ export class CommerceService {
           reviewCount: offer.reviewCount,
           dataConfidence: offer.dataConfidence,
           dataFreshnessAt: new Date(offer.collectedAt),
+          brand: offer.brand ?? null,
+          manufacturer: offer.manufacturer ?? null,
+          primaryImageUrl: primaryImage,
+          galleryImageUrlsJson: gallery as object,
+          mediaJson: mediaPayload as object,
+          attributesJson: attributes as object,
+          mediaCount: mediaPayload.length || gallery.length,
+          schemaVersion: '2',
+          sourceProvenance: `${offer.sourcePlatform}:${offer.externalId}`,
         },
       });
 
@@ -217,6 +265,29 @@ export class CommerceService {
       });
 
       await this.persistIntelligence(organizationId, product.id, intel, false);
+
+      // Materialize digital twin media: local stubs + discover source image URLs
+      try {
+        await this.artifacts.bootstrapFromProductSources(organizationId, product.id, userId);
+        // Best-effort remote ingest of primary/gallery (SSRF-safe); failures leave local stubs
+        for (const m of mediaPayload.filter((x) => x.kind === 'image').slice(0, 4)) {
+          try {
+            await this.artifacts.ingestRemoteUrl({
+              organizationId,
+              productId: product.id,
+              url: m.url,
+              purpose: m.purpose === 'primary' ? 'primary' : 'gallery',
+              title: m.title ?? offer.title,
+              userId,
+            });
+          } catch {
+            // Network / SSRF / host policy — keep local generated media
+          }
+        }
+      } catch {
+        // Bootstrap optional on import — product row still has media JSON
+      }
+
       imported += 1;
     }
 
@@ -391,7 +462,9 @@ export class CommerceService {
       return {
         productId: p.id,
         product: p.title,
+        description: p.description,
         category: p.category,
+        brand: p.brand,
         sourcePlatform: p.sourcePlatform,
         supplier: supplier?.name ?? 'Unknown',
         supplierCostMinor: p.supplierCostMinor,
@@ -415,6 +488,13 @@ export class CommerceService {
         currency: p.currency,
         score: o.score,
         hasActiveListing: p.listings.some((l) => l.status === 'active'),
+        rating: p.rating,
+        reviewCount: p.reviewCount,
+        primaryImageUrl: p.primaryImageUrl,
+        mediaCount: p.mediaCount,
+        galleryImageUrls: Array.isArray(p.galleryImageUrlsJson)
+          ? p.galleryImageUrlsJson
+          : [],
       };
     });
   }
@@ -522,6 +602,13 @@ export class CommerceService {
       throw new BadRequestException('Fixture marketplace channel missing — run import first');
     }
 
+    // Channel media selection from Product Artifact Engine (references, not file copies)
+    const mediaPlan = await this.artifacts.listingMediaPlan(
+      organizationId,
+      productId,
+      'fixture_marketplace',
+    );
+
     const draft = await this.marketplace.createListingDraft({
       title: product.title,
       priceMinor: product.targetPriceMinor,
@@ -529,17 +616,95 @@ export class CommerceService {
       sku: product.externalId,
     });
 
-    const listing = await this.prisma.client.listing.create({
-      data: {
+    // Draft only — status draft. Publish requires separate approval (not created here).
+    let listing = await this.prisma.client.listing.findFirst({
+      where: {
         organizationId,
         productId: product.id,
         salesChannelId: channel.id,
-        status: 'pending_approval',
-        externalId: draft.externalId,
-        priceMinor: product.targetPriceMinor,
-        currency: product.currency,
-        sku: product.externalId,
+        status: { in: ['draft', 'pending_approval'] },
       },
+    });
+
+    if (listing) {
+      listing = await this.prisma.client.listing.update({
+        where: { id: listing.id },
+        data: {
+          status: 'draft',
+          externalId: draft.externalId ?? listing.externalId,
+          priceMinor: product.targetPriceMinor,
+        },
+      });
+    } else {
+      listing = await this.prisma.client.listing.create({
+        data: {
+          organizationId,
+          productId: product.id,
+          salesChannelId: channel.id,
+          status: 'draft',
+          externalId: draft.externalId,
+          priceMinor: product.targetPriceMinor,
+          currency: product.currency,
+          sku: product.externalId,
+        },
+      });
+    }
+
+    await this.audit.write({
+      action: 'listing.draft_created',
+      resourceType: 'listing',
+      resourceId: listing.id,
+      organizationId,
+      actorUserId: userId,
+      metadata: {
+        note: 'Draft only — publish requires requestPublishListing + approval',
+        selectedArtifactIds: mediaPlan.selectedArtifactIds,
+        mediaBlocked: mediaPlan.blocked,
+      },
+    });
+
+    return {
+      listing,
+      approval: null,
+      mediaPlan: {
+        selectedArtifactIds: mediaPlan.selectedArtifactIds,
+        blocked: mediaPlan.blocked,
+        channelReadiness: mediaPlan.channelReadiness,
+        note: mediaPlan.note,
+      },
+      note: 'Listing draft created with channel media references. External publish requires separate approval and rights validation.',
+    };
+  }
+
+  /**
+   * Request publish of an existing draft — creates idempotent pending publish_listing approval.
+   */
+  async requestPublishListing(organizationId: string, userId: string, listingId: string) {
+    const listing = await this.prisma.client.listing.findFirst({
+      where: { id: listingId, organizationId },
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+    if (listing.status === 'active') {
+      throw new BadRequestException('Listing already active');
+    }
+
+    const existing = await this.prisma.client.approval.findFirst({
+      where: {
+        organizationId,
+        listingId: listing.id,
+        kind: 'publish_listing',
+        status: { in: ['pending', 'approved'] },
+      },
+    });
+    if (existing) {
+      return { listing, approval: existing, deduped: true };
+    }
+
+    await this.prisma.client.listing.update({
+      where: { id: listing.id },
+      data: { status: 'pending_approval' },
     });
 
     const approval = await this.prisma.client.approval.create({
@@ -549,19 +714,19 @@ export class CommerceService {
         status: 'pending',
         listingId: listing.id,
         requestedByUserId: userId,
-        note: 'Human approval required before first listing publish',
+        note: 'Human approval required before marketplace publish',
       },
     });
 
     await this.audit.write({
-      action: 'listing.draft_created',
-      resourceType: 'listing',
-      resourceId: listing.id,
+      action: 'listing.publish_requested',
+      resourceType: 'approval',
+      resourceId: approval.id,
       organizationId,
       actorUserId: userId,
     });
 
-    return { listing, approval };
+    return { listing, approval, deduped: false };
   }
 
   async decideApproval(
@@ -599,6 +764,10 @@ export class CommerceService {
 
     if (decision === 'approved' && approval.kind === 'supplier_purchase_order' && approval.supplierPurchaseOrder) {
       const po = approval.supplierPurchaseOrder;
+      // Re-verify payment at approval time — status may have changed since draft PO creation
+      if (po.customerOrderId) {
+        await this.commercePayments.assertOrderPaymentReady(organizationId, po.customerOrderId);
+      }
       await this.prisma.client.supplierPurchaseOrder.update({
         where: { id: po.id },
         data: { isDraft: false, status: 'paid' },
@@ -746,7 +915,20 @@ export class CommerceService {
         include: { lines: true },
       });
 
+      // Commerce payment intelligence (channel/shopper money — not SaaS billing)
+      await this.commercePayments.ensurePaymentForOrder({
+        organizationId,
+        orderId: row.id,
+        channel: order.sourcePlatform,
+        totalMinor: order.totalMinor,
+        currency: order.currency,
+        isFixture: true,
+      });
+
       if (product) {
+        // Gate sourcing on verified payment state (never PO only because order exists)
+        await this.commercePayments.assertOrderPaymentReady(organizationId, row.id);
+
         const po = await this.prisma.client.supplierPurchaseOrder.create({
           data: {
             organizationId,
@@ -768,7 +950,7 @@ export class CommerceService {
             status: 'pending',
             supplierPurchaseOrderId: po.id,
             requestedByUserId: userId,
-            note: 'Approve supplier purchase order draft before execution',
+            note: 'Approve supplier purchase order draft before execution (payment verified)',
           },
         });
 
@@ -1266,5 +1448,93 @@ export class CommerceService {
       evaluation,
       pipeline,
     };
+  }
+
+  async listWatchlist(organizationId: string) {
+    const items = await this.prisma.client.productWatchlistItem.findMany({
+      where: { organizationId },
+      include: {
+        product: {
+          include: {
+            opportunities: { take: 1, orderBy: { score: 'desc' } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    return {
+      items: items.map((w) => ({
+        id: w.id,
+        productId: w.productId,
+        note: w.note,
+        createdAt: w.createdAt,
+        title: w.product.title,
+        category: w.product.category,
+        sourcePlatform: w.product.sourcePlatform,
+        isFixture: w.product.sourcePlatform.startsWith('fixture'),
+        score: w.product.opportunities[0]?.score ?? null,
+        signal: w.product.opportunities[0]?.currentSignal ?? null,
+        targetPriceMinor: w.product.targetPriceMinor,
+        currency: w.product.currency,
+      })),
+      note: 'Org-scoped watchlist. Not a live marketplace alert feed.',
+    };
+  }
+
+  async addToWatchlist(
+    organizationId: string,
+    userId: string | null | undefined,
+    productId: string,
+    note?: string,
+  ) {
+    const product = await this.prisma.client.product.findFirst({
+      where: { id: productId, organizationId },
+    });
+    if (!product) throw new NotFoundException('Product not found in organization');
+
+    const item = await this.prisma.client.productWatchlistItem.upsert({
+      where: {
+        organizationId_productId: { organizationId, productId },
+      },
+      create: {
+        organizationId,
+        productId,
+        userId: userId ?? null,
+        note: note?.slice(0, 500) ?? null,
+      },
+      update: {
+        note: note?.slice(0, 500) ?? undefined,
+        userId: userId ?? undefined,
+      },
+    });
+
+    await this.audit.write({
+      action: 'watchlist.add',
+      resourceType: 'product',
+      resourceId: productId,
+      organizationId,
+      actorUserId: userId ?? null,
+      metadata: { watchlistItemId: item.id },
+    });
+
+    return { item, note: 'Added to org watchlist' };
+  }
+
+  async removeFromWatchlist(organizationId: string, productId: string, userId?: string | null) {
+    const existing = await this.prisma.client.productWatchlistItem.findUnique({
+      where: { organizationId_productId: { organizationId, productId } },
+    });
+    if (!existing) throw new NotFoundException('Not on watchlist');
+    await this.prisma.client.productWatchlistItem.delete({ where: { id: existing.id } });
+    await this.audit.write({
+      action: 'watchlist.remove',
+      resourceType: 'product',
+      resourceId: productId,
+      organizationId,
+      actorUserId: userId ?? null,
+      metadata: {},
+    });
+    return { removed: true, productId };
   }
 }

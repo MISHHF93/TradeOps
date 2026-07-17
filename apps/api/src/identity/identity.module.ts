@@ -5,6 +5,7 @@ import { AuthRateLimitService } from './auth-rate-limit.service';
 import { AuthController } from './auth.controller';
 import { AuthGuard, PermissionsGuard } from './auth.guard';
 import { AuthService } from './auth.service';
+import { FounderAccessService } from './founder-access.service';
 import { OrgsController } from './orgs.controller';
 import { OrgsService } from './orgs.service';
 import { SessionService } from './session.service';
@@ -17,6 +18,7 @@ import { SessionService } from './session.service';
     OrgsService,
     SessionService,
     AuditService,
+    FounderAccessService,
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
@@ -26,6 +28,6 @@ import { SessionService } from './session.service';
       useClass: PermissionsGuard,
     },
   ],
-  exports: [SessionService, AuditService, AuthService, OrgsService],
+  exports: [SessionService, AuditService, AuthService, OrgsService, FounderAccessService],
 })
 export class IdentityModule {}

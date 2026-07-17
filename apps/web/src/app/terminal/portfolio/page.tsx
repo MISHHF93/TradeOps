@@ -26,7 +26,7 @@ export default async function PortfolioPage() {
 
   return (
     <section>
-      <h1>Portfolio</h1>
+      <h1 className="workspace-title-active">Portfolio</h1>
       <p className="lede">
         Active commerce book. Revenue is not profit. Estimates use opportunity models until realized
         orders settle.

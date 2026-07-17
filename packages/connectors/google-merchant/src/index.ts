@@ -28,6 +28,10 @@ export const googleMerchantManifest: ConnectorManifest = {
     'pauseListing',
     'readInventory',
     'readFees',
+    'readProductImages',
+    'attachImageToListing',
+    'setPrimaryImage',
+    'readMediaProcessingStatus',
   ],
 };
 

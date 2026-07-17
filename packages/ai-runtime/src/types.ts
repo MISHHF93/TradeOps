@@ -17,6 +17,14 @@ export type AiActionClass =
   | 'financial_contractual'
   | 'prohibited';
 
+/** Objective intent — drives approval gates */
+export type ObjectiveType =
+  | 'READ_ONLY_ANALYSIS'
+  | 'DRAFT_LISTING'
+  | 'PUBLISH_LISTING'
+  | 'SUPPLIER_PO'
+  | 'MIXED';
+
 export type OperatorDecision = 'accept' | 'revise' | 'downgrade' | 'block' | 'escalate';
 
 export type ToolRiskPolicy = {
@@ -61,6 +69,13 @@ export type ToolTraceEntry = {
   at: string;
 };
 
+export type TimelineStep = {
+  at: string;
+  step: string;
+  status: 'done' | 'active' | 'failed' | 'skipped';
+  detail?: string;
+};
+
 export type RecommendationDraft = {
   productId?: string;
   rank: number;
@@ -77,6 +92,9 @@ export type RecommendationDraft = {
   approvalRequired: boolean;
   expectedOutcome: Record<string, unknown>;
   proposedAction: string;
+  /** Product evaluation card fields (read-only analysis) */
+  productCard?: Record<string, unknown>;
+  nextActions?: string[];
 };
 
 export type CriticResult = {
@@ -98,6 +116,10 @@ export type OperatorPlan = {
   steps: string[];
   toolsToCall: string[];
   interpretation: string;
+  objectiveType?: ObjectiveType;
+  riskClass?: AiActionClass;
+  approvalRequired?: boolean;
+  filters?: Record<string, unknown>;
 };
 
 export type OperatorCycleResult = {
@@ -109,4 +131,19 @@ export type OperatorCycleResult = {
   decision: OperatorDecision;
   decisionNote: string;
   loopMode: OperationLoopMode;
+  /** Explicit objective classification */
+  objectiveType: ObjectiveType;
+  riskClass: AiActionClass;
+  approvalRequired: boolean;
+  timeline: TimelineStep[];
+  sources: Array<{ name: string; status: string; detail?: string }>;
+  responseSummary: string;
+  candidateStats: {
+    retrieved: number;
+    normalized: number;
+    rejectedMissingCost: number;
+    passedPolicy: number;
+    ranked: number;
+  };
+  filtersApplied: Record<string, unknown>;
 };

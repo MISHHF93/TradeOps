@@ -4,7 +4,13 @@ import {
   calculateUnitEconomics,
   scoreOpportunity,
 } from '@tradeops/commerce-engine';
-import { isAuthBypassEnabled, loadEnv } from '@tradeops/config';
+import {
+  FOUNDER_DIRECT_DEFAULTS,
+  founderAccessActive,
+  isAuthBypassEnabled,
+  loadEnv,
+  publicAccessWarning,
+} from '@tradeops/config';
 import { Public } from '../identity/decorators';
 import { capabilitySummary, listCapabilities } from './capabilities';
 
@@ -40,6 +46,30 @@ export class PublicToolsController {
   }
 
   /**
+   * Access mode for web routing / UI composition.
+   * No private merchant data. Central switch for founder_direct vs auth.
+   */
+  @Public()
+  @Get('access-mode')
+  accessMode() {
+    const env = loadEnv();
+    const warning = publicAccessWarning(env);
+    return {
+      mode: env.TRADEOPS_ACCESS_MODE,
+      founderDirect: founderAccessActive(env),
+      directIdentity: isAuthBypassEnabled(env),
+      founderEmail: founderAccessActive(env) ? FOUNDER_DIRECT_DEFAULTS.email : null,
+      organizationSlug: founderAccessActive(env)
+        ? FOUNDER_DIRECT_DEFAULTS.organizationSlug
+        : null,
+      publicWarning: warning,
+      note: founderAccessActive(env)
+        ? 'Direct Founder Access — open /terminal without login. Auth architecture retained for authenticated/multi_tenant modes.'
+        : 'Session authentication required for private surfaces.',
+    };
+  }
+
+  /**
    * Launch honesty board — no private merchant data.
    * Used by public /status page and operators.
    */
@@ -57,6 +87,7 @@ export class PublicToolsController {
     });
     return {
       generatedAt: new Date().toISOString(),
+      accessMode: env.TRADEOPS_ACCESS_MODE,
       entries,
       summary: capabilitySummary(entries),
       note: 'Statuses describe runtime honesty, not marketing claims.',

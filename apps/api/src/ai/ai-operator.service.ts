@@ -1,18 +1,29 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, forwardRef } from '@nestjs/common';
 import {
   describeLoopModes,
+  evaluateExampleReadiness,
+  getLiveExample,
+  listLiveExamples,
   listToolsPublic,
   registerBuiltinTools,
   resolveLoopMode,
   runOperatorCycle,
+  type LiveExampleDefinition,
   type OperationLoopMode,
   type OperatorProduct,
 } from '@tradeops/ai-runtime';
 import { listLiveFeeds } from '@tradeops/connector-core';
+import { BillingService } from '../billing/billing.service';
+import { CommercePaymentService } from '../billing/commerce-payment.service';
+import { CommerceService } from '../commerce/commerce.service';
+import { CommerceCaseService } from '../commerce/commerce-case.service';
+import { EcosystemService } from '../commerce/ecosystem.service';
+import { WorkspaceService } from '../commerce/workspace.service';
 import { AuditService } from '../identity/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventFabricService } from '../events/event-fabric.service';
 import { HarmonizationService } from '../harmonization/harmonization.service';
+import { SaasService } from '../saas/saas.service';
 
 /** Prisma JSON columns accept structured values at runtime; cast for strict InputJsonValue. */
 function asJson(value: unknown): object {
@@ -28,6 +39,13 @@ export class AiOperatorService implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly events: EventFabricService,
     private readonly harmonization: HarmonizationService,
+    private readonly commerce: CommerceService,
+    private readonly commerceCases: CommerceCaseService,
+    private readonly ecosystem: EcosystemService,
+    private readonly workspace: WorkspaceService,
+    private readonly billing: BillingService,
+    private readonly commercePayments: CommercePaymentService,
+    @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
   ) {}
 
   onModuleInit(): void {
@@ -54,6 +72,592 @@ export class AiOperatorService implements OnModuleInit {
     };
   }
 
+  /**
+   * Live Example Framework catalog + per-org readiness (honest fixture vs live).
+   */
+  async listLiveExamplesWithReadiness(organizationId: string) {
+    const installations = await this.prisma.client.connectorInstallation.findMany({
+      where: { organizationId },
+      take: 50,
+    });
+    const productCount = await this.prisma.client.product.count({
+      where: { organizationId },
+    });
+    const connectors = installations.map((c) => ({
+      providerKey: c.providerKey,
+      status: String(c.status),
+      isFixture: c.providerKey.startsWith('fixture'),
+      capabilities: undefined as string[] | undefined,
+    }));
+
+    return {
+      examples: listLiveExamples().map((ex) => {
+        const readiness = evaluateExampleReadiness(ex, { connectors, productCount });
+        return { ...ex, ...readiness };
+      }),
+      productCount,
+      connectors: connectors.map((c) => ({
+        providerKey: c.providerKey,
+        status: c.status,
+        dataClass: c.isFixture ? 'TEST_FIXTURE' : 'CONNECTED',
+        label: c.isFixture
+          ? 'TEST FIXTURE — NOT LIVE DATA'
+          : `Connector ${c.providerKey}: ${c.status}`,
+      })),
+      honesty: {
+        note: 'Readiness is capability-based. Fixture connectors never count as live marketplace data.',
+      },
+    };
+  }
+
+  async runLiveExample(input: {
+    organizationId: string;
+    userId?: string | null;
+    exampleId: string;
+    forceShadow?: boolean;
+    permissions?: string[];
+  }) {
+    const example = getLiveExample(input.exampleId);
+    if (!example) {
+      throw new Error(`Unknown live example: ${input.exampleId}`);
+    }
+    if (!example.runnable) {
+      return {
+        blocked: true as const,
+        exampleId: example.id,
+        readiness: 'not_implemented' as const,
+        message: `Live example "${example.name}" is defined but automated execution is not fully wired.`,
+        example,
+      };
+    }
+
+    const catalog = await this.listLiveExamplesWithReadiness(input.organizationId);
+    const ready = catalog.examples.find((e) => e.id === example.id);
+
+    // Specialized multi-step examples (still real DB + services, not mock UI)
+    if (example.id === 'supplier-comparison-listing-draft') {
+      return this.runSupplierComparisonListingDraftExample({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        example,
+        readiness: ready?.readiness ?? 'partially_ready',
+        readinessReason: ready?.reason,
+        forceShadow: input.forceShadow !== false,
+        permissions: input.permissions,
+      });
+    }
+
+    if (example.id === 'approved-listing-publication') {
+      return this.runApprovedListingPublicationExample({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        example,
+        readiness: ready?.readiness ?? 'partially_ready',
+        readinessReason: ready?.reason,
+      });
+    }
+
+    if (example.id === 'customer-order-supplier-fulfillment') {
+      return this.runOrderFulfillmentExample({
+        organizationId: input.organizationId,
+        userId: input.userId,
+        example,
+        readiness: ready?.readiness ?? 'partially_ready',
+        readinessReason: ready?.reason,
+      });
+    }
+
+    const result = await this.runObjective({
+      organizationId: input.organizationId,
+      userId: input.userId,
+      objective: example.objective,
+      forceShadow: input.forceShadow !== false,
+      permissions: input.permissions,
+      liveExampleId: example.id,
+    });
+
+    return {
+      blocked: false as const,
+      exampleId: example.id,
+      example,
+      readiness: ready?.readiness ?? 'partially_ready',
+      readinessReason: ready?.reason,
+      ...result,
+    };
+  }
+
+  /**
+   * Example 2: strongest product → supplier offers → channel pick → listing draft (no publish).
+   */
+  private async runSupplierComparisonListingDraftExample(input: {
+    organizationId: string;
+    userId?: string | null;
+    example: LiveExampleDefinition;
+    readiness: string;
+    readinessReason?: string;
+    forceShadow?: boolean;
+    permissions?: string[];
+  }) {
+    // First ensure we have ranked evaluation context
+    const scan = await this.runObjective({
+      organizationId: input.organizationId,
+      userId: input.userId,
+      objective:
+        'Find three products under $20 supplier cost that could sell in Canada with at least a 25% expected margin.',
+      forceShadow: input.forceShadow !== false,
+      permissions: input.permissions,
+      liveExampleId: input.example.id,
+    });
+
+    const top = scan.recommendations?.[0] as
+      | { productId?: string; title?: string; productCard?: Record<string, unknown> }
+      | undefined;
+    let productId = top?.productId;
+    if (!productId) {
+      const best = await this.prisma.client.opportunity.findFirst({
+        where: { organizationId: input.organizationId },
+        orderBy: { score: 'desc' },
+      });
+      productId = best?.productId;
+    }
+    if (!productId) {
+      return {
+        blocked: false as const,
+        exampleId: input.example.id,
+        example: input.example,
+        readiness: input.readiness,
+        readinessReason: input.readinessReason,
+        ...scan,
+        responseSummary:
+          scan.responseSummary +
+          '\n\nCould not create listing draft: no qualifying product in store. Import supplier data first.',
+      };
+    }
+
+    const product = await this.prisma.client.product.findFirst({
+      where: { id: productId, organizationId: input.organizationId },
+    });
+    if (!product) {
+      return {
+        blocked: false as const,
+        exampleId: input.example.id,
+        example: input.example,
+        readiness: input.readiness,
+        ...scan,
+        responseSummary: 'Product disappeared before draft creation.',
+      };
+    }
+
+    const offers = await this.prisma.client.supplierOffer.findMany({
+      where: { organizationId: input.organizationId, productId: product.id },
+      include: { supplier: true },
+      take: 20,
+    });
+    const channels = await this.prisma.client.salesChannel.findMany({
+      where: { organizationId: input.organizationId },
+      take: 10,
+    });
+
+    const offerCompare = (offers.length
+      ? offers.map((o) => ({
+          costMinor: o.costMinor,
+          shippingMinor: o.shippingCostMinor,
+          supplierName: o.supplier?.name ?? o.sourcePlatform,
+        }))
+      : [
+          {
+            costMinor: product.supplierCostMinor,
+            shippingMinor: product.shippingCostMinor,
+            supplierName: product.sourcePlatform,
+          },
+        ]
+    ).map((o) => {
+      const cost = o.costMinor + o.shippingMinor;
+      const marginBps = product.targetPriceMinor
+        ? Math.round(
+            ((product.targetPriceMinor -
+              cost -
+              product.marketplaceFeeMinor -
+              product.paymentFeeMinor) /
+              product.targetPriceMinor) *
+              10_000,
+          )
+        : 0;
+      return {
+        supplier: o.supplierName,
+        costMinor: o.costMinor,
+        shippingMinor: o.shippingMinor,
+        landedMinor: cost,
+        expectedMarginBps: marginBps,
+        isFixture: product.sourcePlatform.startsWith('fixture'),
+      };
+    });
+    offerCompare.sort((a, b) => b.expectedMarginBps - a.expectedMarginBps);
+    const bestOffer = offerCompare[0];
+
+    const channel = channels.find((c) => c.providerKey === 'fixture-marketplace') ?? channels[0];
+    let listing = null as null | { id: string; status: string; sku: string };
+    let draftNote = 'No sales channel configured — draft not created.';
+    if (channel) {
+      const existing = await this.prisma.client.listing.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          productId: product.id,
+          salesChannelId: channel.id,
+          status: { in: ['draft', 'pending_approval'] },
+        },
+      });
+      if (existing) {
+        listing = await this.prisma.client.listing.update({
+          where: { id: existing.id },
+          data: { status: 'draft', priceMinor: product.targetPriceMinor },
+        });
+        draftNote = 'Updated existing listing draft (not published).';
+      } else {
+        listing = await this.prisma.client.listing.create({
+          data: {
+            organizationId: input.organizationId,
+            productId: product.id,
+            salesChannelId: channel.id,
+            status: 'draft',
+            priceMinor: product.targetPriceMinor,
+            currency: product.currency,
+            sku: product.externalId,
+          },
+        });
+        draftNote = 'Created listing draft (not published). Publish requires separate approval.';
+      }
+      await this.audit.write({
+        action: 'listing.draft_created',
+        resourceType: 'listing',
+        resourceId: listing.id,
+        organizationId: input.organizationId,
+        actorUserId: input.userId ?? null,
+        metadata: {
+          liveExampleId: input.example.id,
+          channel: channel.providerKey,
+          productId: product.id,
+        },
+      });
+    }
+
+    const responseSummary = [
+      scan.responseSummary,
+      '',
+      '--- Supplier comparison & listing draft ---',
+      `Selected product: ${product.title} (${product.id.slice(0, 8)})`,
+      `Supplier options compared: ${offerCompare.length}`,
+      bestOffer
+        ? `Recommended supplier: ${bestOffer.supplier} · landed $${(bestOffer.landedMinor / 100).toFixed(2)} · est. margin ${(bestOffer.expectedMarginBps / 100).toFixed(1)}%`
+        : 'No supplier offer rows — used product cost baseline.',
+      channel
+        ? `Recommended channel: ${channel.providerKey} (${channel.name})`
+        : 'No sales channel.',
+      draftNote,
+      listing ? `Listing ${listing.id.slice(0, 8)} status=${listing.status}` : '',
+      product.sourcePlatform.startsWith('fixture')
+        ? 'TEST FIXTURE — NOT LIVE DATA (draft is real DB row, marketplace is fixture).'
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    // Patch latest run decision note with draft outcome
+    if (scan.runId) {
+      await this.prisma.client.operatorRun.update({
+        where: { id: scan.runId },
+        data: {
+          decisionNote: responseSummary.slice(0, 4000),
+          planJson: asJson({
+            ...(typeof scan.plan === 'object' && scan.plan ? scan.plan : {}),
+            finalAnswer: responseSummary,
+            liveExampleId: input.example.id,
+            supplierComparison: offerCompare,
+            listingDraft: listing,
+            recommendedChannel: channel?.providerKey ?? null,
+          }),
+        },
+      });
+    }
+
+    return {
+      blocked: false as const,
+      exampleId: input.example.id,
+      example: input.example,
+      readiness: input.readiness,
+      readinessReason: input.readinessReason,
+      ...scan,
+      responseSummary,
+      decisionNote: responseSummary,
+      supplierComparison: offerCompare,
+      listingDraft: listing,
+      recommendedChannel: channel
+        ? { providerKey: channel.providerKey, id: channel.id }
+        : null,
+      resultsPath: scan.resultsPath ?? `/terminal/objectives/${scan.runId}`,
+      nextSteps: [
+        'Open listing draft on product twin',
+        'Request publish approval when ready (not created by this example)',
+      ],
+    };
+  }
+
+  /**
+   * Example 3: ensure publish approval exists for a draft listing (does not auto-publish).
+   */
+  private async runApprovedListingPublicationExample(input: {
+    organizationId: string;
+    userId?: string | null;
+    example: LiveExampleDefinition;
+    readiness: string;
+    readinessReason?: string;
+  }) {
+    const draft = await this.prisma.client.listing.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        status: { in: ['draft', 'pending_approval'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+      include: { product: true, salesChannel: true },
+    });
+
+    if (!draft) {
+      return {
+        blocked: true as const,
+        exampleId: input.example.id,
+        example: input.example,
+        readiness: 'credentials_required' as const,
+        message:
+          'Live execution blocked for publication path: no listing draft found. Run "Supplier Comparison and Listing Draft" first.',
+        requiredAction: 'Run live example supplier-comparison-listing-draft',
+      };
+    }
+
+    await this.prisma.client.listing.update({
+      where: { id: draft.id },
+      data: { status: 'pending_approval' },
+    });
+
+    let approval = await this.prisma.client.approval.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        listingId: draft.id,
+        kind: 'publish_listing',
+        status: { in: ['pending', 'approved'] },
+      },
+    });
+    let deduped = false;
+    if (approval) {
+      deduped = true;
+    } else {
+      approval = await this.prisma.client.approval.create({
+        data: {
+          organizationId: input.organizationId,
+          kind: 'publish_listing',
+          status: 'pending',
+          listingId: draft.id,
+          requestedByUserId: input.userId ?? null,
+          note: `Publish listing ${draft.sku} to ${draft.salesChannel.providerKey} — requires founder approval before external call`,
+        },
+      });
+    }
+
+    await this.audit.write({
+      action: 'listing.publish_requested',
+      resourceType: 'approval',
+      resourceId: approval.id,
+      organizationId: input.organizationId,
+      actorUserId: input.userId ?? null,
+      metadata: { liveExampleId: input.example.id, deduped },
+    });
+
+    const isFixtureChannel = draft.salesChannel.providerKey.startsWith('fixture');
+    const responseSummary = [
+      'Listing publication path prepared (not silently published).',
+      `Listing: ${draft.sku} · product ${draft.product.title}`,
+      `Channel: ${draft.salesChannel.providerKey}`,
+      `Approval: ${approval.id.slice(0, 8)} status=${approval.status}${deduped ? ' (deduped existing)' : ''}`,
+      isFixtureChannel
+        ? 'Channel is TEST FIXTURE — approve will call fixture marketplace publish, not a live merchant API.'
+        : 'Live OAuth/credentials required for non-fixture channels before external success.',
+      '',
+      'Next: open /terminal/approvals → Approve → system executes publish and marks listing active.',
+    ].join('\n');
+
+    return {
+      blocked: false as const,
+      exampleId: input.example.id,
+      example: input.example,
+      readiness: input.readiness,
+      readinessReason: input.readinessReason,
+      objectiveType: 'PUBLISH_LISTING',
+      approvalRequired: true,
+      decision: 'escalate',
+      responseSummary,
+      decisionNote: responseSummary,
+      approval: {
+        id: approval.id,
+        status: approval.status,
+        kind: approval.kind,
+        listingId: draft.id,
+      },
+      resultsPath: '/terminal/approvals',
+      honesty: {
+        note: isFixtureChannel
+          ? 'TEST FIXTURE marketplace publish path'
+          : 'Credential-gated live publish',
+      },
+    };
+  }
+
+  /**
+   * Example 4: ensure a paid order + PO draft + approval exist (fixture order path if empty).
+   */
+  private async runOrderFulfillmentExample(input: {
+    organizationId: string;
+    userId?: string | null;
+    example: LiveExampleDefinition;
+    readiness: string;
+    readinessReason?: string;
+  }) {
+    let order = await this.prisma.client.customerOrder.findFirst({
+      where: { organizationId: input.organizationId, status: 'paid' },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        lines: true,
+        fulfillments: true,
+        purchaseOrders: true,
+      },
+    });
+
+    let seeded = false;
+    let fixtureOrderIngest = false;
+    if (!order) {
+      // Honest TEST FIXTURE seed so the fulfillment example is executable in founder dev
+      await this.commerce.ingestFixtureOrders(
+        input.organizationId,
+        input.userId ?? 'system',
+      );
+      fixtureOrderIngest = true;
+      seeded = true;
+      order = await this.prisma.client.customerOrder.findFirst({
+        where: { organizationId: input.organizationId, status: 'paid' },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          lines: true,
+          fulfillments: true,
+          purchaseOrders: true,
+        },
+      });
+    }
+
+    if (!order) {
+      return {
+        blocked: true as const,
+        exampleId: input.example.id,
+        example: input.example,
+        readiness: 'partially_ready' as const,
+        message:
+          'Live execution blocked: no paid customer orders after fixture ingest. Import supplier products first, then rerun.',
+        requiredAction: 'Import fixture supplier products, then rerun this example',
+        resultsPath: '/terminal/orders',
+      };
+    }
+
+    let po = order.purchaseOrders?.[0];
+    if (!po) {
+      const productId =
+        order.lines.find((l) => l.productId)?.productId ??
+        (
+          await this.prisma.client.product.findFirst({
+            where: { organizationId: input.organizationId },
+          })
+        )?.id;
+      if (productId) {
+        const product = await this.prisma.client.product.findFirst({
+          where: { id: productId, organizationId: input.organizationId },
+        });
+        if (product) {
+          po = await this.prisma.client.supplierPurchaseOrder.create({
+            data: {
+              organizationId: input.organizationId,
+              productId: product.id,
+              customerOrderId: order.id,
+              status: 'pending',
+              costMinor: product.supplierCostMinor,
+              shippingMinor: product.shippingCostMinor,
+              currency: product.currency,
+              quantity: order.lines[0]?.quantity ?? 1,
+              isDraft: true,
+            },
+          });
+          seeded = true;
+        }
+      }
+    }
+
+    let approval = null as null | { id: string; status: string };
+    if (po) {
+      const existing = await this.prisma.client.approval.findFirst({
+        where: {
+          organizationId: input.organizationId,
+          supplierPurchaseOrderId: po.id,
+          kind: 'supplier_purchase_order',
+          status: { in: ['pending', 'approved'] },
+        },
+      });
+      if (existing) {
+        approval = existing;
+      } else {
+        approval = await this.prisma.client.approval.create({
+          data: {
+            organizationId: input.organizationId,
+            kind: 'supplier_purchase_order',
+            status: 'pending',
+            supplierPurchaseOrderId: po.id,
+            requestedByUserId: input.userId ?? null,
+            note: 'Approve supplier purchase order before external supplier submission',
+          },
+        });
+        seeded = true;
+      }
+    }
+
+    const responseSummary = [
+      'Customer order → supplier fulfillment path.',
+      fixtureOrderIngest
+        ? 'TEST FIXTURE — seeded paid order via fixture marketplace ingest (NOT live marketplace traffic).'
+        : 'Using existing paid order in store.',
+      `Order ${order.id.slice(0, 8)} status=${order.status} totalMinor=${order.totalMinor}`,
+      po
+        ? `PO ${po.id.slice(0, 8)} draft=${po.isDraft} status=${po.status}`
+        : 'No PO linked — product mapping missing.',
+      approval
+        ? `Approval ${approval.id.slice(0, 8)} status=${approval.status} (required before supplier submit)`
+        : 'No PO approval created.',
+      seeded ? 'Created missing PO/approval rows for this order (idempotent).' : 'Used existing order/PO/approval.',
+      '',
+      'Next: /terminal/approvals → Approve PO → fulfillment advances; tracking is fixture/carrier until live supplier API.',
+    ].join('\n');
+
+    return {
+      blocked: false as const,
+      exampleId: input.example.id,
+      example: input.example,
+      readiness: input.readiness,
+      readinessReason: input.readinessReason,
+      objectiveType: 'SUPPLIER_PO',
+      approvalRequired: true,
+      decision: 'escalate',
+      responseSummary,
+      decisionNote: responseSummary,
+      order: { id: order.id, status: order.status },
+      purchaseOrder: po ? { id: po.id, isDraft: po.isDraft, status: po.status } : null,
+      approval,
+      resultsPath: '/terminal/approvals',
+    };
+  }
+
   async runObjective(input: {
     organizationId: string;
     userId?: string | null;
@@ -61,6 +665,9 @@ export class AiOperatorService implements OnModuleInit {
     loopMode?: OperationLoopMode;
     forceShadow?: boolean;
     permissions?: string[];
+    liveExampleId?: string;
+    /** Bind operator to a commerce case — stage-aware recommendations only */
+    commerceCaseId?: string;
   }) {
     const hasLiveGoogle = Boolean(
       process.env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim() &&
@@ -77,31 +684,122 @@ export class AiOperatorService implements OnModuleInit {
     const effectiveMode: OperationLoopMode =
       input.loopMode ?? (input.forceShadow === false && hasLiveGoogle ? 'development' : 'shadow');
 
+    // Server-side entitlement enforcement (never UI-only)
+    await this.saas.assertAiEvaluationAllowed(input.organizationId);
+
+    // Persona workspace context — AI inherits who/what/which procedures
+    let workspacePreamble = '';
+    let allowedAiTools: string[] = [];
+    if (input.userId) {
+      try {
+        const ws = await this.workspace.resolve({
+          organizationId: input.organizationId,
+          userId: input.userId,
+          founderDirect: process.env.TRADEOPS_ACCESS_MODE === 'founder_direct',
+        });
+        workspacePreamble = ws.aiContextPreamble;
+        allowedAiTools = ws.allowedAiTools;
+      } catch {
+        // Workspace optional if membership missing
+      }
+    }
+
+    let objective = input.objective;
+    let caseContext: {
+      caseId: string;
+      productId: string;
+      currentStage: string;
+      stageStatus: string;
+      contextPreamble: string;
+    } | null = null;
+    if (input.commerceCaseId?.trim()) {
+      const ctx = await this.commerceCases.getCaseAiContext(
+        input.organizationId,
+        input.commerceCaseId.trim(),
+      );
+      caseContext = {
+        caseId: ctx.caseId,
+        productId: ctx.productId,
+        currentStage: ctx.currentStage,
+        stageStatus: ctx.stageStatus,
+        contextPreamble: ctx.contextPreamble,
+      };
+      objective = `${ctx.contextPreamble}\n\nOperator objective:\n${input.objective}`;
+    }
+    if (workspacePreamble) {
+      objective = `${workspacePreamble}\n\n${objective}`;
+    }
+
     const run = await this.prisma.client.operatorRun.create({
       data: {
         organizationId: input.organizationId,
         userId: input.userId ?? null,
-        objective: input.objective,
+        objective,
         loopMode: effectiveMode,
         status: 'collecting',
-        planJson: {},
+        planJson: asJson({
+          ...(caseContext
+            ? { commerceCaseId: caseContext.caseId, stage: caseContext.currentStage }
+            : {}),
+          allowedAiTools,
+          workspaceBound: Boolean(workspacePreamble),
+        }),
         toolTraceJson: [],
       },
     });
 
     try {
-      const products = await this.loadOperatorProducts(input.organizationId);
+      let products = await this.loadOperatorProducts(input.organizationId);
+      if (caseContext) {
+        products = products.filter((p) => p.productId === caseContext!.productId);
+        if (products.length === 0) {
+          // Still allow cycle with empty product set if filter too tight
+          products = await this.loadOperatorProducts(input.organizationId);
+        }
+      }
+      const connectors = await this.prisma.client.connectorInstallation.findMany({
+        where: { organizationId: input.organizationId },
+        take: 20,
+      });
+      const connectorSources = [
+        ...connectors.map((c) => ({
+          name: c.providerKey,
+          status: String(c.status),
+          detail: c.providerKey.startsWith('fixture') ? 'Fixture-labeled' : undefined,
+        })),
+        {
+          name: 'Product store',
+          status: products.length > 0 ? 'connected' : 'empty',
+          detail: `${products.length} products`,
+        },
+      ];
 
       const cycle = await runOperatorCycle({
         objective: input.objective,
         products,
         loopMode: effectiveMode,
+        connectorSources,
         ctx: {
           organizationId: input.organizationId,
           userId: input.userId,
           loopMode: effectiveMode,
           permissions: input.permissions ?? ['*'],
           deps: {
+            ecosystemCapabilityBoard: async ({ organizationId }: { organizationId: string }) =>
+              this.ecosystem.capabilityBoard(organizationId),
+            selectConnectorsForCapabilities: async ({
+              organizationId,
+              required,
+            }: {
+              organizationId: string;
+              required: string[];
+            }) => {
+              const board = await this.ecosystem.capabilityBoard(organizationId);
+              return this.ecosystem.selectConnectors(
+                board.advertisements,
+                required as import('@tradeops/connector-core').BusinessCapability[],
+              );
+            },
             searchProducts: async ({
               organizationId,
               limit,
@@ -114,12 +812,15 @@ export class AiOperatorService implements OnModuleInit {
                 take: limit ?? 50,
                 orderBy: { updatedAt: 'desc' },
               });
-              return rows.map((p) => ({
-                productId: p.id,
-                title: p.title,
-                sourcePlatform: p.sourcePlatform,
-                isFixture: p.sourcePlatform.startsWith('fixture'),
-              }));
+              return {
+                count: rows.length,
+                products: rows.map((p) => ({
+                  productId: p.id,
+                  title: p.title,
+                  sourcePlatform: p.sourcePlatform,
+                  isFixture: p.sourcePlatform.startsWith('fixture'),
+                })),
+              };
             },
             draftListing: async ({
               organizationId,
@@ -130,13 +831,13 @@ export class AiOperatorService implements OnModuleInit {
               productId: string;
               userId?: string | null;
             }) => {
-              // Draft only — create pending approval path via commerce listing draft is host concern
+              // Draft only — no publish approval here
               return {
-                status: 'draft_queued_for_approval',
+                status: 'draft_only',
                 organizationId,
                 productId,
                 userId: userId ?? null,
-                note: 'Draft action only. No external marketplace publish.',
+                note: 'Draft action only. No external marketplace publish. Publish requires separate approval.',
               };
             },
             evaluateOutcomes: async ({ organizationId }: { organizationId: string }) => {
@@ -146,6 +847,73 @@ export class AiOperatorService implements OnModuleInit {
                 orderBy: { createdAt: 'desc' },
               });
               return { count: outcomes.length, outcomes: outcomes.slice(0, 10) };
+            },
+            getBillingStatus: async ({ organizationId }: { organizationId: string }) =>
+              this.billing.getSubscriptionStatus(organizationId),
+            createBillingCheckout: async (args: {
+              organizationId: string;
+              userId?: string | null;
+              planId: string;
+              interval?: 'month' | 'year';
+            }) => this.billing.createCheckoutSession(args),
+            openBillingPortal: async (args: {
+              organizationId: string;
+              userId?: string | null;
+            }) => this.billing.createPortalSession(args),
+            inspectOrderPayment: async (args: {
+              organizationId: string;
+              paymentId?: string;
+              orderId?: string;
+            }) => {
+              if (args.paymentId) {
+                return this.commercePayments.getPaymentDetail(args.organizationId, args.paymentId);
+              }
+              const list = await this.commercePayments.listPayments(args.organizationId);
+              if (args.orderId) {
+                return {
+                  ...list,
+                  payments: list.payments.filter((p) => p.customerOrderId === args.orderId),
+                };
+              }
+              return list;
+            },
+            inspectPayout: async ({ organizationId }: { organizationId: string }) => {
+              const [payouts, reconciliations] = await Promise.all([
+                this.commercePayments.listPayouts(organizationId),
+                this.commercePayments.listReconciliations(organizationId),
+              ]);
+              return { payouts, reconciliations };
+            },
+            reconcilePayout: async (args: {
+              organizationId: string;
+              userId?: string | null;
+            }) => this.commercePayments.createPayoutAndReconcile(args),
+            explainPaymentVariance: async (args: {
+              organizationId: string;
+              reconciliationId?: string;
+            }) => {
+              const { reconciliations } = await this.commercePayments.listReconciliations(
+                args.organizationId,
+              );
+              const row = args.reconciliationId
+                ? reconciliations.find((r) => r.id === args.reconciliationId)
+                : reconciliations[0];
+              if (!row) {
+                return { note: 'No reconciliations yet. Run fixture reconcile or ingest a payout.' };
+              }
+              return {
+                reconciliationId: row.id,
+                status: row.status,
+                expectedNetMinor: row.expectedNetMinor,
+                actualNetMinor: row.actualNetMinor,
+                varianceMinor: row.varianceMinor,
+                unmatchedAmountMinor: row.unmatchedAmountMinor,
+                summary: row.summaryJson,
+                explanation:
+                  row.varianceMinor === 0
+                    ? 'Expected net matches payout net — reconciliation matched.'
+                    : `Variance of ${row.varianceMinor} minor units: actual net (${row.actualNetMinor}) vs expected (${row.expectedNetMinor}). Inspect settlement fees, refunds, and unmatched lines.`,
+              };
             },
           },
         },
@@ -162,7 +930,11 @@ export class AiOperatorService implements OnModuleInit {
             actionClass: rec.actionClass,
             title: rec.title,
             rationale: rec.rationale,
-            evidenceJson: asJson(rec.evidence),
+            evidenceJson: asJson({
+              ...rec.evidence,
+              productCard: rec.productCard,
+              nextActions: rec.nextActions,
+            }),
             assumptionsJson: asJson(rec.assumptions),
             missingDataJson: asJson(rec.missingData),
             calculationJson: asJson(rec.calculation),
@@ -178,8 +950,12 @@ export class AiOperatorService implements OnModuleInit {
         });
         recRows.push(row);
 
-        // Shadow decision for evaluation loop
-        if (effectiveMode === 'shadow' || rec.approvalRequired) {
+        // Shadow ledger for what AI would do on consequential actions only
+        if (
+          effectiveMode === 'shadow' &&
+          rec.actionClass !== 'read_only' &&
+          rec.proposedAction !== 'evaluateProduct'
+        ) {
           await this.prisma.client.shadowDecision.create({
             data: {
               organizationId: input.organizationId,
@@ -194,27 +970,51 @@ export class AiOperatorService implements OnModuleInit {
           });
         }
 
-        // Queue human approval for draft listing when product known
-        if (rec.productId && rec.approvalRequired && rec.proposedAction === 'draftListing') {
+        // ONLY queue publish_listing approval for consequential publish intents
+        if (
+          rec.productId &&
+          rec.approvalRequired &&
+          (rec.proposedAction === 'publishListing' ||
+            cycle.objectiveType === 'PUBLISH_LISTING')
+        ) {
           await this.queueListingApproval({
             organizationId: input.organizationId,
             productId: rec.productId,
             userId: input.userId,
-            note: `AI operator: ${rec.title}`,
+            note: `AI operator publish: ${rec.title}`,
           });
         }
       }
 
+      // Persist timeline + response as plan envelope (ObjectiveExecution equivalent)
+      const planEnvelope = {
+        ...cycle.plan,
+        timeline: cycle.timeline,
+        sources: cycle.sources,
+        responseSummary: cycle.responseSummary,
+        candidateStats: cycle.candidateStats,
+        filtersApplied: cycle.filtersApplied,
+        objectiveType: cycle.objectiveType,
+        riskClass: cycle.riskClass,
+        approvalRequired: cycle.approvalRequired,
+        liveExampleId: input.liveExampleId ?? null,
+        finalAnswer: cycle.responseSummary,
+      };
+
+      const runStatus =
+        cycle.decision === 'block' && cycle.objectiveType !== 'READ_ONLY_ANALYSIS'
+          ? 'blocked'
+          : cycle.decision === 'escalate' ||
+              (cycle.approvalRequired &&
+                cycle.recommendations.some((r) => r.approvalRequired))
+            ? 'awaiting_approval'
+            : 'completed';
+
       await this.prisma.client.operatorRun.update({
         where: { id: run.id },
         data: {
-          status:
-            cycle.decision === 'block'
-              ? 'blocked'
-              : cycle.decision === 'escalate' || cycle.recommendations.some((r) => r.approvalRequired)
-                ? 'awaiting_approval'
-                : 'completed',
-          planJson: asJson(cycle.plan),
+          status: runStatus,
+          planJson: asJson(planEnvelope),
           toolTraceJson: asJson(cycle.toolTrace),
           criticJson: asJson(cycle.critic),
           auditorJson: asJson(cycle.auditor),
@@ -234,8 +1034,10 @@ export class AiOperatorService implements OnModuleInit {
         payload: {
           objective: input.objective,
           decision: cycle.decision,
+          objectiveType: cycle.objectiveType,
           recommendationCount: cycle.recommendations.length,
           loopMode: effectiveMode,
+          responseSummary: cycle.responseSummary,
         },
       });
 
@@ -247,28 +1049,46 @@ export class AiOperatorService implements OnModuleInit {
         actorUserId: input.userId ?? null,
         metadata: {
           decision: cycle.decision,
+          objectiveType: cycle.objectiveType,
           loopMode: effectiveMode,
           recommendationCount: cycle.recommendations.length,
           criticSeverity: cycle.critic.severity,
+          approvalRequired: cycle.approvalRequired,
         },
       });
 
+      // Meter only successful evaluations (platform failures are not billed)
+      await this.saas.incrementUsage(input.organizationId, 'ai_evaluations', 1);
+
       return {
         runId: run.id,
+        status: runStatus,
         loopMode: effectiveMode,
+        objectiveType: cycle.objectiveType,
+        riskClass: cycle.riskClass,
+        approvalRequired: cycle.approvalRequired,
         decision: cycle.decision,
         decisionNote: cycle.decisionNote,
+        responseSummary: cycle.responseSummary,
         plan: cycle.plan,
+        timeline: cycle.timeline,
+        sources: cycle.sources,
+        candidateStats: cycle.candidateStats,
+        filtersApplied: cycle.filtersApplied,
         critic: cycle.critic,
         auditor: cycle.auditor,
         toolTrace: cycle.toolTrace,
         recommendations: cycle.recommendations,
         storedRecommendationIds: recRows.map((r) => r.id),
+        resultsPath: `/terminal/opportunities?runId=${run.id}`,
         honesty: {
           fixtureProductsPresent: products.some((p) => p.sourcePlatform.startsWith('fixture')),
           liveCredentialsPresent: hasLiveGoogle,
           shadowByDefault: effectiveMode === 'shadow',
-          note: 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval.',
+          note:
+            cycle.objectiveType === 'READ_ONLY_ANALYSIS'
+              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval.'
+              : 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval.',
         },
       };
     } catch (error) {
@@ -398,12 +1218,13 @@ export class AiOperatorService implements OnModuleInit {
       });
     }
 
+    // Idempotent: one pending/approved publish approval per listing
     const existingApproval = await this.prisma.client.approval.findFirst({
       where: {
         organizationId: input.organizationId,
         listingId: listing.id,
-        status: 'pending',
         kind: 'publish_listing',
+        status: { in: ['pending', 'approved'] },
       },
     });
     if (existingApproval) return existingApproval;

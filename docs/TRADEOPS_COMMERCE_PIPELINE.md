@@ -1,59 +1,55 @@
 # TradeOps Commerce Pipeline
 
-> Local runtime: stages are live on `/terminal/pipeline`. Fill with `pnpm run demo:loop`.
+> **Primary UI:** `/terminal/process` (Commerce Process board)  
+> Legacy `/terminal/pipeline` **redirects** to Process.  
+> Fill fixture loop: `pnpm run demo:loop`
 
-Canonical loop (operational recommendations for physical products — **not** investment advice):
+TradeOps is one **operating procedure**, not a stack of independent dashboards. The navigational spine is `CommerceCase`.
 
+## Canonical lifecycle (operational)
+
+```text
+Discover → Evaluate → Qualify → Prepare → Approve → Publish
+→ Sell → Source → Fulfill → Reconcile → Learn → Closed
 ```
-Market data
-   ↓
-Product normalization
-   ↓
-Demand and profitability forecast
-   ↓
-BUY / SELL / HOLD / EXIT signal  (+ SCALE / REDUCE / BLOCKED)
-   ↓
-Simulation
-   ↓
-Human approval
-   ↓
-Marketplace listing
-   ↓
-Customer order
-   ↓
-Supplier purchase order
-   ↓
-Fulfillment
-   ↓
-Actual profit
-   ↓
-Prediction evaluation and model improvement
-```
+
+| Stage | Meaning | Primary surface |
+|-------|---------|-----------------|
+| Discover | Import / find candidates | `/terminal` |
+| Evaluate | Score, margin, risk | Opportunities + product twin |
+| Qualify | Policy decision | Journey handoff |
+| Prepare | Draft listing, media, plan | Product twin + Listings |
+| Approve | Human decision | `/terminal/approvals` |
+| Publish | External listing | Listings / connectors (credential-gated) |
+| Sell | Customer orders | `/terminal/orders` |
+| Source | Supplier PO | Orders |
+| Fulfill | Tracking / delivery | `/terminal/fulfillment` |
+| Reconcile | Realized P&L | Journey |
+| Learn | Prediction vs actual | Journey |
 
 ## Implementation map
 
-| Stage | Code / API |
-|-------|------------|
+| Concern | Code / API |
+|---------|------------|
+| Case spine | `CommerceCase` · `GET /commerce/process` · `GET /commerce/cases/:id` |
+| Stage engine | `@tradeops/commerce-engine` `commerce-lifecycle.ts` |
+| Next action / tasks | `computeNextAction` · `GET /commerce/tasks` |
 | Market data | Fixture/live connectors · `POST /commerce/import/fixture-supplier` |
 | Normalize | Canonical `Product`, `Supplier`, `SupplierOffer` |
-| Forecast | `baseline-ma-v1` + unit economics in `@tradeops/commerce-engine` |
-| Signal | `decideSignal` → `CommerceSignal` / Opportunity.currentSignal |
-| Simulation | `POST /products/:id/simulate` → `SimulationRun` |
-| Approval | `GET/POST /approvals` — required before publish / PO send |
-| Listing | Listing draft → approve → fixture/live publish |
-| Customer order | `POST /orders/ingest/fixture` or connector `readOrders` |
-| Supplier PO | Draft PO + approval |
-| Fulfillment | Status progression · `POST /orders/:id/complete-fulfillment` |
-| Actual profit | `realizedContributionProfitMinor` + profitability snapshot |
-| Evaluation | `POST /terminal/evaluate` · `PredictionOutcome` · `ModelVersion` metrics |
+| Forecast / score / policy | `@tradeops/commerce-engine` |
+| Artifacts | `ProductArtifact` · `/products/:id/artifacts` |
+| Approval | `GET/POST /approvals` |
+| Listing draft | `POST /products/:id/listing-draft` (+ media plan) |
+| Orders / PO / fulfill | orders APIs |
+| Evaluation outcomes | `POST /terminal/evaluate` · `PredictionOutcome` |
 
-## UI
+## Legacy pipeline stages
 
-`/terminal/pipeline` — live stage board + outcome table + evaluate action.
+Older aggregate counts (market_data → actual_profit) still exist in `PIPELINE_STAGES` for outcome evaluation. Prefer **CommerceCase stages** for operator UX.
 
 ## Model improvement policy
 
 1. Collect outcomes (simulation or fulfilled orders).  
 2. Compute MAE (units, profit), bias, optional signal hit rate.  
 3. Store metrics on `ModelVersion`.  
-4. Only promote a new model family when backtests beat baseline on held-out outcomes (not implemented as auto-switch — human decision).
+4. Promote models only with human decision after backtests beat baseline.

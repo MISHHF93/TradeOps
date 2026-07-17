@@ -1,10 +1,25 @@
+import Link from 'next/link';
 import { AiOperatorConsole } from '../../../components/ai-operator-console';
+import {
+  ProcessPageHeader,
+  ProcessRelatedLinks,
+} from '../../../components/commerce/process-chrome';
+import { PROCESS_LABELS, stageTitle } from '../../../lib/process-ux';
 import { terminalGet } from '../../../lib/terminal-api';
-import { getApiBaseUrl } from '../../../lib/api';
 
-export default async function AiWorkspacePage() {
+type Props = { searchParams: Promise<{ caseId?: string }> };
+
+export default async function AiWorkspacePage({ searchParams }: Props) {
+  const sp = await searchParams;
+  const caseId = sp.caseId?.trim();
+
   const tools = await terminalGet<{
-    tools: Array<{ name: string; description: string; actionClass: string; approvalRequired: boolean }>;
+    tools: Array<{
+      name: string;
+      description: string;
+      actionClass: string;
+      approvalRequired: boolean;
+    }>;
     loopModes: Array<{ mode: string; meaning: string }>;
     note: string;
   }>('/api/v1/ai/tools');
@@ -21,110 +36,107 @@ export default async function AiWorkspacePage() {
     }>
   >('/api/v1/ai/runs?take=10');
 
+  let caseHint: string | undefined;
+  let suggested: string[] = [];
+  let caseStage: string | undefined;
+  if (caseId) {
+    const ctx = await terminalGet<{
+      currentStage?: string;
+      stageStatus?: string;
+      nextActionLabel?: string | null;
+      suggestedObjectives?: string[];
+    }>(`/api/v1/commerce/cases/${caseId}/ai-context`);
+    if (ctx.ok) {
+      caseStage = ctx.data.currentStage;
+      caseHint = `${ctx.data.currentStage} · ${ctx.data.stageStatus}${
+        ctx.data.nextActionLabel ? ` · next: ${ctx.data.nextActionLabel}` : ''
+      }`;
+      suggested = ctx.data.suggestedObjectives ?? [];
+    }
+  }
+
   return (
     <section>
-      <header className="terminal-header">
-        <div>
-          <h1>AI Operator</h1>
-          <p className="lede">
-            Interactive commerce operator — not a decorative chatbot. Issues objectives, runs typed
-            tools against the canonical store, critic + auditor passes, then queues consequential
-            work for approval. Shadow mode is live evaluation, not a fake demo.
-          </p>
-        </div>
-      </header>
+      <ProcessPageHeader
+        pill="AI Operator · process-aware"
+        title="AI Operator"
+        lede={
+          caseId
+            ? 'Bound to a Commerce Case. Recommend the highest-value valid next step for the current stage — do not free-form chat.'
+            : 'Lifecycle-aware operator. Bind a case from Process for stage-aware recommendations, or run global discover/health objectives.'
+        }
+        currentStage={caseStage}
+        breadcrumbs={[
+          { href: '/terminal/process', label: PROCESS_LABELS.boardTitle },
+          { label: 'AI Operator' },
+        ]}
+        toolbar={
+          <>
+            <Link className="btn primary" href="/terminal/process">
+              {PROCESS_LABELS.openProcess}
+            </Link>
+            <Link className="btn ghost" href="/terminal/tasks">
+              {PROCESS_LABELS.viewTasks}
+            </Link>
+            {caseId ? (
+              <Link className="btn secondary" href={`/terminal/process/${caseId}`}>
+                {PROCESS_LABELS.openCase}
+              </Link>
+            ) : null}
+          </>
+        }
+      />
 
-      <AiOperatorConsole />
+      <ProcessRelatedLinks primary="process" />
 
-      <h2 style={{ marginTop: 28 }}>Loop modes</h2>
-      {!tools.ok ? <p className="form-error">{tools.error}</p> : null}
-      <table className="scanner-table">
-        <thead>
-          <tr>
-            <th>Mode</th>
-            <th>Meaning</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(tools.ok ? tools.data.loopModes : []).map((m) => (
-            <tr key={m.mode}>
-              <td>
-                <strong>{m.mode}</strong>
-              </td>
-              <td className="meta" style={{ whiteSpace: 'normal' }}>
-                {m.meaning}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {caseId && caseHint ? (
+        <article className="panel" style={{ marginBottom: 12 }}>
+          <h2 style={{ marginTop: 0 }}>
+            Case context{caseStage ? ` · ${stageTitle(caseStage)}` : ''}
+          </h2>
+          <p className="meta">{caseHint}</p>
+          {suggested.length > 0 ? (
+            <>
+              <h3>Suggested objectives</h3>
+              <ul className="meta">
+                {suggested.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </article>
+      ) : null}
 
-      <h2 style={{ marginTop: 28 }}>Tool registry</h2>
-      <p className="meta">{tools.ok ? tools.data.note : null}</p>
-      <table className="scanner-table">
-        <thead>
-          <tr>
-            <th>Tool</th>
-            <th>Class</th>
-            <th>Approval</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(tools.ok ? tools.data.tools : []).map((t) => (
-            <tr key={t.name}>
-              <td>
-                <code>{t.name}</code>
-              </td>
-              <td>{t.actionClass}</td>
-              <td>{t.approvalRequired ? 'yes' : 'no'}</td>
-              <td className="meta" style={{ whiteSpace: 'normal' }}>
-                {t.description}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <AiOperatorConsole commerceCaseId={caseId} caseContextHint={caseHint} />
 
-      <h2 style={{ marginTop: 28 }}>Recent operator runs</h2>
-      {!runs.ok ? <p className="form-error">{runs.error}</p> : null}
-      <table className="scanner-table">
-        <thead>
-          <tr>
-            <th>When</th>
-            <th>Status</th>
-            <th>Mode</th>
-            <th>Decision</th>
-            <th>Objective</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(runs.ok ? runs.data : []).length === 0 ? (
-            <tr>
-              <td className="empty" colSpan={5}>
-                No runs yet. Submit an objective above.
-              </td>
-            </tr>
-          ) : (
-            (runs.ok ? runs.data : []).map((r) => (
-              <tr key={r.id}>
-                <td>{new Date(r.startedAt).toLocaleString()}</td>
-                <td>{r.status}</td>
-                <td>{r.loopMode}</td>
-                <td>{r.decision ?? '—'}</td>
-                <td className="meta" style={{ whiteSpace: 'normal', maxWidth: 360 }}>
-                  {r.objective.slice(0, 160)}
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      {tools.ok ? (
+        <article className="panel" style={{ marginTop: 16 }}>
+          <h2>Tool catalog</h2>
+          <p className="meta">{tools.data.note}</p>
+          <ul className="meta">
+            {tools.data.tools.slice(0, 12).map((t) => (
+              <li key={t.name}>
+                <strong>{t.name}</strong> · {t.actionClass}
+                {t.approvalRequired ? ' · approval' : ''}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
 
-      <p className="meta" style={{ marginTop: 16 }}>
-        API base: <code>{getApiBaseUrl()}</code> · Tools catalog also at{' '}
-        <code>/api/v1/ai/tools</code>
-      </p>
+      {runs.ok && runs.data.length > 0 ? (
+        <article className="panel" style={{ marginTop: 16 }}>
+          <h2>Recent runs</h2>
+          <ul className="meta">
+            {runs.data.slice(0, 5).map((r) => (
+              <li key={r.id}>
+                {new Date(r.startedAt).toLocaleString()} · {r.status} · {r.loopMode}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
     </section>
   );
 }

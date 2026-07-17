@@ -1,4 +1,28 @@
 import { z } from 'zod';
+import {
+  FOUNDER_DIRECT_DEFAULTS,
+  founderDirectPublicWarning,
+  getAccessMode,
+  isAuthenticatedAccessMode,
+  isDirectIdentityEnabled,
+  isFounderDirectAccess,
+  isLikelyPublicDeployment,
+  parseAccessMode,
+  type TradeOpsAccessMode,
+} from './access-mode';
+
+export {
+  ACCESS_MODES,
+  FOUNDER_DIRECT_DEFAULTS,
+  founderDirectPublicWarning,
+  getAccessMode,
+  isAuthenticatedAccessMode,
+  isDirectIdentityEnabled,
+  isFounderDirectAccess,
+  isLikelyPublicDeployment,
+  parseAccessMode,
+  type TradeOpsAccessMode,
+} from './access-mode';
 
 /**
  * Platform environment schema.
@@ -30,9 +54,17 @@ export const envSchema = z.object({
   SESSION_TTL_HOURS: z.coerce.number().int().positive().max(720).default(168),
 
   /**
-   * When true (and NODE_ENV is not production), skip session verification and
-   * impersonate the seeded demo owner so local UI/API work without login.
-   * Forced off in production regardless of the env value.
+   * Application access mode (central switch — see access-mode.ts).
+   * founder_direct | authenticated | multi_tenant
+   */
+  TRADEOPS_ACCESS_MODE: z
+    .string()
+    .optional()
+    .transform((v) => parseAccessMode(v)),
+
+  /**
+   * When true (and not production, unless founder_direct), allow synthetic
+   * founder identity without a session cookie. Prefer TRADEOPS_ACCESS_MODE.
    */
   AUTH_BYPASS: z
     .union([z.boolean(), z.string()])
@@ -42,9 +74,24 @@ export const envSchema = z.object({
       return s === '1' || s === 'true' || s === 'yes' || s === 'on';
     })
     .default(true),
+
+  /**
+   * Force the founder-direct public-deployment warning even on localhost.
+   */
+  TRADEOPS_PUBLIC_WARNING: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((v) => {
+      if (v === undefined) return false;
+      if (typeof v === 'boolean') return v;
+      const s = v.trim().toLowerCase();
+      return s === '1' || s === 'true' || s === 'yes' || s === 'on';
+    }),
 });
 
-export type Env = z.infer<typeof envSchema>;
+export type Env = z.infer<typeof envSchema> & {
+  TRADEOPS_ACCESS_MODE: TradeOpsAccessMode;
+};
 
 let cached: Env | undefined;
 
@@ -62,7 +109,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       .join('; ');
     throw new Error(`Invalid environment configuration: ${details}`);
   }
-  cached = parsed.data;
+  const data = parsed.data;
+  cached = {
+    ...data,
+    TRADEOPS_ACCESS_MODE: data.TRADEOPS_ACCESS_MODE ?? parseAccessMode(undefined),
+  };
   return cached;
 }
 
@@ -75,7 +126,57 @@ export function isProduction(env: Env = loadEnv()): boolean {
   return env.NODE_ENV === 'production';
 }
 
-/** Local-only auth bypass (never active in production). */
+/**
+ * Whether the API may resolve identity without a session cookie.
+ * Prefer TRADEOPS_ACCESS_MODE=founder_direct over AUTH_BYPASS alone.
+ */
 export function isAuthBypassEnabled(env: Env = loadEnv()): boolean {
-  return Boolean(env.AUTH_BYPASS) && env.NODE_ENV !== 'production';
+  return isDirectIdentityEnabled({
+    TRADEOPS_ACCESS_MODE: env.TRADEOPS_ACCESS_MODE,
+    AUTH_BYPASS: env.AUTH_BYPASS,
+    NODE_ENV: env.NODE_ENV,
+  });
 }
+
+/** Convenience wrappers bound to loaded env. */
+export function accessMode(env: Env = loadEnv()): TradeOpsAccessMode {
+  return getAccessMode({ TRADEOPS_ACCESS_MODE: env.TRADEOPS_ACCESS_MODE });
+}
+
+export function founderAccessActive(env: Env = loadEnv()): boolean {
+  return isFounderDirectAccess({ TRADEOPS_ACCESS_MODE: env.TRADEOPS_ACCESS_MODE });
+}
+
+export function publicAccessWarning(env: Env = loadEnv()): string | null {
+  return founderDirectPublicWarning({
+    TRADEOPS_ACCESS_MODE: env.TRADEOPS_ACCESS_MODE,
+    WEB_ORIGIN: env.WEB_ORIGIN,
+    TRADEOPS_PUBLIC_WARNING: env.TRADEOPS_PUBLIC_WARNING ? 'true' : undefined,
+  });
+}
+
+// Re-export constants used by bootstrap
+export { FOUNDER_DIRECT_DEFAULTS as FOUNDER_DEFAULTS };
+
+export {
+  type FinancialGateKey,
+  type FinancialGateState,
+  isFinancialGateEnabled,
+  getFinancialGate,
+  listFinancialGates,
+  assertFinancialGate,
+  capitalWriteMode,
+  financialDomainCatalog,
+} from './financial-gates';
+
+export {
+  type CapitalProductMode,
+  getCapitalProductMode,
+  isPooledInvestmentEnabled,
+  isGuaranteedReturnsEnabled,
+  isInternalCustodyEnabled,
+  capitalModeCatalog,
+  assertNotPooledInvestment,
+  assertNoGuaranteedReturns,
+  assertNoInternalCustodyInProduction,
+} from './capital-mode';

@@ -1,7 +1,12 @@
 # TradeOps Architecture
 
 > **Runtime note (2026-07-16):** Local vertical slice is live (terminal + fixtures + PGlite).  
-> See [IMPLEMENTATION_LEDGER.md](./TRADEOPS_IMPLEMENTATION_LEDGER.md) and [docs/README.md](./README.md).
+> See [IMPLEMENTATION_LEDGER.md](./TRADEOPS_IMPLEMENTATION_LEDGER.md) and [docs/README.md](./README.md).  
+> **Vision:** [TRADEOPS_SIX_PILLARS.md](./TRADEOPS_SIX_PILLARS.md) · [TRADEOPS_PRODUCT_POSITIONING.md](./TRADEOPS_PRODUCT_POSITIONING.md)
+
+## Product architecture (sits above channels)
+
+TradeOps is the **AI Commerce Operating System** layer: intelligence + operations + connectors + AI operator + SaaS billing + enterprise—not a competing storefront and not a capital custody product.
 
 ## Topology
 
@@ -18,13 +23,15 @@ Postgres + Redis (Docker Compose)
 
 ## Principles
 
-1. TradeOps owns intelligence; external platforms own transactions.  
-2. Marketplace logic only inside connector packages.  
-3. Money as integer minor units + ISO currency.  
-4. Multi-tenant `organizationId` on every business row.  
-5. Fail closed on severe policy risk.  
-6. Human approval before first listing publish and supplier PO execution.  
-7. Distinguish observed facts vs predictions vs rules vs missing data.
+1. TradeOps owns intelligence; external platforms own transactions; merchants own the business.  
+2. Marketplace / supplier logic only inside connector packages (capability contracts).  
+3. One commerce lifecycle spine (CommerceCase)—not siloed channel UIs as source of truth.  
+4. Money as integer minor units + ISO currency; SaaS billing separate from shopper payments.  
+5. Multi-tenant `organizationId` on every business row.  
+6. Fail closed on severe policy risk.  
+7. Human approval before consequential actions (publish, supplier PO, financial writes).  
+8. Distinguish observed facts vs predictions vs rules vs missing data.  
+9. Webhooks: verify signature, ack quickly, process asynchronously with idempotency.  
 
 ## Request path
 

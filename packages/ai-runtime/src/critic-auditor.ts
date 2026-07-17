@@ -123,7 +123,41 @@ export function decideFromPasses(
   critic: CriticResult,
   auditor: AuditorResult,
   recommendations: RecommendationDraft[],
+  classification?: {
+    objectiveType?: string;
+    approvalRequired?: boolean;
+    riskClass?: string;
+  },
 ): { decision: OperatorDecision; note: string } {
+  const isReadOnly =
+    classification?.objectiveType === 'READ_ONLY_ANALYSIS' ||
+    classification?.riskClass === 'read_only' ||
+    (recommendations.length > 0 &&
+      recommendations.every((r) => r.actionClass === 'read_only' && !r.approvalRequired));
+
+  if (recommendations.length === 0) {
+    return {
+      decision: isReadOnly ? 'accept' : 'block',
+      note: isReadOnly
+        ? 'Analysis completed with zero qualifying products under current filters.'
+        : 'No recommendations produced.',
+    };
+  }
+
+  // Read-only analysis never escalates to approval
+  if (isReadOnly) {
+    if (critic.severity === 'high' && !auditor.policyOk) {
+      return {
+        decision: 'block',
+        note: 'Analysis blocked: high policy severity on all candidates.',
+      };
+    }
+    return {
+      decision: 'accept',
+      note: `Read-only analysis accepted: ${recommendations.length} recommendation(s). No approval required for research.`,
+    };
+  }
+
   if (!auditor.policyOk || critic.severity === 'high') {
     return {
       decision: 'block',
@@ -142,14 +176,15 @@ export function decideFromPasses(
       note: 'Downgraded to shadow/approval-only due to medium risk or low confidence.',
     };
   }
-  if (recommendations.every((r) => r.approvalRequired)) {
+  // Escalate only when consequential actions actually require approval
+  if (
+    classification?.approvalRequired ||
+    recommendations.some((r) => r.approvalRequired && r.actionClass !== 'read_only')
+  ) {
     return {
       decision: 'escalate',
       note: 'Accepted as recommendation; consequential steps require human approval.',
     };
-  }
-  if (recommendations.length === 0) {
-    return { decision: 'block', note: 'No recommendations produced.' };
   }
   return {
     decision: 'accept',

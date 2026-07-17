@@ -1,0 +1,101 @@
+/**
+ * Workflow node palette (§9)
+ * Trigger neutral · AI accent · Decision amber · Approval green
+ * Failure red · Blocked purple · Edges: accent / positive / negative
+ */
+
+.wf-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-surface-1);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.wf-node-trigger {
+  border-color: var(--color-border-default);
+  color: var(--color-text-secondary);
+}
+
+.wf-node-ai {
+  border-color: var(--color-accent-border);
+  color: var(--color-accent-hover);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.wf-node-decision {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.wf-node-approval {
+  border-color: var(--color-positive);
+  color: var(--color-positive);
+  background: var(--color-positive-subtle);
+}
+
+.wf-node-failure {
+  border-color: var(--color-negative);
+  color: var(--color-negative);
+  background: var(--color-negative-subtle);
+}
+
+.wf-node-blocked {
+  border-color: var(--color-blocked);
+  color: var(--color-blocked);
+  background: var(--color-blocked-subtle);
+}
+
+.wf-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  background: var(--color-surface-1);
+}
+
+.wf-edge {
+  height: 2px;
+  flex: 1;
+  min-width: 24px;
+  border-radius: 999px;
+  background: var(--color-border-default);
+}
+
+.wf-edge-active {
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  background-size: 200% 100%;
+  animation: wf-edge-flow 1.2s linear infinite;
+}
+
+.wf-edge-completed {
+  background: var(--color-positive);
+}
+
+.wf-edge-failed {
+  background: var(--color-negative);
+}
+
+@keyframes wf-edge-flow {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-edge-active {
+    animation: none;
+    background: var(--color-accent);
+  }
+}

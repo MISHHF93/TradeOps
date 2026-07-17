@@ -1,28 +1,37 @@
 # TradeOps
 
-**The AI Operating System for Global Commerce.**
+**The AI Commerce Operating System for modern merchants.**
 
-TradeOps is a marketplace-independent commerce control center. External platforms own the transactions. TradeOps owns orchestration, intelligence, automation, and operational visibility through a **connector framework** and **canonical domain models**.
+TradeOps sits **above** Shopify, BigCommerce, Amazon, eBay, suppliers, logistics, and analytics—not as another e-commerce platform. Merchants own stores, payment accounts, and decisions. External platforms own shopper transactions. TradeOps provides **intelligence, operations, connectors, and an AI operator** so merchants run commerce better—**not** investment management or fund custody.
 
-> Philosophy: *TradeOps owns the intelligence. External platforms own the transactions. TradeOps orchestrates everything.*
+> Philosophy: *TradeOps owns the intelligence. External platforms own the transactions. Merchants own the business. TradeOps orchestrates everything.*
+
+| Doc | |
+|-----|--|
+| [docs/TRADEOPS_PRODUCT_POSITIONING.md](docs/TRADEOPS_PRODUCT_POSITIONING.md) | Commercial stance |
+| [docs/TRADEOPS_SIX_PILLARS.md](docs/TRADEOPS_SIX_PILLARS.md) | Six pillars (intelligence → enterprise) |
+
+**Six pillars:** Commerce Intelligence · Commerce Operations · Unified Connector Hub · AI Operator · SaaS Billing · Enterprise Layer
 
 ---
 
 ## Current milestone
 
 **M0 — Platform foundation** ✅ complete  
-**M1 — Auth, organizations, RBAC** ✅ complete (API + web `/login` · `/register`; `AUTH_BYPASS` local-only)  
+**M1 — Auth, organizations, RBAC** ✅ complete (session foundation retained; **Direct Founder Access** default)  
 **M2a — Fixture connectors + commerce terminal** ✅ complete  
 **M2b — Real Shopify** — next when merchant credentials available  
+**SaaS foundations** ✅ packs, quotas, cockpit, ATP, customers, agency, control tower  
 
-**Local product:** open http://localhost:3000 → **public website** (marketing + free tools + register/sign-in) and **merchant workspace** (`/terminal`, `/app`).
+**Local product (default `TRADEOPS_ACCESS_MODE=founder_direct`):**  
+open **http://localhost:3000** → **`/terminal/cockpit`** immediately (no login).
 
 | Component | Status |
 |-----------|--------|
 | Monorepo (pnpm workspaces) | Yes |
-| API (`apps/api` NestJS) | Health + identity + commerce + public tools + AI + automation |
+| API (`apps/api` NestJS) | Health + identity + commerce + SaaS + public tools + AI + automation |
 | Worker (`apps/worker` BullMQ) | Platform heartbeat queue (Redis optional) |
-| Web (`apps/web` Next.js) | Public site + `/login` · `/register` + terminal + free tools |
+| Web (`apps/web` Next.js) | Founder terminal + public marketing (auth UX when mode=authenticated) |
 | Postgres / PGlite | Identity + full commerce schema + seed |
 | Redis | Optional for first UI; health may be degraded |
 | CI | GitHub Actions |

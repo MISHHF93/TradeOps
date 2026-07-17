@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import {
   describeTemplate,
   listWorkflowTemplates,
@@ -7,6 +7,7 @@ import {
 import { AuditService } from '../identity/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventFabricService } from '../events/event-fabric.service';
+import { SaasService } from '../saas/saas.service';
 
 @Injectable()
 export class WorkflowService {
@@ -14,6 +15,7 @@ export class WorkflowService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly events: EventFabricService,
+    @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
   ) {}
 
   listTemplates() {
@@ -30,6 +32,9 @@ export class WorkflowService {
     variables?: Record<string, unknown>;
     dryRun?: boolean;
   }) {
+    // Server-side entitlement gate (never UI-only)
+    await this.saas.assertWorkflowRunAllowed(input.organizationId);
+
     const productCount = await this.prisma.client.product.count({
       where: { organizationId: input.organizationId },
     });
@@ -96,6 +101,11 @@ export class WorkflowService {
         version: result.version,
       },
     });
+
+    // Meter only successful template runs (not unknown-template 404s)
+    if (result.status !== 'blocked' || !result.message.includes('Unknown')) {
+      await this.saas.incrementUsage(input.organizationId, 'workflow_runs', 1);
+    }
 
     return { runId: run.id, ...result };
   }

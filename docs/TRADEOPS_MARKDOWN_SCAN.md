@@ -1,10 +1,10 @@
 # Full Markdown Scan Report
 
-**Scanned:** 2026-07-16  
+**Scanned:** 2026-07-17 (rescan #5 — process consolidation doc alignment)  
 **Scope:** All project `.md` files excluding `node_modules` / build output  
-**Count:** **41** markdown files  
 
-Companion: [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md)
+Companion: [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md) — **execution truth**.  
+Conversation checklist: [TRADEOPS_CONVERSATION_EXECUTION_AUDIT.md](./TRADEOPS_CONVERSATION_EXECUTION_AUDIT.md).
 
 ---
 
@@ -13,161 +13,183 @@ Companion: [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md)
 | Class | Meaning |
 |-------|---------|
 | **OPERATIONAL** | Runbook / truth — must match code |
-| **STATUS** | Ledger / audit / test report of what is built |
+| **STATUS** | Ledger / audit / test report |
 | **DECISION** | ADR — frozen architecture choice |
 | **VISION** | Product design; may exceed code |
-| **HISTORICAL** | Snapshot from earlier phase; may be stale |
-| **NOTES** | Working notes / paste (not product contract) |
+| **HISTORICAL** | Snapshot; prefer EXECUTION_STATUS |
+| **NOTES** | Working notes / professor paste |
 
 ---
 
-## Complete inventory (41 files)
+## Complete inventory
 
 ### Root (4)
 
-| File | Lines | Class | Accuracy vs code | Notes |
-|------|------:|-------|------------------|-------|
-| `README.md` | ~127 | OPERATIONAL | **Aligned** (login UI note fixed this scan) | Quick start + dual surface |
-| `plan.md` | ~132 | OPERATIONAL | **Aligned** | Working plan; live connectors BLOCKED |
-| `CONTRIBUTING.md` | ~26 | OPERATIONAL | **Aligned** (login note fixed this scan) | Points to execution matrix |
-| `update.md` | ~939 | NOTES / VISION | N/A | Professor-mode paste; **not** a completion checklist |
+| File | Class | Accuracy vs code |
+|------|-------|------------------|
+| `README.md` | OPERATIONAL | **Aligned** (founder_direct + quick start) |
+| `plan.md` | OPERATIONAL + VISION | **Aligned** operational table + upgrade matrix |
+| `CONTRIBUTING.md` | OPERATIONAL | **Aligned** |
+| `theme.md` | OPERATIONAL | Midnight Exchange tokens |
+| `update.md` | NOTES / VISION | Not a completion checklist |
 
-### `docs/` index & runbooks (6)
+### `docs/` runbooks & status
 
-| File | Lines | Class | Accuracy | Notes |
-|------|------:|-------|----------|-------|
-| `docs/README.md` | ~76 | OPERATIONAL | **Aligned** | Doc index + execution pointer |
-| `docs/FIRST_RUN.md` | ~110 | OPERATIONAL | **Aligned** | Boot sequences; login/register listed |
-| `docs/TRADEOPS_LOCAL_SETUP.md` | ~57 | OPERATIONAL | **Aligned** | PGlite/Docker paths |
-| `docs/WINDOWS_APP_CONTROL.md` | ~74 | OPERATIONAL | **Aligned** | App Control constraints |
-| `docs/TRADEOPS_EXECUTION_STATUS.md` | ~180 | STATUS | **Aligned** | Master claim→code matrix |
-| `docs/TRADEOPS_MARKDOWN_SCAN.md` | (this) | STATUS | — | Full scan report |
+| File | Class | Accuracy |
+|------|-------|----------|
+| `docs/README.md` | OPERATIONAL | **Aligned** (index updated for artifacts) |
+| `docs/FIRST_RUN.md` | OPERATIONAL | **Aligned** (founder redirect table fixed) |
+| `docs/TRADEOPS_LOCAL_SETUP.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_DIRECT_FOUNDER_ACCESS.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_ACCESS_MODES.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_SECURITY_MODEL.md` | OPERATIONAL | **Aligned** |
+| `docs/WINDOWS_APP_CONTROL.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_EXECUTION_STATUS.md` | STATUS | **Master matrix** (rescan #5) |
+| `docs/TRADEOPS_COMMERCE_LIFECYCLE.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_PROCESS_ARCHITECTURE.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_ROUTE_CONSOLIDATION.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_COMMERCE_CASE_MODEL.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_STAGE_TRANSITIONS.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_TASK_ENGINE.md` | OPERATIONAL | **Aligned** (derived tasks) |
+| `docs/TRADEOPS_NEXT_ACTION_ENGINE.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_STANDARD_OPERATING_PROCEDURES.md` | OPERATIONAL | Templates executed; auto-runner partial |
+| `docs/TRADEOPS_CONVERSATION_EXECUTION_AUDIT.md` | STATUS | Prompt vs code matrix |
+| `docs/TRADEOPS_MARKDOWN_SCAN.md` | STATUS | This file |
+| `docs/TRADEOPS_IMPLEMENTATION_LEDGER.md` | STATUS | **Aligned** (includes artifacts) |
+| `docs/TRADEOPS_PRODUCTION_AUDIT.md` | STATUS | **Aligned** |
+| `docs/TRADEOPS_TEST_REPORT.md` | STATUS | **Aligned** (artifact smoke) |
+| `docs/TRADEOPS_SECURITY_REVIEW.md` | STATUS | **Aligned** |
+| `docs/TRADEOPS_PUBLIC_PRODUCT.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_RELEASE_NOTES.md` | STATUS | Acceptable for 0.1.0 |
+| `docs/TRADEOPS_RELEASE_RUNBOOK.md` | OPERATIONAL | Process docs |
+| `docs/TRADEOPS_DEPLOYMENT.md` | OPERATIONAL | **Expanded** local full deploy + Windows start fix |
+| `docs/TRADEOPS_REPOSITORY_AUDIT.md` | HISTORICAL | Prefer PRODUCTION_AUDIT |
+| `docs/TRADEOPS_FRONTEND_BACKEND_MAP.md` | OPERATIONAL | **Aligned** (artifact routes) |
+| `docs/TRADEOPS_LIVE_EXAMPLES.md` | OPERATIONAL | **Aligned** |
+| `docs/TRADEOPS_LIVE_EXECUTION_AUDIT.md` | STATUS | Historical live-execution pass |
+| `docs/TRADEOPS_LIVE_EXECUTION_TEST_REPORT.md` | STATUS | Historical |
 
-### Status / audit / release (9)
+### Product media & artifacts (new cluster)
 
-| File | Lines | Class | Accuracy | Notes |
-|------|------:|-------|----------|-------|
-| `docs/TRADEOPS_IMPLEMENTATION_LEDGER.md` | ~18 | STATUS | **Aligned** | REAL / partial / blocked table |
-| `docs/TRADEOPS_PRODUCTION_AUDIT.md` | ~267 | STATUS | **Aligned** | AUD-001… issues |
-| `docs/TRADEOPS_TEST_REPORT.md` | ~25 | STATUS | **Aligned** | Last package + smoke results |
-| `docs/TRADEOPS_REPOSITORY_AUDIT.md` | ~54 | HISTORICAL | **Stale snapshot** | Earlier phase; prefer PRODUCTION_AUDIT |
-| `docs/TRADEOPS_SECURITY_REVIEW.md` | ~18 | STATUS | **Aligned** | Gaps called out (email verify, etc.) |
-| `docs/TRADEOPS_RELEASE_NOTES.md` | ~24 | STATUS | **Aligned** | 0.1.0 private beta |
-| `docs/TRADEOPS_RELEASE_RUNBOOK.md` | ~21 | OPERATIONAL | **Aligned** | Process not fully run in cloud |
-| `docs/TRADEOPS_DEPLOYMENT.md` | ~27 | OPERATIONAL | **Aligned** | Docs + Dockerfiles exist; no cloud deploy |
-| `docs/TRADEOPS_PUBLIC_PRODUCT.md` | ~13 | OPERATIONAL | **Aligned** | Messaging rules |
+| File | Class | Accuracy |
+|------|-------|----------|
+| `TRADEOPS_PRODUCT_ARTIFACT_MODEL.md` | OPERATIONAL | **Aligned** to Prisma + service |
+| `TRADEOPS_MEDIA_PIPELINE.md` | OPERATIONAL | **Aligned** (sync path; workers partial) |
+| `TRADEOPS_MEDIA_SECURITY.md` | OPERATIONAL | **Aligned** (SSRF unit-tested) |
+| `TRADEOPS_ARTIFACT_RIGHTS.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_MULTIMODAL_AI.md` | OPERATIONAL | **Partial** (hooks/planned honest) |
+| `TRADEOPS_CHANNEL_MEDIA_RULES.md` | OPERATIONAL | Readiness done; live publish blocked |
+| `TRADEOPS_ARTIFACT_STORAGE.md` | OPERATIONAL | Local FS done; cloud adapters planned |
+| `TRADEOPS_ARTIFACT_WORKFLOWS.md` | OPERATIONAL | **Aligned** |
 
-### Product features (11)
+### Feature docs
 
-| File | Lines | Class | Accuracy | Notes |
-|------|------:|-------|----------|-------|
-| `docs/TRADEOPS_AI_OPERATOR.md` | ~13 | OPERATIONAL | **Aligned** | Workspace + tools DONE; side panel not |
-| `docs/TRADEOPS_AI_EVALUATION.md` | ~13 | OPERATIONAL | **Aligned** | Artifacts exist; full dashboards partial |
-| `docs/TRADEOPS_AUTOMATION_ENGINE.md` | ~17 | OPERATIONAL | **Aligned** | Templates DONE; visual builder not |
-| `docs/TRADEOPS_WORKFLOW_TEMPLATES.md` | ~11 | OPERATIONAL | **Aligned** | 6 templates |
-| `docs/TRADEOPS_MULTI_TENANCY.md` | ~13 | OPERATIONAL | **Aligned** | Gaps listed |
-| `docs/TRADEOPS_GOOGLE_MERCHANT.md` | ~17 | OPERATIONAL | **Aligned** | Shadow only |
-| `docs/TRADEOPS_GOOGLE_SEARCH.md` | ~15 | OPERATIONAL | **Aligned** | robots/sitemap in code; Console manual |
-| `docs/TRADEOPS_GA4.md` | ~12 | OPERATIONAL | **DOC ONLY for code** | Policy only; **no gtag component** |
-| `docs/TRADEOPS_SHOPIFY_CREDENTIALS.md` | ~19 | OPERATIONAL | **BLOCKED** | Runbook until merchant creds |
-| `docs/TRADEOPS_COMMERCE_PIPELINE.md` | ~50 | VISION+REAL | **Partial** | Stages match terminal pipeline |
-| `docs/TRADEOPS_CONNECTOR_STANDARD.md` | ~11 | DECISION | **Aligned** | Isolation rule enforced |
+| File | Class | Accuracy |
+|------|-------|----------|
+| `TRADEOPS_AI_OPERATOR.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_AI_EVALUATION.md` | OPERATIONAL | Partial dashboards OK |
+| `TRADEOPS_AI_TOOL_RUNTIME.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_APPROVAL_EXECUTION.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_OBJECTIVE_RUNTIME.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_AUTOMATION_ENGINE.md` | OPERATIONAL | Templates DONE; visual builder not |
+| `TRADEOPS_WORKFLOW_TEMPLATES.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_WORKFLOW_DURABILITY.md` | VISION+PARTIAL | Not full durable DAG |
+| `TRADEOPS_MULTI_TENANCY.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_GOOGLE_MERCHANT.md` | OPERATIONAL | Shadow only |
+| `TRADEOPS_GOOGLE_SEARCH.md` | OPERATIONAL | robots/sitemap DONE |
+| `TRADEOPS_GA4.md` | OPERATIONAL | Off by default |
+| `TRADEOPS_SHOPIFY_CREDENTIALS.md` | OPERATIONAL | **BLOCKED** without creds |
+| `TRADEOPS_COMMERCE_PIPELINE.md` | VISION+REAL | Partial depth |
+| `TRADEOPS_CONNECTOR_STANDARD.md` | DECISION | **Aligned** (+ media caps) |
+| `TRADEOPS_CONNECTOR_READINESS.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_ACCENT_SYSTEM.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_THEME.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_DATA_PROVENANCE.md` | OPERATIONAL | **Aligned** |
 
-### Architecture / vision (7)
+### Architecture / vision
 
-| File | Lines | Class | Accuracy | Notes |
-|------|------:|-------|----------|-------|
-| `docs/TRADEOPS_PRODUCT_SPEC.md` | ~31 | VISION | **Ahead of code** | Full OS vision |
-| `docs/TRADEOPS_ARCHITECTURE.md` | ~31 | VISION | **Ahead of code** | Target topology |
-| `docs/TRADEOPS_DATA_MODEL.md` | ~27 | VISION+REAL | **Partial** | Core models real; full twin not |
-| `docs/TRADEOPS_SIGNAL_MODEL.md` | ~19 | OPERATIONAL | **Aligned** | BUY/SELL/HOLD etc. in engine |
-| `docs/TRADEOPS_PREDICTIVE_ENGINE.md` | ~20 | VISION+REAL | **Partial** | Baseline MA; neural STUB |
-| `docs/TRADEOPS_RISK_POLICY.md` | ~9 | OPERATIONAL | **Aligned** | Fail-closed policy in code |
+| File | Class | Accuracy |
+|------|-------|----------|
+| `TRADEOPS_PRODUCT_SPEC.md` | VISION | Ahead of code (by design) |
+| `TRADEOPS_ARCHITECTURE.md` | VISION | Ahead of code |
+| `TRADEOPS_DATA_MODEL.md` | VISION+REAL | Partial twin (+ artifacts now) |
+| `TRADEOPS_SIGNAL_MODEL.md` | OPERATIONAL | **Aligned** |
+| `TRADEOPS_PREDICTIVE_ENGINE.md` | VISION+REAL | Baseline only |
+| `TRADEOPS_RISK_POLICY.md` | OPERATIONAL | **Aligned** |
 
-### Architecture ADRs / milestones (6)
+### ADRs / milestones
 
-| File | Lines | Class | Accuracy | Notes |
-|------|------:|-------|----------|-------|
-| `docs/architecture/MILESTONES.md` | ~48 | STATUS | **Aligned** (updated) | M5/M6 partial |
-| `docs/architecture/00-AUDIT.md` | ~168 | HISTORICAL | **Early snapshot** | Prefer EXECUTION_STATUS |
-| `docs/architecture/ADR-0001-stack-and-topology.md` | ~33 | DECISION | **Aligned** | Nest/Next/Prisma stack |
-| `docs/architecture/ADR-0002-connector-isolation.md` | ~18 | DECISION | **Aligned** | Still binding |
-| `docs/architecture/ADR-0003-tooling-without-native-binaries.md` | ~18 | DECISION | **Aligned** | App Control |
-| `docs/architecture/ADR-0004-session-auth.md` | ~24 | DECISION | **Aligned** | Sessions + bypass note |
-
----
-
-## Stale claims found this scan (and action)
-
-| Location | Stale claim | Action |
-|----------|-------------|--------|
-| `README.md` | “no login UI” / “no `/login`” | **Fixed** — login/register present |
-| `CONTRIBUTING.md` | “open `/terminal` (no login)” | **Fixed** |
-| `docs/FIRST_RUN.md` / `docs/README.md` | previously “no login” | **Fixed earlier** |
-| `docs/TRADEOPS_REPOSITORY_AUDIT.md` | older repo snapshot | Left as HISTORICAL; not deleted |
-| `docs/architecture/00-AUDIT.md` | early architecture | Left as HISTORICAL |
-| `update.md` | mega professor prompt | NOTES; not execution truth |
-
----
-
-## Execution summary across all docs
-
-### Fully executed (operational claims)
-
-- Local boot: install, PGlite, migrate, seed, `npm start`  
-- Dual public / private surfaces  
-- Free tools API + UI  
-- Register / login / session / rate limit  
-- Terminal commerce loop (fixture-backed)  
-- AI operator (typed tools, critic, auditor, shadow)  
-- Workflow templates (6) list/run  
-- Google weekend **shadow**  
-- Harmonization identity scores  
-- SEO robots + sitemap + legal draft pages  
-- Capability honesty board  
-- CI + unit tests + e2e smoke script  
-- Dockerfiles + deploy/runbook docs  
-
-### Partial
-
-- Automation engine (no visual builder / full durable DAG)  
-- AI (no side panel on every page; no LLM required)  
-- Predictive (baseline only)  
-- Google Merchant (no live post)  
-- Production hardening (no cloud staging deploy done)  
-- Data model / digital twin depth  
-
-### Documented only or credential-blocked
-
-- Live Shopify / Amazon / eBay / AliExpress  
-- Live Google Content API post  
-- GA4 gtag implementation  
-- Email verify / password reset  
-- Billing / feature gates  
-- Full onboarding wizard  
-- Search Console property live  
-- Staging/production environments  
-
-### Intentionally not “executed from markdown”
-
-- Entire `update.md` professor-mode wish list  
-- Full product-spec paragraphs that describe future multi-year platform  
+| File | Class | Accuracy |
+|------|-------|----------|
+| `architecture/MILESTONES.md` | STATUS | **Aligned** |
+| `architecture/00-AUDIT.md` | HISTORICAL | Early snapshot |
+| `architecture/ADR-0001…0004` | DECISION | **Aligned** |
 
 ---
 
-## Live stack at scan time
+## Stale claims corrected this rescan
 
-| Check | Result |
-|-------|--------|
-| API `/api/v1/health/live` | **up** |
-| Web `:3000` | **down** at scan moment (start with `npm start` if needed) |
-| Public capabilities | **25** entries (API reachable) |
+| Location | Issue | Action |
+|----------|-------|--------|
+| `FIRST_RUN.md` | Listed `/` as public marketing site under founder default | **Fixed** — 307 → cockpit table |
+| `TRADEOPS_DEPLOYMENT.md` | Thin notes only | **Expanded** full local/Docker/prod checklist |
+| `docs/README.md` | Missing artifact + process links | **Fixed** |
+| `TRADEOPS_EXECUTION_STATUS.md` | Missing process spine / outdated pipeline | **Fixed** rescan #5 |
+| `TRADEOPS_COMMERCE_PIPELINE.md` | Still claimed `/terminal/pipeline` as primary UI | **Fixed** → Process board |
+| `TRADEOPS_DATA_MODEL.md` | Missing ProductArtifact + CommerceCase | **Fixed** |
+| `scripts/start.mjs` | Windows path quoting | **Fixed** |
+| `scripts/e2e-smoke.mjs` | Missing process/tasks/listings | **Expanded** |
+
+Historical files may still contain old phrases — **not** operational contracts.
 
 ---
 
-## Recommendation
+## Execution summary (this rescan)
 
-1. Treat **`docs/TRADEOPS_EXECUTION_STATUS.md`** + **this scan** as authority.  
-2. Treat **VISION** and **`update.md`** as backlog, not “done” criteria.  
-3. Prefer deleting or archiving HISTORICAL audits only after team agreement (kept for now).  
-4. Next implement-from-docs candidates if desired: GA4 env-gated component, email verify, Shopify live when credentials exist.
+### Fully executed (operational)
+
+- Founder direct access + access-mode resolver  
+- Local boot (PGlite, migrate, seed, `pnpm start`)  
+- Terminal commerce + watchlist + control tower + cockpit  
+- Live examples framework  
+- Product Media & Artifact Engine (local storage, SSRF ingest, workspace UI)  
+- SaaS packs, quotas, meters, agency clients foundations  
+- ATP, channel profit, customer intel, agentic readiness  
+- AI operator + side panel + workflows (templates)  
+- Google weekend shadow  
+- Public platform/solutions/tools/status/legal/SEO  
+- GA4 component (env-gated, default off)  
+- CI + unit tests + expanded e2e smoke  
+
+### Partial / blocked / vision
+
+- Live marketplaces (credentials)  
+- Cloud object storage for artifacts; async media workers  
+- Multimodal AI evaluation depth  
+- Stripe charges, email verify, visual workflow builder  
+- Enterprise SSO / B2B / BYOD / neural forecast  
+- Cloud staging deploy  
+
+---
+
+## Live verification commands
+
+```powershell
+pnpm e2e:smoke
+# Expect: All smoke checks passed
+```
+
+| Check | Result (2026-07-16) |
+|-------|---------------------|
+| `GET /api/v1/health/live` | 200 up |
+| `GET /api/v1/public/access-mode` | founder_direct |
+| `GET /` · `/login` | 307 → `/terminal/cockpit` |
+| Scanner + artifacts + live-examples | 200 |
+| Product digital twin page | 200 + media workspace |
+| Full `e2e-smoke.mjs` | **PASS** |
+
+---
+
+## Bottom line
+
+Operational markdown matches code for the **founder-operated local product**, **SaaS foundations**, **live examples**, and **Product Media & Artifact Engine**. Vision docs still overshoot by design. Always prefer [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md) over historical audits or `update.md`.

@@ -5,13 +5,13 @@ Binding rule: **complete, green verify, documented exit criteria** before advanc
 | ID | Name | Primary outcome | Status |
 |----|------|-----------------|--------|
 | M0 | Platform foundation | Monorepo boots; DB schema; health; CI | **Complete** |
-| M1 | Auth, orgs, RBAC | Multi-tenant identity secure | **Complete** (API + web login/register; AUTH_BYPASS local-only) |
+| M1 | Auth, orgs, RBAC | Multi-tenant identity secure | **Complete** (session foundation + Direct Founder Access default; login UI when authenticated) |
 | M2a | Connector framework + fixtures | Capability contracts + fixture supplier/marketplace | **Complete** (local vertical slice) |
 | M2b | Shopify (real) | First real external sync | **Next** — blocked on merchant credentials |
-| M3 | Commerce domain + terminal | Scanner, pipeline, portfolio, cash | **Complete** (fixture-backed) |
-| M4 | Profit + cash flow + pricing | Financial intelligence foundations | **Partial** — unit economics + portfolio REAL + public tools |
-| M5 | Automation engine | Durable configurable workflows | **Partial** — weekend Google shadow + workflow templates; full DAG pending |
-| M6 | AI intelligence | Jobs, artifacts, ranked insights | **Partial** — AI operator + critic/auditor + forecast evaluation; neural STUB |
+| M3 | Commerce domain + terminal | Scanner, pipeline, portfolio, cash | **Complete** (fixture-backed + watchlist + control tower) |
+| M4 | Profit + cash flow + pricing | Financial intelligence foundations | **Partial** — unit economics + channel profit + ATP + public tools |
+| M5 | Automation engine | Durable configurable workflows | **Partial** — weekend Google shadow + workflow templates + meters; full DAG pending |
+| M6 | AI intelligence | Jobs, artifacts, ranked insights | **Partial** — AI operator + side panel + critic/auditor + evaluation; neural STUB |
 | M7 | Second connector + marketplace manager | Independence proven | Pending |
 | M8 | Suppliers, shipping, payments depth | Supply & logistics breadth | Pending |
 | M9 | Developer platform | API keys, SDK, outbound webhooks | Pending |

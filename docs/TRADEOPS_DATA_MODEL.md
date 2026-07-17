@@ -19,6 +19,7 @@ Organization, User, Membership, Session, AuditEvent
 - Product, ProductVariant  
 - Supplier, SupplierOffer  
 - SalesChannel, Listing  
+- **ProductArtifact** — first-class media/docs/3D on the Product Digital Twin  
 
 ## Intelligence
 
@@ -26,6 +27,15 @@ Organization, User, Membership, Session, AuditEvent
 - CommerceSignal  
 - DemandForecast  
 - PolicyAssessment  
+
+## Commerce process spine
+
+- **CommerceCase** — one opportunity journey per org product  
+  - `currentStage` / `stageStatus`  
+  - next action + blocker fields  
+  - listing draft / published listing refs  
+  - stage history JSON  
+- Tasks/blockers are **derived** from cases (see `process-tasks.ts`)  
 
 ## Execution
 
@@ -35,7 +45,10 @@ Organization, User, Membership, Session, AuditEvent
 - Approval  
 - SimulationRun  
 - ProfitabilitySnapshot  
+- PredictionOutcome  
 
 ## Provenance (every external-sourced row)
 
-sourcePlatform, externalId, collectedAt, dataFreshnessAt, dataConfidence (0–1), schemaVersion
+sourcePlatform, externalId, collectedAt, dataFreshnessAt, dataConfidence (0–1), schemaVersion  
+
+See also: [TRADEOPS_PRODUCT_ARTIFACT_MODEL.md](./TRADEOPS_PRODUCT_ARTIFACT_MODEL.md), [TRADEOPS_COMMERCE_CASE_MODEL.md](./TRADEOPS_COMMERCE_CASE_MODEL.md)

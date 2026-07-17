@@ -5,7 +5,8 @@
 - Index: [docs/README.md](docs/README.md)  
 - Keep **operational** docs (FIRST_RUN, LOCAL_SETUP, README quick start) aligned with `package.json` scripts.  
 - Mark vision docs clearly vs REAL implementation ([IMPLEMENTATION_LEDGER](docs/TRADEOPS_IMPLEMENTATION_LEDGER.md)).  
-- Full doc ↔ code matrix: [TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md).
+- Full doc ↔ code matrix: [TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md).  
+- Access modes: [TRADEOPS_ACCESS_MODES.md](docs/TRADEOPS_ACCESS_MODES.md).
 
 ## Workflow
 
@@ -13,7 +14,9 @@
 2. Keep changes compiling: `pnpm typecheck`, `pnpm test`, `pnpm build`.
 3. Prefer vertical slices over horizontal stubs across unfinished modules.
 4. Document irreversible decisions as ADRs under `docs/architecture/`.
-5. Local run: `pnpm run bootstrap:local` → `npm start` → open `/` (public) or `/terminal` (workspace). Optional: `/login` / `/register`.
+5. Local run: `pnpm run bootstrap:local` → `npm start` → open **http://localhost:3000**  
+   - Default **`TRADEOPS_ACCESS_MODE=founder_direct`**: lands on `/terminal/cockpit` (no login).  
+   - Set `authenticated` to exercise `/login` · `/register`.
 
 ## Package boundaries
 
@@ -24,6 +27,7 @@
 | `database` | Prisma only (no Nest, no React) |
 | `api` / `worker` | packages above + Nest/BullMQ |
 | `web` | `contracts` (DTOs). Not `database`, not connectors |
+| Access-mode checks | Prefer `@tradeops/config` / `access-mode.ts` — do not scatter conditionals |
 
 ## Commits
 
@@ -36,3 +40,4 @@ Use clear, imperative subjects:
 
 - Never commit `.env`, tokens, or merchant credentials.
 - Redact secrets from logs (logger redaction paths are a baseline, not a guarantee).
+- Do not enable `founder_direct` on a public multi-user internet deployment without perimeter controls.

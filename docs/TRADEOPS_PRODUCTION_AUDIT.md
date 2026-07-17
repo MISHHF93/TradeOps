@@ -55,17 +55,17 @@ It is **not** ready to claim unrestricted public multichannel live automation. C
 
 ## Issue register
 
-### AUD-001 · AUTH_BYPASS enables unauthenticated private API in development
+### AUD-001 · Direct identity (AUTH_BYPASS / founder_direct) without session cookie
 
 | Field | Value |
 |-------|--------|
-| **Severity** | **High** (Critical if mis-deployed with NODE_ENV≠production) |
-| **Files** | `packages/config/src/index.ts`, `apps/api/src/identity/auth.guard.ts` |
-| **User impact** | Local convenience; any deployment with AUTH_BYPASS=true exposes org data |
-| **Security impact** | Full demo-owner impersonation without cookie |
-| **Required fix** | Keep forced-off in production; document; default false in staging templates |
-| **Status** | **Mitigated** — `isAuthBypassEnabled` requires `NODE_ENV !== 'production'`; `.env.example` documents |
-| **Evidence** | Guard + config unit path; production NODE_ENV check |
+| **Severity** | **High** if exposed on a public multi-user internet host |
+| **Files** | `packages/config/src/access-mode.ts`, `apps/api/src/identity/founder-access.service.ts`, `auth.guard.ts` |
+| **User impact** | Founder-operated convenience; anyone who can reach the API acts as founder org owner |
+| **Security impact** | Synthetic founder identity without login form |
+| **Required fix** | Use only on private perimeter; public multi-user SaaS must set `TRADEOPS_ACCESS_MODE=authenticated` |
+| **Status** | **Documented + controlled** — central access mode; public-origin warning; org RBAC still applied |
+| **Evidence** | `isDirectIdentityEnabled`, FounderAccessService, `GET /public/access-mode`, SECURITY_MODEL docs |
 
 ### AUD-002 · Login/register lack brute-force rate limiting (pre-fix)
 

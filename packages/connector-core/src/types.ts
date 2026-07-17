@@ -24,7 +24,21 @@ export type ConnectorCapability =
   | 'readTracking'
   | 'readPayments'
   | 'readFees'
-  | 'receiveWebhooks';
+  | 'receiveWebhooks'
+  /** Product Media & Artifact Engine — declare per-connector; never assume parity */
+  | 'readProductImages'
+  | 'readProductVideos'
+  | 'readDocuments'
+  | 'readThreeDimensionalModels'
+  | 'uploadImage'
+  | 'uploadVideo'
+  | 'attachImageToListing'
+  | 'attachVideoToListing'
+  | 'attachRegulatoryDocument'
+  | 'deleteMedia'
+  | 'reorderMedia'
+  | 'setPrimaryImage'
+  | 'readMediaProcessingStatus';
 
 export type ConnectorStatus =
   | 'not_configured'
@@ -46,6 +60,49 @@ export type ConnectorManifest = {
   capabilities: ConnectorCapability[];
 };
 
+/**
+ * Media asset discovered from a supplier / marketplace feed.
+ * Prefer absolute HTTPS URLs; local fixture seeds may use stable CDN placeholders.
+ */
+export type CanonicalProductMedia = {
+  url: string;
+  kind: 'image' | 'video' | 'document';
+  purpose?:
+    | 'primary'
+    | 'gallery'
+    | 'packaging'
+    | 'manual'
+    | 'specification'
+    | 'warranty'
+    | 'compliance'
+    | 'demonstration'
+    | 'other';
+  altText?: string;
+  title?: string;
+  width?: number;
+  height?: number;
+  mimeHint?: string;
+};
+
+/** Structured attributes for naming, merchandising, and channel listing prep */
+export type CanonicalProductAttributes = {
+  brand?: string;
+  manufacturer?: string;
+  model?: string;
+  color?: string;
+  material?: string;
+  size?: string;
+  weightGrams?: number;
+  dimensionsCm?: { l?: number; w?: number; h?: number };
+  bulletPoints?: string[];
+  tags?: string[];
+  gtin?: string;
+  mpn?: string;
+  condition?: string;
+  countryOfOrigin?: string;
+  [key: string]: unknown;
+};
+
 export type CanonicalProductOffer = {
   externalId: string;
   sourcePlatform: string;
@@ -60,7 +117,15 @@ export type CanonicalProductOffer = {
   inventoryQuantity: number;
   rating: number;
   reviewCount: number;
+  /** Primary hero image (also first of media[]) */
   imageUrl?: string;
+  /** Full media set from the online/supplier source */
+  media?: CanonicalProductMedia[];
+  /** Gallery convenience (URLs only) */
+  imageUrls?: string[];
+  brand?: string;
+  manufacturer?: string;
+  attributes?: CanonicalProductAttributes;
   collectedAt: string;
   dataConfidence: number;
 };

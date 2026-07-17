@@ -15,6 +15,16 @@
 
 `npm starrt` is a typo — use `npm start`.
 
+## Direct Founder Access (default)
+
+With `TRADEOPS_ACCESS_MODE=founder_direct` (default):
+
+1. `npm start`
+2. Open **http://localhost:3000** → redirects to **`/terminal/cockpit`**
+3. No login, register, or onboarding
+
+See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md).
+
 ## Prerequisites
 
 1. **Node.js ≥ 20** and **pnpm 9** (`npm install -g pnpm@9.15.0`)
@@ -47,18 +57,23 @@ Optional — fill the full pipeline after start:
 pnpm run demo:loop
 ```
 
-Open:
+Open (with default `founder_direct`):
 
 | URL | What |
 |-----|------|
-| http://localhost:3000 | Public website (marketing + free tools) |
-| http://localhost:3000/tools | Free calculators (profit · score · policy) |
-| http://localhost:3000/login · `/register` | Real session auth (optional; AUTH_BYPASS also works in dev) |
-| http://localhost:3000/status | Capability honesty board |
-| http://localhost:3000/terminal | Operator terminal |
+| http://localhost:3000 | **307 → `/terminal/cockpit`** (no login) |
+| http://localhost:3000/terminal/cockpit | Founder command center |
+| http://localhost:3000/terminal | Scanner / operator terminal |
+| http://localhost:3000/terminal/live-examples | Live online examples catalog |
+| http://localhost:3000/terminal/products/:id | Product digital twin + media artifacts |
 | http://localhost:3000/terminal/ai | AI operator (shadow by default) |
 | http://localhost:3000/terminal/automations | Weekend Google automation (shadow by default) |
 | http://localhost:3000/terminal/pipeline | Commerce pipeline board |
+| http://localhost:3000/tools | Free calculators (profit · score · policy) |
+| http://localhost:3000/status | Capability honesty board |
+| http://localhost:4000/api/v1/health/live | API process liveness |
+
+Set `TRADEOPS_ACCESS_MODE=authenticated` to restore marketing `/` + login/register UX.
 
 ## Sequence (Docker)
 

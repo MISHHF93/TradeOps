@@ -11,6 +11,8 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log'],
+    // Required for Stripe webhook signature verification
+    rawBody: true,
   });
 
   app.use(cookieParser());

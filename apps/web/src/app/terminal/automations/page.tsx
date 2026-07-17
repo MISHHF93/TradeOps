@@ -50,6 +50,31 @@ export default async function AutomationsPage() {
 
       {!status.ok ? <p className="form-error">{status.error}</p> : null}
 
+      <div className="wf-path" aria-label="Weekend automation path">
+        <span className="wf-node wf-node-trigger">Schedule</span>
+        <span className="wf-edge" aria-hidden />
+        <span className="wf-node wf-node-ai">AI prepare feed</span>
+        <span
+          className={`wf-edge ${status.ok && status.data.lastResult ? 'wf-edge-active' : ''}`}
+          aria-hidden
+        />
+        <span className="wf-node wf-node-decision">Shadow check</span>
+        <span className="wf-edge" aria-hidden />
+        <span className="wf-node wf-node-approval">Approval / credentials</span>
+        <span className="wf-edge" aria-hidden />
+        {status.ok && status.data.lastResult?.livePostSucceeded ? (
+          <span className="wf-node wf-node-approval">Live post</span>
+        ) : status.ok && status.data.hasCredentials ? (
+          <span className="wf-node wf-node-decision">Live gated</span>
+        ) : (
+          <span className="wf-node wf-node-blocked">Credential blocked</span>
+        )}
+      </div>
+      <p className="meta" style={{ marginTop: 8, marginBottom: 16 }}>
+        Workflow path uses accent for AI / execution edges; green for approval outcomes; purple for
+        policy or credential blocks — never cyan for profit.
+      </p>
+
       {status.ok ? (
         <div className="detail-grid">
           <article className="panel">

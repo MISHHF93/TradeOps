@@ -1,9 +1,15 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import { RegisterForm } from '../../components/auth-forms';
+import { authRouteRedirectTarget, isFounderDirectAccess } from '../../lib/access-mode';
 
 export const metadata: Metadata = { title: 'Register' };
 
 export default function RegisterPage() {
+  if (isFounderDirectAccess()) {
+    redirect(authRouteRedirectTarget());
+  }
+
   return (
     <section className="hero">
       <div className="auth-panel" style={{ maxWidth: 480 }}>

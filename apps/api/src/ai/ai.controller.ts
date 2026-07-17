@@ -39,6 +39,29 @@ export class AiController {
     return this.operator.getRun(auth.activeOrganizationId!, runId);
   }
 
+  /** Live Example Framework catalog + readiness */
+  @Get('live-examples')
+  @RequirePermissions('ai:read')
+  liveExamples(@CurrentAuth() auth: AuthContext) {
+    return this.operator.listLiveExamplesWithReadiness(auth.activeOrganizationId!);
+  }
+
+  @Post('live-examples/:exampleId/run')
+  @RequirePermissions('ai:write', 'products:read')
+  runLiveExample(
+    @CurrentAuth() auth: AuthContext,
+    @Param('exampleId') exampleId: string,
+    @Body() body: { forceShadow?: boolean },
+  ) {
+    return this.operator.runLiveExample({
+      organizationId: auth.activeOrganizationId!,
+      userId: auth.userId,
+      exampleId,
+      forceShadow: body?.forceShadow !== false,
+      permissions: [...(auth.permissions ?? [])],
+    });
+  }
+
   @Post('operator/run')
   @RequirePermissions('ai:write', 'products:read')
   runOperator(
@@ -48,11 +71,23 @@ export class AiController {
       objective?: string;
       loopMode?: OperationLoopMode;
       forceShadow?: boolean;
+      exampleId?: string;
+      /** Optional commerce case binding for stage-aware operation */
+      commerceCaseId?: string;
     },
   ) {
+    if (body.exampleId?.trim()) {
+      return this.operator.runLiveExample({
+        organizationId: auth.activeOrganizationId!,
+        userId: auth.userId,
+        exampleId: body.exampleId.trim(),
+        forceShadow: body.forceShadow !== false,
+        permissions: [...(auth.permissions ?? [])],
+      });
+    }
     const objective =
       body.objective?.trim() ||
-      'Find products with a predicted margin above 25%, low policy risk, and strong reviews. Prepare the three strongest listing drafts for my approval queue.';
+      'Find products worth evaluating.';
     return this.operator.runObjective({
       organizationId: auth.activeOrganizationId!,
       userId: auth.userId,
@@ -60,6 +95,7 @@ export class AiController {
       loopMode: body.loopMode,
       forceShadow: body.forceShadow !== false,
       permissions: [...(auth.permissions ?? [])],
+      commerceCaseId: body.commerceCaseId?.trim(),
     });
   }
 

@@ -1,15 +1,32 @@
 # TradeOps Product Spec
 
 > **Runtime note:** This is the product vision. Local implementation status is tracked in  
-> [IMPLEMENTATION_LEDGER.md](./TRADEOPS_IMPLEMENTATION_LEDGER.md) (fixture-backed terminal is REAL).
+> [IMPLEMENTATION_LEDGER.md](./TRADEOPS_IMPLEMENTATION_LEDGER.md) (fixture-backed terminal is REAL).  
+> **Positioning:** [TRADEOPS_PRODUCT_POSITIONING.md](./TRADEOPS_PRODUCT_POSITIONING.md) · **Pillars:** [TRADEOPS_SIX_PILLARS.md](./TRADEOPS_SIX_PILLARS.md)
 
 ## Identity
 
-**TradeOps** is a predictive multichannel commerce operating system — a **trading terminal for physical products**.
+**TradeOps** is **the AI Commerce Operating System for modern merchants**—a unified layer above Shopify, BigCommerce, Amazon, eBay, suppliers, logistics, and analytics. It is **not** another e-commerce platform or investment product.
 
-It helps operators discover, evaluate, source, list, sell, fulfill, and monitor physical goods across connected ecommerce ecosystems.
+Merchants **own** stores, payment accounts, and business decisions. TradeOps provides **intelligence, automation, and execution assistance**. Commerce signals (BUY, SELL, HOLD, SCALE, REDUCE, EXIT, BLOCKED) are **operational recommendations**, not securities or investment advice.
 
-Commerce signals (BUY, SELL, HOLD, SCALE, REDUCE, EXIT, BLOCKED) are **operational recommendations**, not securities or investment advice.
+### Six pillars
+
+1. **Commerce Intelligence** — proactive discovery, landed cost, margin, risk, recommendations  
+2. **Commerce Operations** — one lifecycle: Discover → … → Reconcile → Learn  
+3. **Unified Connector Hub** — capability-based connectors, canonical data  
+4. **AI Operator** — operational manager; approvals for consequence  
+5. **SaaS Billing** — Stripe subscriptions only  
+6. **Enterprise Layer** — multi-org, RBAC, audit, governance  
+
+### Core commercial loop
+
+```text
+Subscribe (Stripe SaaS) → connect channels/suppliers → AI discover/evaluate
+→ merchant approves → prepare listings → merchant operates → measure realized P&L
+```
+
+Shopper checkout remains with the merchant’s processors (Shopify Payments, Amazon, eBay, PayPal, etc.).
 
 ## Primary questions answered
 

@@ -27,6 +27,7 @@
     "@tradeops/domain": "workspace:*",
     "@tradeops/harmonization": "workspace:*",
     "@tradeops/logging": "workspace:*",
+    "@tradeops/saas-entitlements": "workspace:*",
     "@tradeops/workflow-engine": "workspace:*",
     "cookie-parser": "^1.4.7",
     "ioredis": "^5.4.2",

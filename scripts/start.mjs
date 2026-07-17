@@ -85,16 +85,30 @@ function resolvePnpm() {
   }
 }
 
+/** Quote a single Windows cmdline argument when it contains spaces or shell metacharacters. */
+function quoteWinArg(arg) {
+  const s = String(arg);
+  if (s.length === 0) return '""';
+  if (!/[\s"&<>|^%]/.test(s)) return s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 function run(command, args, name, env = {}) {
-  // Windows: invoke .cmd via cmd.exe /c without shell:true (avoids DEP0190).
+  // Windows: paths like C:\Program Files\nodejs\node.exe must be quoted for cmd.exe /c.
+  // Unquoted spawn spreads into argv and cmd treats C:\Program as the command (breaks PGlite auto-start).
   const child = isWin
-    ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command, ...args], {
-        cwd: root,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { ...process.env, ...env },
-        windowsHide: true,
-      })
+    ? spawn(
+        process.env.ComSpec || 'cmd.exe',
+        ['/d', '/s', '/c', [quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')],
+        {
+          cwd: root,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: false,
+          env: { ...process.env, ...env },
+          windowsHide: true,
+          windowsVerbatimArguments: true,
+        },
+      )
     : spawn(command, args, {
         cwd: root,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -204,12 +218,19 @@ async function ensureDatabase() {
   return pgliteUrl;
 }
 
-console.log('TradeOps — starting stack (local mode · no login)');
-console.log(`  Web:      http://localhost:${WEB_PORT}  →  /terminal`);
-console.log(`  Pipeline: http://localhost:${WEB_PORT}/terminal/pipeline`);
-console.log(`  Account:  http://localhost:${WEB_PORT}/app`);
+const accessMode = (process.env.TRADEOPS_ACCESS_MODE || 'founder_direct').toLowerCase();
+console.log(`TradeOps — starting stack (TRADEOPS_ACCESS_MODE=${accessMode})`);
+if (accessMode === 'founder_direct' || accessMode === 'founder' || !process.env.TRADEOPS_ACCESS_MODE) {
+  console.log('  Direct Founder Access — open root → terminal (no login)');
+  console.log(`  Workspace: http://localhost:${WEB_PORT}/terminal/cockpit`);
+} else {
+  console.log(`  Web:      http://localhost:${WEB_PORT}`);
+  console.log(`  Login:    http://localhost:${WEB_PORT}/login`);
+}
+console.log(`  Terminal: http://localhost:${WEB_PORT}/terminal`);
 console.log(`  API:      http://localhost:${API_PORT}/api/v1/health/live`);
-console.log(`  Demo:     pnpm run demo:loop   (or UI button “Run full demo loop”)`);
+console.log(`  Mode API: http://localhost:${API_PORT}/api/v1/public/access-mode`);
+console.log(`  Demo:     pnpm run demo:loop`);
 console.log('');
 
 ensureBuilt();

@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { CompleteFulfillmentButton } from '../../../components/order-actions';
 import { formatMoney } from '../../../lib/money';
 import { terminalGet } from '../../../lib/terminal-api';
@@ -22,11 +24,36 @@ export default async function OrdersPage() {
 
   return (
     <section>
-      <h1>Customer orders &amp; supplier POs</h1>
-      <p className="lede">
-        Customer sales orders are separate from supplier purchase orders. Draft POs require approval.
-      </p>
+      <header className="terminal-header">
+        <div>
+          <p className="pill">Stage view · Sell → Source</p>
+          <h1>Orders</h1>
+          <p className="lede">
+            Customer sales orders (not supplier POs). Draft POs need approval. After delivery, advance
+            the Commerce Case to Reconcile on the Process board.
+          </p>
+        </div>
+        <div className="terminal-toolbar">
+          <Link className="btn secondary" href="/terminal/fulfillment">
+            Fulfillment
+          </Link>
+          <Link className="btn primary" href="/terminal/process">
+            Process board
+          </Link>
+        </div>
+      </header>
       {!result.ok ? <p className="form-error">{result.error}</p> : null}
+      {rows.length === 0 ? (
+        <ProcessEmptyState
+          title="No customer orders yet"
+          body="Sell stage needs a published listing and a paid channel order. Approve a listing, then ingest fixture orders or wait for verified channel webhooks. Every order attaches to a Commerce Case before sourcing."
+          stage="sell → source"
+          primaryHref="/terminal/approvals"
+          primaryLabel="Review approvals"
+          secondaryHref="/terminal/process"
+          secondaryLabel="Process board"
+        />
+      ) : null}
       <table className="scanner-table">
         <thead>
           <tr>

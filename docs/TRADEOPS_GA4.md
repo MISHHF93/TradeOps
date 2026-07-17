@@ -17,4 +17,14 @@ NEXT_PUBLIC_GA4_MEASUREMENT_ID=
 NEXT_PUBLIC_GA4_ENABLED=false
 ```
 
-Implementation should load gtag only after consent and only when enabled. Internal product analytics stay separate from marketing GA4.
+## Implementation status
+
+| Item | Status |
+|------|--------|
+| `Ga4Analytics` component | **DONE** — `apps/web/src/components/ga4.tsx` mounted in root layout |
+| Loads only when enabled + measurement ID set | **DONE** |
+| Default off | **DONE** |
+| Consent UI / CMP | **NOT BUILT** (operator should enable only after their own consent stack) |
+| Private terminal events | **OUT OF SCOPE** for marketing GA4 |
+
+Internal product analytics stay separate from marketing GA4.

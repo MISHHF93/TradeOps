@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LogoutButton } from '../../components/auth-forms';
+import { FounderMenu } from '../../components/founder-menu';
 import { OrgSwitcher } from '../../components/org-switcher';
 import { StatusBadge } from '../../components/status-badge';
 import { fetchApiHealth } from '../../lib/api';
+import { FOUNDER_WORKSPACE_PATH, getAccessMode, isFounderDirectAccess } from '../../lib/access-mode';
 import { noIndexMeta } from '../../lib/seo';
 import { getServerSession } from '../../lib/session';
 
@@ -14,44 +16,58 @@ export const metadata: Metadata = {
 
 export default async function AppHomePage() {
   const [session, health] = await Promise.all([getServerSession(), fetchApiHealth()]);
+  const founder = isFounderDirectAccess();
+  const mode = getAccessMode();
 
   return (
     <section className="hero">
       <div className="app-header">
         <div>
-          <p className="pill">Authenticated workspace</p>
+          <p className="pill">
+            {founder ? 'Founder workspace · direct access' : 'Authenticated workspace'}
+          </p>
           <h1>Operations console</h1>
           <p className="lede">
             {session ? (
               <>
                 Running as <strong>{session.user.displayName}</strong> ({session.user.email})
               </>
+            ) : founder ? (
+              <>
+                Direct Founder Access active — identity is resolved server-side without a login form.
+              </>
             ) : (
               <>
                 No session. <Link href="/login">Sign in</Link> or{' '}
-                <Link href="/register">register</Link>. Local dev may use{' '}
-                <code>AUTH_BYPASS=true</code> after <code>setup:db</code>.
+                <Link href="/register">register</Link>.
               </>
             )}
           </p>
         </div>
         <div className="app-actions">
-          {session ? (
+          {session && !founder ? (
             <OrgSwitcher
               memberships={session.memberships}
               activeOrganizationId={session.activeOrganization?.id ?? null}
             />
           ) : null}
-          <Link className="btn primary" href="/terminal">
+          <Link className="btn primary" href={FOUNDER_WORKSPACE_PATH}>
             Open terminal
           </Link>
-          {session ? <LogoutButton /> : null}
+          {founder ? (
+            <FounderMenu
+              email={session?.user.email}
+              orgName={session?.activeOrganization?.name}
+            />
+          ) : session ? (
+            <LogoutButton />
+          ) : null}
         </div>
       </div>
 
       <p className="meta">
-        Public website is separate at <Link href="/">/</Link>. This surface holds private org data.{' '}
-        <StatusBadge status="operational" /> when session/API healthy.
+        Access mode: <code>{mode}</code>. Organization scoping and audit ownership still apply.{' '}
+        <StatusBadge status="operational" /> when API healthy.
       </p>
 
       <div className="grid">
@@ -68,9 +84,30 @@ export default async function AppHomePage() {
               </p>
               <p className="meta">Permissions: {session.permissions.join(', ') || 'none'}</p>
             </>
+          ) : founder ? (
+            <p className="meta">
+              Founder org loads via direct identity on API calls. Open the terminal if labels look
+              empty after a cold start.
+            </p>
           ) : (
-            <p className="meta">No organization loaded (seed the database for demo data).</p>
+            <p className="meta">No organization loaded.</p>
           )}
+        </article>
+
+        <article className="card">
+          <h2>Billing &amp; finance</h2>
+          <p className="meta">
+            SaaS subscription (you pay TradeOps) is separate from channel shopper payments.
+          </p>
+          <p>
+            <Link href="/app/billing">SaaS billing</Link>
+            {' · '}
+            <Link href="/terminal/finance/payments">Channel payments</Link>
+            {' · '}
+            <Link href="/terminal/finance/payouts">Payouts</Link>
+            {' · '}
+            <Link href="/terminal/finance/reconciliation">Reconciliation</Link>
+          </p>
         </article>
 
         <article className="card">
@@ -78,19 +115,11 @@ export default async function AppHomePage() {
           {health.ok ? (
             <>
               <div className="status-row">
-                <span className={`badge ${health.data.status}`}>{health.data.status}</span>
+                <StatusBadge
+                  status={health.data.status === 'up' ? 'operational' : 'credential_blocked'}
+                />
+                <span className="meta">{health.data.status}</span>
               </div>
-              <ul className="dep-list">
-                {health.data.dependencies.map((dep) => (
-                  <li key={dep.name}>
-                    <strong>{dep.name}</strong>
-                    <span>
-                      {dep.status}
-                      {typeof dep.latencyMs === 'number' ? ` · ${dep.latencyMs}ms` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
             </>
           ) : (
             <p className="form-error">{health.error}</p>
@@ -98,15 +127,24 @@ export default async function AppHomePage() {
         </article>
 
         <article className="card">
-          <h2>Auth modes</h2>
+          <h2>Access mode</h2>
           <p>
-            Production: session cookies via <Link href="/login">sign in</Link> /{' '}
-            <Link href="/register">register</Link>. Local development may also use{' '}
-            <code>AUTH_BYPASS</code> (forced off when <code>NODE_ENV=production</code>).
+            <code>{mode}</code>
           </p>
           <p className="meta">
-            <Link href="/status">Capability status →</Link>
+            Restore multi-user login later with{' '}
+            <code>TRADEOPS_ACCESS_MODE=authenticated</code>. Auth models and RBAC remain in the
+            codebase.
           </p>
+        </article>
+
+        <article className="card">
+          <h2>Connectors</h2>
+          <p className="meta">
+            External OAuth/API credentials still required for live marketplaces. Founder identity
+            owns connector installations — tokens never render in the browser.
+          </p>
+          <Link href="/terminal/connectors">Connector registry →</Link>
         </article>
       </div>
     </section>

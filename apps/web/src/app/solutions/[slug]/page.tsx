@@ -28,6 +28,30 @@ const SOLUTIONS: Record<string, { title: string; body: string }> = {
     title: 'Predictive commerce',
     body: 'Baseline forecasts with transparent evaluation against outcomes — not guaranteed sales.',
   },
+  'individual-sellers': {
+    title: 'For individual sellers',
+    body: 'Guided founder cockpit: discover products, real contribution profit, draft listings, track cash — without enterprise clutter.',
+  },
+  'small-business': {
+    title: 'For small businesses',
+    body: 'Team seats, multichannel operations packs, workflows, and margin controls with server-side entitlements.',
+  },
+  agencies: {
+    title: 'For agencies',
+    body: 'Parent/client organization hierarchy foundations, delegated access patterns, and usage reporting. Client data isolation is mandatory.',
+  },
+  enterprise: {
+    title: 'For enterprise',
+    body: 'Tenant hierarchy, governance packs, deployment modes (pooled/siloed/bridge), and AI approval policies — built to enterprise standards without delaying founder launch.',
+  },
+  'b2b-commerce': {
+    title: 'B2B commerce',
+    body: 'Roadmap for company accounts, negotiated catalogs, and quote-to-order. Canonical models expand on the existing multi-tenant core.',
+  },
+  'agentic-commerce': {
+    title: 'Agentic commerce readiness',
+    body: 'Score catalog quality, identifiers, freshness, and policy clarity for AI-mediated shopping paths. Modular for UCP/ACP; no false live protocol claims.',
+  },
 };
 
 type Props = { params: Promise<{ slug: string }> };

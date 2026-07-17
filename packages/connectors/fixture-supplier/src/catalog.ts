@@ -1,12 +1,64 @@
 import type { CanonicalProductOffer } from '@tradeops/connector-core';
 
-/** Explicit FIXTURE catalog — not live supplier API data. */
+/**
+ * Stable placeholder images (picsum seed) — labeled fixture, not live supplier CDN.
+ * Seed = externalId so the same product always gets the same hero/gallery set.
+ */
+function mediaFor(externalId: string, title: string) {
+  const seed = externalId.replace(/[^a-zA-Z0-9]/g, '');
+  const primary = `https://picsum.photos/seed/${seed}-primary/1200/1200`;
+  const gallery = [
+    `https://picsum.photos/seed/${seed}-g1/1000/1000`,
+    `https://picsum.photos/seed/${seed}-g2/1000/1000`,
+    `https://picsum.photos/seed/${seed}-g3/1000/1000`,
+  ];
+  const pack = `https://picsum.photos/seed/${seed}-pack/800/800`;
+  return {
+    imageUrl: primary,
+    imageUrls: [primary, ...gallery, pack],
+    media: [
+      {
+        url: primary,
+        kind: 'image' as const,
+        purpose: 'primary' as const,
+        altText: title,
+        title: `${title} — primary`,
+        width: 1200,
+        height: 1200,
+        mimeHint: 'image/jpeg',
+      },
+      ...gallery.map((url, i) => ({
+        url,
+        kind: 'image' as const,
+        purpose: 'gallery' as const,
+        altText: `${title} gallery ${i + 1}`,
+        title: `${title} — gallery ${i + 1}`,
+        width: 1000,
+        height: 1000,
+        mimeHint: 'image/jpeg',
+      })),
+      {
+        url: pack,
+        kind: 'image' as const,
+        purpose: 'packaging' as const,
+        altText: `${title} packaging`,
+        title: `${title} — packaging`,
+        width: 800,
+        height: 800,
+        mimeHint: 'image/jpeg',
+      },
+    ],
+  };
+}
+
+/** Explicit FIXTURE catalog — not live supplier API data. Full media + ratings for twin. */
 export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
   {
     externalId: 'fs-desk-organizer-01',
     sourcePlatform: 'fixture-supplier',
     title: 'Modular Bamboo Desk Organizer',
-    description: 'Stackable desk organizer for home office. Sustainable bamboo.',
+    description:
+      'Stackable desk organizer for home office. Sustainable bamboo construction with cable pass-throughs and non-slip feet. Ideal for pens, phones, and small accessories.',
     category: 'Home Office',
     supplierName: 'Fixture Supply Co',
     supplierExternalId: 'sup-fixture-001',
@@ -16,6 +68,29 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     inventoryQuantity: 480,
     rating: 4.6,
     reviewCount: 214,
+    brand: 'FixtureHome',
+    manufacturer: 'Fixture Supply Co',
+    attributes: {
+      brand: 'FixtureHome',
+      manufacturer: 'Fixture Supply Co',
+      model: 'BDO-2024',
+      color: 'Natural Bamboo',
+      material: 'Bamboo',
+      size: 'Desktop',
+      weightGrams: 850,
+      dimensionsCm: { l: 28, w: 18, h: 12 },
+      bulletPoints: [
+        'Stackable modular design',
+        'Sustainable bamboo',
+        'Cable management slots',
+        'Non-slip base',
+      ],
+      tags: ['desk', 'organizer', 'bamboo', 'office'],
+      condition: 'new',
+      countryOfOrigin: 'CN',
+      mpn: 'BDO-2024-NAT',
+    },
+    ...mediaFor('fs-desk-organizer-01', 'Modular Bamboo Desk Organizer'),
     collectedAt: new Date().toISOString(),
     dataConfidence: 0.85,
   },
@@ -23,7 +98,8 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     externalId: 'fs-water-bottle-02',
     sourcePlatform: 'fixture-supplier',
     title: 'Insulated Stainless Water Bottle 32oz',
-    description: 'Double-wall insulated bottle. BPA-free lid.',
+    description:
+      'Double-wall vacuum insulated bottle keeps drinks cold 24h / hot 12h. BPA-free lid, wide mouth for ice. Powder-coated exterior resists fingerprints.',
     category: 'Sports',
     supplierName: 'Fixture Supply Co',
     supplierExternalId: 'sup-fixture-001',
@@ -33,6 +109,27 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     inventoryQuantity: 1200,
     rating: 4.4,
     reviewCount: 890,
+    brand: 'FixtureHydro',
+    manufacturer: 'Fixture Supply Co',
+    attributes: {
+      brand: 'FixtureHydro',
+      model: 'IH-32',
+      color: 'Matte Black',
+      material: '18/8 Stainless Steel',
+      size: '32 oz',
+      weightGrams: 420,
+      bulletPoints: [
+        '32oz capacity',
+        'Double-wall insulation',
+        'BPA-free lid',
+        'Fits standard cup holders',
+      ],
+      tags: ['bottle', 'insulated', 'sports', 'hydration'],
+      condition: 'new',
+      countryOfOrigin: 'CN',
+      gtin: '00012345678905',
+    },
+    ...mediaFor('fs-water-bottle-02', 'Insulated Stainless Water Bottle 32oz'),
     collectedAt: new Date().toISOString(),
     dataConfidence: 0.9,
   },
@@ -40,7 +137,8 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     externalId: 'fs-led-strip-03',
     sourcePlatform: 'fixture-supplier',
     title: 'USB LED Strip Light Kit with Remote',
-    description: 'RGB LED strip for rooms. Includes remote and USB power.',
+    description:
+      'RGB LED strip for rooms and desks. Includes IR remote, adhesive backing, and USB power. Cuttable every 3 LEDs. 16 colors + dynamic modes.',
     category: 'Electronics',
     supplierName: 'Fixture Lighting OEM',
     supplierExternalId: 'sup-fixture-002',
@@ -50,6 +148,26 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     inventoryQuantity: 2200,
     rating: 4.1,
     reviewCount: 1520,
+    brand: 'FixtureGlow',
+    manufacturer: 'Fixture Lighting OEM',
+    attributes: {
+      brand: 'FixtureGlow',
+      model: 'RGB-USB-5M',
+      color: 'RGB',
+      material: 'Flexible PCB + silicone',
+      size: '5 meters',
+      bulletPoints: [
+        'USB powered',
+        'IR remote included',
+        'Cuttable segments',
+        '16 colors + modes',
+      ],
+      tags: ['led', 'lighting', 'rgb', 'usb'],
+      condition: 'new',
+      countryOfOrigin: 'CN',
+      mpn: 'RGB-USB-5M',
+    },
+    ...mediaFor('fs-led-strip-03', 'USB LED Strip Light Kit with Remote'),
     collectedAt: new Date().toISOString(),
     dataConfidence: 0.8,
   },
@@ -57,7 +175,8 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     externalId: 'fs-yoga-mat-04',
     sourcePlatform: 'fixture-supplier',
     title: 'Non-Slip TPE Yoga Mat 6mm',
-    description: 'Lightweight yoga mat with carry strap.',
+    description:
+      'Lightweight TPE yoga mat with dual-texture grip and carry strap. Closed-cell surface resists moisture. Ideal for studio and home practice.',
     category: 'Fitness',
     supplierName: 'Fixture Supply Co',
     supplierExternalId: 'sup-fixture-001',
@@ -67,6 +186,27 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     inventoryQuantity: 340,
     rating: 4.5,
     reviewCount: 430,
+    brand: 'FixtureFit',
+    manufacturer: 'Fixture Supply Co',
+    attributes: {
+      brand: 'FixtureFit',
+      model: 'YM-6MM',
+      color: 'Sage Green',
+      material: 'TPE',
+      size: '183 x 61 cm · 6mm',
+      weightGrams: 900,
+      dimensionsCm: { l: 183, w: 61, h: 0.6 },
+      bulletPoints: [
+        '6mm cushioning',
+        'Non-slip dual texture',
+        'Includes carry strap',
+        'Closed-cell surface',
+      ],
+      tags: ['yoga', 'fitness', 'mat', 'tpe'],
+      condition: 'new',
+      countryOfOrigin: 'VN',
+    },
+    ...mediaFor('fs-yoga-mat-04', 'Non-Slip TPE Yoga Mat 6mm'),
     collectedAt: new Date().toISOString(),
     dataConfidence: 0.82,
   },
@@ -74,7 +214,8 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     externalId: 'fs-blocked-weapon-99',
     sourcePlatform: 'fixture-supplier',
     title: 'Tactical Weapon Holster Training Kit',
-    description: 'Training accessory resembling firearm holster. Policy test SKU.',
+    description:
+      'Training accessory resembling firearm holster. Policy test SKU — must fail product policy gate.',
     category: 'Restricted Test',
     supplierName: 'Fixture Risk Samples',
     supplierExternalId: 'sup-fixture-risk',
@@ -84,6 +225,15 @@ export const FIXTURE_SUPPLIER_CATALOG: CanonicalProductOffer[] = [
     inventoryQuantity: 50,
     rating: 3.2,
     reviewCount: 12,
+    brand: 'FixtureRisk',
+    manufacturer: 'Fixture Risk Samples',
+    attributes: {
+      brand: 'FixtureRisk',
+      tags: ['policy-test', 'restricted'],
+      condition: 'new',
+      bulletPoints: ['POLICY TEST — DO NOT LIST'],
+    },
+    ...mediaFor('fs-blocked-weapon-99', 'Tactical Weapon Holster Training Kit'),
     collectedAt: new Date().toISOString(),
     dataConfidence: 0.7,
   },

@@ -8,7 +8,7 @@ describe('HealthService', () => {
   it('reports degraded when a dependency is down', async () => {
     const prisma = {
       client: {
-        $queryRaw: mock.fn(async () => {
+        $queryRawUnsafe: mock.fn(async () => {
           throw new Error('db down');
         }),
       },
@@ -32,7 +32,7 @@ describe('HealthService', () => {
   it('reports up when dependencies are healthy', async () => {
     const prisma = {
       client: {
-        $queryRaw: mock.fn(async () => [{ '?column?': 1 }]),
+        $queryRawUnsafe: mock.fn(async () => [{ '?column?': 1 }]),
       },
     } as unknown as PrismaService;
 

@@ -71,6 +71,9 @@ importers:
       '@tradeops/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@tradeops/saas-entitlements':
+        specifier: workspace:*
+        version: link:../../packages/saas-entitlements
       '@tradeops/workflow-engine':
         specifier: workspace:*
         version: link:../../packages/workflow-engine
@@ -299,6 +302,15 @@ importers:
         specifier: ^9.6.0
         version: 9.14.0
     devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/saas-entitlements:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.1
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

@@ -76,13 +76,65 @@ enum CommerceSignalType {
   BLOCKED
 }
 
-model Organization {
-  id        String   @id @default(uuid()) @db.Uuid
-  name      String   @db.VarChar(200)
-  slug      String   @unique @db.VarChar(64)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+/// Customer segment for onboarding, packing, and UX composition
+enum CustomerSegment {
+  individual
+  smb
+  agency
+  enterprise
+}
 
+/// Commercial plan tier (entitlements enforced server-side)
+enum PlanTier {
+  starter
+  growth
+  agency
+  business
+  enterprise
+  evaluation
+}
+
+/// Multi-tenant deployment model
+enum TenantDeploymentMode {
+  pooled
+  siloed
+  bridge
+}
+
+/// Persona-adaptive workspace mode (UI composition; same data model)
+enum WorkspacePersona {
+  founder
+  operator
+  analyst
+  procurement
+  finance
+  executive
+  agency
+  auditor
+  /// Primary Commerce OS personas
+  researcher
+  developer
+  administrator
+}
+
+model Organization {
+  id             String               @id @default(uuid()) @db.Uuid
+  name           String               @db.VarChar(200)
+  slug           String               @unique @db.VarChar(64)
+  /// SaaS customer segment
+  segment        CustomerSegment      @default(individual)
+  planTier       PlanTier             @default(evaluation) @map("plan_tier")
+  deploymentMode TenantDeploymentMode @default(pooled) @map("deployment_mode")
+  /// Optional parent org (agency → client, or corporate hierarchy)
+  parentOrganizationId String?        @map("parent_organization_id") @db.Uuid
+  businessModel  String?              @map("business_model") @db.VarChar(64)
+  onboardingStep String               @default("created") @map("onboarding_step") @db.VarChar(64)
+  onboardingComplete Boolean          @default(false) @map("onboarding_complete")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  parentOrganization     Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
+  childOrganizations     Organization[] @relation("OrgHierarchy")
   memberships            Membership[]
   auditEvents            AuditEvent[]
   activeSessions         Session[]                 @relation("SessionActiveOrganization")
@@ -113,7 +165,37 @@ model Organization {
   operatorRuns           OperatorRun[]
   operatorRecommendations OperatorRecommendation[]
   connectorHealthEvents  ConnectorHealthEvent[]
+  usageMeters            UsageMeter[]
+  watchlistItems         ProductWatchlistItem[]
+  productArtifacts       ProductArtifact[]
+  commerceCases          CommerceCase[]
+  billingAccounts        BillingAccount[]
+  billingSubscriptions   BillingSubscription[]
+  billingInvoices        BillingInvoice[]
+  commercePayments       CommercePayment[]
+  commerceRefunds        CommerceRefund[]
+  commerceDisputes       CommerceDispute[]
+  commercePayouts        CommercePayout[]
+  paymentReconciliations PaymentReconciliation[]
+  billingWebhookEvents   BillingWebhookEvent[]
+  usageMeterEvents       UsageMeterEvent[]
+  // Platform marketplace payments (Connect abstraction — not capital)
+  platformConnectedAccounts PlatformConnectedAccount[]
+  platformTransfers         PlatformTransfer[]
+  // Commerce Capital Network (gated — not public solicitation by default)
+  capitalProviders          CapitalProvider[]
+  commerceCampaigns         CommerceCampaign[]
+  capitalCommitments        CapitalCommitment[]
+  capitalLedgerEntries      CapitalLedgerEntry[]
+  capitalDisbursements      CapitalDisbursement[]
+  campaignDistributions     CampaignDistribution[]
+  // Client-owned commerce operating capital (managed commerce — not pooled fund)
+  commerceCapitalAccounts   CommerceCapitalAccount[]
+  commerceMandates          CommerceMandate[]
+  capitalAllocations        CapitalAllocation[]
+  fundingIntents            FundingIntent[]
 
+  @@index([parentOrganizationId])
   @@map("organizations")
 }
 
@@ -134,12 +216,14 @@ model User {
 }
 
 model Membership {
-  id             String     @id @default(uuid()) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
-  userId         String     @map("user_id") @db.Uuid
-  role           SystemRole @default(viewer)
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  role           SystemRole       @default(viewer)
+  /// Preferred workspace persona for adaptive navigation
+  workspacePersona WorkspacePersona @default(founder) @map("workspace_persona")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -147,6 +231,23 @@ model Membership {
   @@unique([organizationId, userId])
   @@index([userId])
   @@map("memberships")
+}
+
+/// Metered usage for SaaS entitlements (do not bill platform-caused failures)
+model UsageMeter {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  metricKey      String   @map("metric_key") @db.VarChar(64)
+  periodKey      String   @map("period_key") @db.VarChar(16)
+  quantity       Int      @default(0)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metricKey, periodKey])
+  @@index([organizationId, periodKey])
+  @@map("usage_meters")
 }
 
 model Session {
@@ -277,7 +378,7 @@ model Product {
   reviewCount         Int      @default(0) @map("review_count")
   dataConfidence      Float    @default(0.7) @map("data_confidence")
   dataFreshnessAt     DateTime @default(now()) @map("data_freshness_at") @db.Timestamptz(3)
-  schemaVersion       String   @default("1") @map("schema_version") @db.VarChar(16)
+  schemaVersion       String   @default("2") @map("schema_version") @db.VarChar(16)
   brand               String?  @db.VarChar(200)
   manufacturer        String?  @db.VarChar(200)
   condition           String?  @db.VarChar(64)
@@ -285,6 +386,15 @@ model Product {
   hsCode              String?  @map("hs_code") @db.VarChar(16)
   sourceProvenance    String?  @map("source_provenance") @db.VarChar(128)
   rawPayloadRef       String?  @map("raw_payload_ref") @db.VarChar(128)
+  /// Denormalized hero image from online/supplier feed (artifacts remain source of truth for full twin)
+  primaryImageUrl     String?  @map("primary_image_url") @db.VarChar(2000)
+  /// JSON array of gallery image URLs from source
+  galleryImageUrlsJson Json    @default("[]") @map("gallery_image_urls_json")
+  /// Full media descriptor set from last normalize (images/videos/docs metadata)
+  mediaJson           Json     @default("[]") @map("media_json")
+  /// Structured merchandising attributes (bullets, color, size, gtin, …)
+  attributesJson      Json     @default("{}") @map("attributes_json")
+  mediaCount          Int      @default(0) @map("media_count")
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -306,10 +416,30 @@ model Product {
   identityLinksAsTarget  IdentityLink[]          @relation("IdentityTargetProduct")
   shadowDecisions        ShadowDecision[]
   operatorRecommendations OperatorRecommendation[]
+  watchlistItems         ProductWatchlistItem[]
+  artifacts              ProductArtifact[]
+  commerceCases          CommerceCase[]
 
   @@unique([organizationId, sourcePlatform, externalId])
   @@index([organizationId])
   @@map("products")
+}
+
+/// Saved product watchlist (org-scoped opportunity tracking)
+model ProductWatchlistItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  note           String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId])
+  @@index([organizationId])
+  @@map("product_watchlist_items")
 }
 
 model SalesChannel {
@@ -453,6 +583,8 @@ model CustomerOrder {
   lines        CustomerOrderLine[]
   fulfillments Fulfillment[]
   purchaseOrders SupplierPurchaseOrder[]
+  commercePayments CommercePayment[]
+  commerceRefunds  CommerceRefund[]
 
   @@unique([organizationId, sourcePlatform, externalId])
   @@index([organizationId])
@@ -857,4 +989,948 @@ model ConnectorHealthEvent {
 
   @@index([organizationId, providerKey, createdAt])
   @@map("connector_health_events")
+}
+
+// ——— Product Media & Artifact Engine (Digital Twin first-class media) ———
+
+enum ArtifactType {
+  image
+  video
+  external_video
+  document
+  model_3d
+  spin_set
+  structured_data
+  generated_asset
+  other
+}
+
+enum ArtifactPurpose {
+  primary
+  gallery
+  lifestyle
+  variant
+  packaging
+  dimensions
+  installation
+  demonstration
+  manual
+  specification
+  warranty
+  compliance
+  regulatory
+  marketing
+  supplier_evidence
+  other
+}
+
+enum ArtifactSourceType {
+  connector
+  supplier
+  marketplace
+  merchant_upload
+  public_url
+  generated
+  import
+}
+
+enum ArtifactRightsStatus {
+  unknown
+  supplier_authorized
+  merchant_owned
+  marketplace_limited
+  licensed
+  generated
+  restricted
+}
+
+enum ArtifactPublicationStatus {
+  discovered
+  pending_ingestion
+  processing
+  ready
+  validation_failed
+  restricted
+  published
+  removed
+  unavailable
+}
+
+enum ArtifactVisibility {
+  internal
+  listing_eligible
+  public
+  restricted
+}
+
+/// Canonical product media / document / 3D artifact attached to Product Digital Twin
+model ProductArtifact {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  organizationId     String                    @map("organization_id") @db.Uuid
+  productId          String                    @map("product_id") @db.Uuid
+  variantId          String?                   @map("variant_id") @db.Uuid
+  artifactType       ArtifactType              @map("artifact_type")
+  purpose            ArtifactPurpose           @default(other)
+  sourceType         ArtifactSourceType        @map("source_type")
+  sourceConnectorId  String?                   @map("source_connector_id") @db.Uuid
+  sourcePlatform     String?                   @map("source_platform") @db.VarChar(64)
+  externalId         String?                   @map("external_id") @db.VarChar(128)
+  externalUrl        String?                   @map("external_url") @db.VarChar(2000)
+  storageKey         String?                   @map("storage_key") @db.VarChar(500)
+  filename           String?                   @db.VarChar(500)
+  mimeType           String?                   @map("mime_type") @db.VarChar(128)
+  extension          String?                   @db.VarChar(32)
+  fileSizeBytes      Int?                      @map("file_size_bytes")
+  width              Int?
+  height             Int?
+  durationSeconds    Float?                    @map("duration_seconds")
+  pageCount          Int?                      @map("page_count")
+  checksum           String?                   @db.VarChar(128)
+  perceptualHash     String?                   @map("perceptual_hash") @db.VarChar(128)
+  title              String?                   @db.VarChar(500)
+  altText            String?                   @map("alt_text") @db.VarChar(1000)
+  description        String?                   @db.Text
+  language           String?                   @db.VarChar(16)
+  rightsStatus       ArtifactRightsStatus      @default(unknown) @map("rights_status")
+  publicationStatus  ArtifactPublicationStatus @default(discovered) @map("publication_status")
+  visibility         ArtifactVisibility        @default(internal)
+  qualityScore       Int?                      @map("quality_score")
+  completenessScore  Int?                      @map("completeness_score")
+  confidence         Float?
+  sourceCreatedAt    DateTime?                 @map("source_created_at") @db.Timestamptz(3)
+  sourceUpdatedAt    DateTime?                 @map("source_updated_at") @db.Timestamptz(3)
+  collectedAt        DateTime                  @default(now()) @map("collected_at") @db.Timestamptz(3)
+  validatedAt        DateTime?                 @map("validated_at") @db.Timestamptz(3)
+  metadataJson       Json                      @default("{}") @map("metadata_json")
+  rawSourceJson      Json?                     @map("raw_source_json")
+  parentArtifactId   String?                   @map("parent_artifact_id") @db.Uuid
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId, checksum])
+  @@index([organizationId, productId])
+  @@index([organizationId, publicationStatus])
+  @@map("product_artifacts")
+}
+
+// ——— Commerce operating procedure spine ———
+
+enum CommerceStage {
+  discover
+  evaluate
+  qualify
+  prepare
+  approve
+  publish
+  sell
+  source
+  fulfill
+  reconcile
+  learn
+  closed
+}
+
+enum CommerceStageStatus {
+  not_started
+  ready
+  in_progress
+  waiting
+  blocked
+  completed
+  failed
+}
+
+/// One product opportunity moving through the canonical commerce lifecycle.
+model CommerceCase {
+  id                     String              @id @default(uuid()) @db.Uuid
+  organizationId         String              @map("organization_id") @db.Uuid
+  productId              String              @map("product_id") @db.Uuid
+  selectedSupplierOfferId String?            @map("selected_supplier_offer_id") @db.Uuid
+  selectedChannelId      String?             @map("selected_channel_id") @db.Uuid
+  listingDraftId         String?             @map("listing_draft_id") @db.Uuid
+  publishedListingId     String?             @map("published_listing_id") @db.Uuid
+  currentStage           CommerceStage       @default(discover) @map("current_stage")
+  stageStatus            CommerceStageStatus @default(not_started) @map("stage_status")
+  recommendation         String?             @db.VarChar(64)
+  opportunityScore       Int?                @map("opportunity_score")
+  confidence             Float?
+  expectedProfitMinor    Int?                @map("expected_profit_minor")
+  realizedProfitMinor    Int?                @map("realized_profit_minor")
+  nextActionCode         String?             @map("next_action_code") @db.VarChar(64)
+  nextActionLabel        String?             @map("next_action_label") @db.VarChar(500)
+  blockerCode            String?             @map("blocker_code") @db.VarChar(64)
+  blockerMessage         String?             @map("blocker_message") @db.VarChar(1000)
+  ownerUserId            String?             @map("owner_user_id") @db.Uuid
+  metadataJson           Json                @default("{}") @map("metadata_json")
+  stageHistoryJson       Json                @default("[]") @map("stage_history_json")
+  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, productId])
+  @@index([organizationId, currentStage])
+  @@index([organizationId, stageStatus])
+  @@map("commerce_cases")
+}
+
+// ——— Dual financial domains: SaaS billing vs commerce payments (never mix) ———
+
+enum BillingAccountStatus {
+  active
+  past_due
+  suspended
+  cancelled
+}
+
+enum BillingSubscriptionStatus {
+  trialing
+  active
+  past_due
+  unpaid
+  cancelled
+  incomplete
+}
+
+enum CommercePaymentStatus {
+  pending
+  authorized
+  captured
+  partially_refunded
+  refunded
+  failed
+  disputed
+  cancelled
+}
+
+enum PayoutStatus {
+  pending
+  in_transit
+  paid
+  failed
+}
+
+enum ReconciliationStatus {
+  open
+  matched
+  variance
+  closed
+}
+
+/// SaaS billing account (TradeOps subscription customer — not shopper payments)
+model BillingAccount {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String               @map("organization_id") @db.Uuid
+  provider           String               @default("stripe") @db.VarChar(32)
+  providerCustomerId String               @map("provider_customer_id") @db.VarChar(128)
+  status             BillingAccountStatus @default(active)
+  defaultCurrency    String               @default("USD") @map("default_currency") @db.VarChar(3)
+  metadataJson       Json                 @default("{}") @map("metadata_json")
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization  Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subscriptions BillingSubscription[]
+  invoices      BillingInvoice[]
+
+  @@unique([organizationId, provider])
+  @@unique([provider, providerCustomerId])
+  @@index([organizationId])
+  @@map("billing_accounts")
+}
+
+/// SaaS subscription (Stripe Billing)
+model BillingSubscription {
+  id                     String                     @id @default(uuid()) @db.Uuid
+  organizationId         String                     @map("organization_id") @db.Uuid
+  billingAccountId       String                     @map("billing_account_id") @db.Uuid
+  providerSubscriptionId String                     @map("provider_subscription_id") @db.VarChar(128)
+  planId                 String                     @map("plan_id") @db.VarChar(64)
+  status                 BillingSubscriptionStatus  @default(incomplete)
+  periodStart            DateTime?                  @map("period_start") @db.Timestamptz(3)
+  periodEnd              DateTime?                  @map("period_end") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean                    @default(false) @map("cancel_at_period_end")
+  metadataJson           Json                       @default("{}") @map("metadata_json")
+  createdAt              DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerSubscriptionId])
+  @@index([organizationId, status])
+  @@map("billing_subscriptions")
+}
+
+/// SaaS invoice snapshot (Stripe invoices)
+model BillingInvoice {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  billingAccountId String   @map("billing_account_id") @db.Uuid
+  providerInvoiceId String  @map("provider_invoice_id") @db.VarChar(128)
+  status           String   @db.VarChar(32)
+  currency         String   @db.VarChar(3)
+  amountDueMinor   Int      @map("amount_due_minor")
+  amountPaidMinor  Int      @default(0) @map("amount_paid_minor")
+  hostedInvoiceUrl String?  @map("hosted_invoice_url") @db.VarChar(1000)
+  invoicePdfUrl    String?  @map("invoice_pdf_url") @db.VarChar(1000)
+  periodStart      DateTime? @map("period_start") @db.Timestamptz(3)
+  periodEnd        DateTime? @map("period_end") @db.Timestamptz(3)
+  metadataJson     Json     @default("{}") @map("metadata_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  billingAccount BillingAccount @relation(fields: [billingAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerInvoiceId])
+  @@index([organizationId])
+  @@map("billing_invoices")
+}
+
+/// Idempotent billing webhook events (Stripe event.id)
+model BillingWebhookEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String?  @map("organization_id") @db.Uuid
+  provider        String   @db.VarChar(32)
+  externalEventId String   @map("external_event_id") @db.VarChar(128)
+  eventType       String   @map("event_type") @db.VarChar(128)
+  signatureValid  Boolean  @map("signature_valid")
+  processed       Boolean  @default(false)
+  payloadJson     Json     @map("payload_json")
+  errorMessage    String?  @map("error_message") @db.VarChar(1000)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, externalEventId])
+  @@index([provider, eventType])
+  @@map("billing_webhook_events")
+}
+
+/// Granular usage events for future metered billing (meters, not legacy usage records)
+model UsageMeterEvent {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  metricKey      String   @map("metric_key") @db.VarChar(64)
+  quantity       Int      @default(1)
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  metadataJson   Json     @default("{}") @map("metadata_json")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, metricKey, createdAt])
+  @@map("usage_meter_events")
+}
+
+/// Channel/shopper payment (NOT SaaS subscription billing)
+model CommercePayment {
+  id                 String                @id @default(uuid()) @db.Uuid
+  organizationId     String                @map("organization_id") @db.Uuid
+  customerOrderId    String                @map("customer_order_id") @db.Uuid
+  channel            String                @db.VarChar(64)
+  provider           String                @db.VarChar(64)
+  externalPaymentId  String                @map("external_payment_id") @db.VarChar(128)
+  currency           String                @db.VarChar(3)
+  authorizedAmountMinor Int                @default(0) @map("authorized_amount_minor")
+  capturedAmountMinor   Int                @default(0) @map("captured_amount_minor")
+  refundedAmountMinor   Int                @default(0) @map("refunded_amount_minor")
+  feeAmountMinor        Int?               @map("fee_amount_minor")
+  netAmountMinor        Int?               @map("net_amount_minor")
+  status             CommercePaymentStatus @default(pending)
+  rawProviderStatus  String?               @map("raw_provider_status") @db.VarChar(64)
+  metadataJson       Json                  @default("{}") @map("metadata_json")
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerOrder CustomerOrder  @relation(fields: [customerOrderId], references: [id], onDelete: Cascade)
+  refunds       CommerceRefund[]
+  disputes      CommerceDispute[]
+
+  @@unique([organizationId, provider, externalPaymentId])
+  @@index([organizationId, customerOrderId])
+  @@index([organizationId, status])
+  @@map("commerce_payments")
+}
+
+model CommerceRefund {
+  id                String   @id @default(uuid()) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  commercePaymentId String   @map("commerce_payment_id") @db.Uuid
+  customerOrderId   String?  @map("customer_order_id") @db.Uuid
+  provider          String   @db.VarChar(64)
+  externalRefundId  String   @map("external_refund_id") @db.VarChar(128)
+  amountMinor       Int      @map("amount_minor")
+  currency          String   @db.VarChar(3)
+  status            String   @db.VarChar(32)
+  reason            String?  @db.VarChar(500)
+  metadataJson      Json     @default("{}") @map("metadata_json")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commercePayment CommercePayment @relation(fields: [commercePaymentId], references: [id], onDelete: Cascade)
+  customerOrder   CustomerOrder?  @relation(fields: [customerOrderId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, provider, externalRefundId])
+  @@index([organizationId, commercePaymentId])
+  @@map("commerce_refunds")
+}
+
+model CommerceDispute {
+  id                 String   @id @default(uuid()) @db.Uuid
+  organizationId     String   @map("organization_id") @db.Uuid
+  commercePaymentId  String   @map("commerce_payment_id") @db.Uuid
+  provider           String   @db.VarChar(64)
+  externalDisputeId  String   @map("external_dispute_id") @db.VarChar(128)
+  amountMinor        Int      @map("amount_minor")
+  currency           String   @db.VarChar(3)
+  status             String   @db.VarChar(32)
+  reason             String?  @db.VarChar(500)
+  evidenceDueBy      DateTime? @map("evidence_due_by") @db.Timestamptz(3)
+  metadataJson       Json     @default("{}") @map("metadata_json")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commercePayment CommercePayment @relation(fields: [commercePaymentId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider, externalDisputeId])
+  @@index([organizationId])
+  @@map("commerce_disputes")
+}
+
+/// Channel/processor payout to merchant (not SaaS invoice)
+model CommercePayout {
+  id               String       @id @default(uuid()) @db.Uuid
+  organizationId   String       @map("organization_id") @db.Uuid
+  provider         String       @db.VarChar(64)
+  externalPayoutId String       @map("external_payout_id") @db.VarChar(128)
+  grossAmountMinor Int          @map("gross_amount_minor")
+  feeAmountMinor   Int          @default(0) @map("fee_amount_minor")
+  netAmountMinor   Int          @map("net_amount_minor")
+  currency         String       @db.VarChar(3)
+  expectedArrival  DateTime?    @map("expected_arrival") @db.Timestamptz(3)
+  arrivedAt        DateTime?    @map("arrived_at") @db.Timestamptz(3)
+  status           PayoutStatus @default(pending)
+  metadataJson     Json         @default("{}") @map("metadata_json")
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization     Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reconciliations  PaymentReconciliation[]
+
+  @@unique([organizationId, provider, externalPayoutId])
+  @@index([organizationId, status])
+  @@map("commerce_payouts")
+}
+
+model PaymentReconciliation {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String               @map("organization_id") @db.Uuid
+  commercePayoutId   String?              @map("commerce_payout_id") @db.Uuid
+  status             ReconciliationStatus @default(open)
+  expectedNetMinor   Int                  @default(0) @map("expected_net_minor")
+  actualNetMinor     Int                  @default(0) @map("actual_net_minor")
+  varianceMinor      Int                  @default(0) @map("variance_minor")
+  matchedOrderCount  Int                  @default(0) @map("matched_order_count")
+  unmatchedAmountMinor Int                @default(0) @map("unmatched_amount_minor")
+  summaryJson        Json                 @default("{}") @map("summary_json")
+  closedAt           DateTime?            @map("closed_at") @db.Timestamptz(3)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commercePayout CommercePayout? @relation(fields: [commercePayoutId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@map("payment_reconciliations")
+}
+
+// ——— Domain 2b: Platform marketplace payments (Connect abstraction) ———
+// Separate from SaaS billing and from Commerce Capital investor funds.
+
+enum ConnectedAccountRole {
+  merchant
+  supplier
+  service_provider
+  platform
+}
+
+enum ConnectedAccountStatus {
+  not_started
+  onboarding
+  restricted
+  enabled
+  disabled
+  rejected
+}
+
+/// Provider-agnostic connected account (Stripe Connect Express/Custom/etc.)
+model PlatformConnectedAccount {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  organizationId       String                 @map("organization_id") @db.Uuid
+  role                 ConnectedAccountRole   @default(merchant)
+  provider             String                 @default("stripe_connect") @db.VarChar(32)
+  providerAccountId    String?                @map("provider_account_id") @db.VarChar(128)
+  status               ConnectedAccountStatus @default(not_started)
+  chargesEnabled       Boolean                @default(false) @map("charges_enabled")
+  payoutsEnabled       Boolean                @default(false) @map("payouts_enabled")
+  detailsSubmitted     Boolean                @default(false) @map("details_submitted")
+  verificationStatus   String                 @default("pending") @map("verification_status") @db.VarChar(32)
+  verificationProviderRef String?             @map("verification_provider_ref") @db.VarChar(128)
+  capabilitiesJson     Json                   @default("{}") @map("capabilities_json")
+  metadataJson         Json                   @default("{}") @map("metadata_json")
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transfersOut PlatformTransfer[] @relation("TransferFrom")
+  transfersIn  PlatformTransfer[] @relation("TransferTo")
+
+  @@unique([organizationId, role, provider])
+  @@unique([provider, providerAccountId])
+  @@index([organizationId, status])
+  @@map("platform_connected_accounts")
+}
+
+/// Platform fee / transfer instruction (marketplace split — not capital distribution)
+model PlatformTransfer {
+  id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  fromAccountId         String?  @map("from_account_id") @db.Uuid
+  toAccountId           String?  @map("to_account_id") @db.Uuid
+  amountMinor           Int      @map("amount_minor")
+  currency              String   @db.VarChar(3)
+  platformFeeMinor      Int      @default(0) @map("platform_fee_minor")
+  purpose               String   @db.VarChar(64)
+  providerTransferId    String?  @map("provider_transfer_id") @db.VarChar(128)
+  status                String   @default("proposed") @db.VarChar(32)
+  idempotencyKey        String   @map("idempotency_key") @db.VarChar(128)
+  metadataJson          Json     @default("{}") @map("metadata_json")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  fromAccount  PlatformConnectedAccount? @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: SetNull)
+  toAccount    PlatformConnectedAccount? @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+  @@map("platform_transfers")
+}
+
+// ——— Domain 3: Commerce Capital Network (legally gated) ———
+
+enum CapitalProviderStatus {
+  pending
+  verified
+  restricted
+  rejected
+}
+
+enum CampaignFundingModel {
+  prepurchase
+  commercial_financing
+  revenue_share
+  equity
+  private_agreement
+  sandbox
+}
+
+enum CampaignStatus {
+  draft
+  under_review
+  legal_review_required
+  approved
+  open
+  funding
+  funded
+  active
+  paused
+  reconciling
+  completed
+  failed
+  cancelled
+}
+
+enum CommitmentStatus {
+  initiated
+  identity_verification_required
+  eligibility_review
+  documents_required
+  payment_pending
+  funded
+  cancelled
+  returned
+  distributed
+}
+
+enum DisbursementStatus {
+  proposed
+  approval_required
+  approved
+  processing
+  paid
+  failed
+  reversed
+  reconciled
+}
+
+enum DistributionStatus {
+  calculated
+  approved
+  paid
+  failed
+}
+
+/// Capital provider (investor / commercial finance partner) — not a shopper
+model CapitalProvider {
+  id                 String                @id @default(uuid()) @db.Uuid
+  organizationId     String                @map("organization_id") @db.Uuid
+  displayName        String                @map("display_name") @db.VarChar(200)
+  verificationStatus CapitalProviderStatus @default(pending) @map("verification_status")
+  investorCategory   String?               @map("investor_category") @db.VarChar(64)
+  jurisdiction       String                @default("CA") @db.VarChar(8)
+  verificationProviderRef String?          @map("verification_provider_ref") @db.VarChar(128)
+  metadataJson       Json                  @default("{}") @map("metadata_json")
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  commitments  CapitalCommitment[]
+
+  @@index([organizationId, verificationStatus])
+  @@map("capital_providers")
+}
+
+/// Campaign-based commerce funding unit
+model CommerceCampaign {
+  id                   String               @id @default(uuid()) @db.Uuid
+  organizationId       String               @map("organization_id") @db.Uuid
+  merchantOrgId        String               @map("merchant_org_id") @db.Uuid
+  title                String               @db.VarChar(300)
+  description          String               @default("") @db.Text
+  capitalTargetMinor   Int                  @map("capital_target_minor")
+  minimumCommitmentMinor Int                @default(0) @map("minimum_commitment_minor")
+  maximumCommitmentMinor Int?               @map("maximum_commitment_minor")
+  currency             String               @default("CAD") @db.VarChar(3)
+  fundingModel         CampaignFundingModel @default(sandbox) @map("funding_model")
+  status               CampaignStatus       @default(draft)
+  riskRating           String               @default("unrated") @map("risk_rating") @db.VarChar(32)
+  jurisdiction         String               @default("CA") @db.VarChar(8)
+  legalReviewStatus    String               @default("required") @map("legal_review_status") @db.VarChar(32)
+  productId            String?              @map("product_id") @db.Uuid
+  supplierId           String?              @map("supplier_id") @db.Uuid
+  startDate            DateTime?            @map("start_date") @db.Timestamptz(3)
+  maturityDate         DateTime?            @map("maturity_date") @db.Timestamptz(3)
+  economicsJson        Json                 @default("{}") @map("economics_json")
+  waterfallConfigJson  Json                 @default("{}") @map("waterfall_config_json")
+  riskDisclosureJson   Json                 @default("{}") @map("risk_disclosure_json")
+  metadataJson         Json                 @default("{}") @map("metadata_json")
+  sandbox              Boolean              @default(true)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  budget         CampaignBudget?
+  commitments    CapitalCommitment[]
+  ledgerEntries  CapitalLedgerEntry[]
+  disbursements  CapitalDisbursement[]
+  distributions  CampaignDistribution[]
+
+  @@index([organizationId, status])
+  @@index([merchantOrgId])
+  @@map("commerce_campaigns")
+}
+
+model CampaignBudget {
+  id                    String   @id @default(uuid()) @db.Uuid
+  campaignId            String   @unique @map("campaign_id") @db.Uuid
+  inventoryBudgetMinor  Int      @default(0) @map("inventory_budget_minor")
+  advertisingBudgetMinor Int     @default(0) @map("advertising_budget_minor")
+  fulfillmentBudgetMinor Int     @default(0) @map("fulfillment_budget_minor")
+  dutiesBudgetMinor     Int      @default(0) @map("duties_budget_minor")
+  operatingReserveMinor Int      @default(0) @map("operating_reserve_minor")
+  platformFeesMinor     Int      @default(0) @map("platform_fees_minor")
+  merchantExpenseMinor  Int      @default(0) @map("merchant_expense_minor")
+  currency              String   @default("CAD") @db.VarChar(3)
+  metadataJson          Json     @default("{}") @map("metadata_json")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  campaign CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_budgets")
+}
+
+model CapitalCommitment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  campaignId         String           @map("campaign_id") @db.Uuid
+  capitalProviderId  String           @map("capital_provider_id") @db.Uuid
+  committedAmountMinor Int            @map("committed_amount_minor")
+  fundedAmountMinor  Int              @default(0) @map("funded_amount_minor")
+  currency           String           @default("CAD") @db.VarChar(3)
+  status             CommitmentStatus @default(initiated)
+  providerPaymentRef String?          @map("provider_payment_ref") @db.VarChar(128)
+  metadataJson       Json             @default("{}") @map("metadata_json")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign        CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  capitalProvider CapitalProvider @relation(fields: [capitalProviderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, campaignId])
+  @@index([capitalProviderId])
+  @@map("capital_commitments")
+}
+
+/// Immutable double-entry journal for capital domain (append-only semantics in app layer)
+model CapitalLedgerEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  organizationId  String   @map("organization_id") @db.Uuid
+  campaignId      String?  @map("campaign_id") @db.Uuid
+  journalId       String   @map("journal_id") @db.Uuid
+  accountCode     String   @map("account_code") @db.VarChar(64)
+  /// Positive = debit, negative = credit (or use direction)
+  direction       String   @db.VarChar(8)
+  amountMinor     Int      @map("amount_minor")
+  currency        String   @db.VarChar(3)
+  memo            String   @db.VarChar(500)
+  idempotencyKey  String   @map("idempotency_key") @db.VarChar(128)
+  referenceType   String?  @map("reference_type") @db.VarChar(64)
+  referenceId     String?  @map("reference_id") @db.Uuid
+  metadataJson    Json     @default("{}") @map("metadata_json")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CommerceCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, campaignId, accountCode])
+  @@index([journalId])
+  @@map("capital_ledger_entries")
+}
+
+model CapitalDisbursement {
+  id                 String             @id @default(uuid()) @db.Uuid
+  organizationId     String             @map("organization_id") @db.Uuid
+  campaignId         String             @map("campaign_id") @db.Uuid
+  recipientType      String             @map("recipient_type") @db.VarChar(32)
+  recipientId        String?            @map("recipient_id") @db.Uuid
+  budgetLine         String             @map("budget_line") @db.VarChar(64)
+  amountMinor        Int                @map("amount_minor")
+  currency           String             @db.VarChar(3)
+  purpose            String             @db.VarChar(500)
+  status             DisbursementStatus @default(proposed)
+  approvalId         String?            @map("approval_id") @db.Uuid
+  evidenceJson       Json               @default("{}") @map("evidence_json")
+  providerPaymentRef String?            @map("provider_payment_ref") @db.VarChar(128)
+  idempotencyKey     String             @map("idempotency_key") @db.VarChar(128)
+  metadataJson       Json               @default("{}") @map("metadata_json")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, campaignId, status])
+  @@map("capital_disbursements")
+}
+
+model CampaignDistribution {
+  id                   String             @id @default(uuid()) @db.Uuid
+  organizationId       String             @map("organization_id") @db.Uuid
+  campaignId           String             @map("campaign_id") @db.Uuid
+  recipientType        String             @map("recipient_type") @db.VarChar(32)
+  recipientId          String?            @map("recipient_id") @db.Uuid
+  principalReturnedMinor Int              @default(0) @map("principal_returned_minor")
+  profitDistributedMinor Int              @default(0) @map("profit_distributed_minor")
+  lossAllocatedMinor   Int                @default(0) @map("loss_allocated_minor")
+  feesDeductedMinor    Int                @default(0) @map("fees_deducted_minor")
+  currency             String             @db.VarChar(3)
+  status               DistributionStatus @default(calculated)
+  calculationVersion   String             @map("calculation_version") @db.VarChar(32)
+  inputsJson           Json               @default("{}") @map("inputs_json")
+  providerPaymentRef   String?            @map("provider_payment_ref") @db.VarChar(128)
+  metadataJson         Json               @default("{}") @map("metadata_json")
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, campaignId])
+  @@map("campaign_distributions")
+}
+
+// ——— Client-owned commerce operating capital (managed commerce infrastructure) ———
+// Distinct from campaign investor capital and SaaS billing.
+
+enum CapitalAccountStatus {
+  pending_verification
+  additional_information_required
+  payments_enabled
+  funding_enabled
+  payout_disabled
+  active
+  restricted
+  suspended
+  closed
+}
+
+enum MandateStatus {
+  draft
+  approved
+  paused
+  revoked
+}
+
+enum MandateRiskLevel {
+  conservative
+  balanced
+  growth
+}
+
+enum AllocationStatus {
+  proposed
+  approved
+  reserved
+  deployed
+  reconciling
+  closed
+  cancelled
+}
+
+enum FundingIntentStatus {
+  created
+  provider_opened
+  pending
+  confirmed
+  failed
+  cancelled
+}
+
+/// Client-owned commerce capital account — ledger of partner-verified funds, not editable wallet
+model CommerceCapitalAccount {
+  id                 String               @id @default(uuid()) @db.Uuid
+  organizationId     String               @map("organization_id") @db.Uuid
+  ownerType          String               @default("business") @map("owner_type") @db.VarChar(32)
+  /// Partner connected account / custody reference — never TradeOps operating bank
+  provider           String               @default("pending") @db.VarChar(32)
+  providerAccountId  String?              @map("provider_account_id") @db.VarChar(128)
+  currency           String               @default("CAD") @db.VarChar(3)
+  status             CapitalAccountStatus @default(pending_verification)
+  verificationJson   Json                 @default("{}") @map("verification_json")
+  capabilityJson     Json                 @default("{}") @map("capability_json")
+  metadataJson       Json                 @default("{}") @map("metadata_json")
+  sandbox            Boolean              @default(true)
+  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mandates     CommerceMandate[]
+  allocations  CapitalAllocation[]
+  fundingIntents FundingIntent[]
+
+  @@unique([organizationId, currency])
+  @@index([organizationId, status])
+  @@map("commerce_capital_accounts")
+}
+
+/// Explicit spending / deployment policy — AI and workflows must stay inside these limits
+model CommerceMandate {
+  id                       String          @id @default(uuid()) @db.Uuid
+  organizationId           String          @map("organization_id") @db.Uuid
+  capitalAccountId         String          @map("capital_account_id") @db.Uuid
+  maximumCapitalMinor      Int             @map("maximum_capital_minor")
+  maximumProductExposureMinor Int          @default(0) @map("maximum_product_exposure_minor")
+  maximumDailySpendMinor   Int             @default(0) @map("maximum_daily_spend_minor")
+  maximumMonthlySpendMinor Int             @default(0) @map("maximum_monthly_spend_minor")
+  maximumAdvertisingMinor  Int             @default(0) @map("maximum_advertising_minor")
+  maximumRefundExposureMinor Int           @default(0) @map("maximum_refund_exposure_minor")
+  minimumMarginBps         Int             @default(0) @map("minimum_margin_bps")
+  approvalThresholdMinor   Int             @default(0) @map("approval_threshold_minor")
+  maximumDeliveryDays      Int             @default(30) @map("maximum_delivery_days")
+  allowedChannelsJson      Json            @default("[]") @map("allowed_channels_json")
+  allowedCategoriesJson    Json            @default("[]") @map("allowed_categories_json")
+  allowedCountriesJson     Json            @default("[\"CA\"]") @map("allowed_countries_json")
+  riskLevel                MandateRiskLevel @default(conservative) @map("risk_level")
+  status                   MandateStatus   @default(draft)
+  metadataJson             Json            @default("{}") @map("metadata_json")
+  approvedAt               DateTime?       @map("approved_at") @db.Timestamptz(3)
+  createdAt                DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capitalAccount CommerceCapitalAccount @relation(fields: [capitalAccountId], references: [id], onDelete: Cascade)
+  allocations    CapitalAllocation[]
+
+  @@index([organizationId, status])
+  @@index([capitalAccountId])
+  @@map("commerce_mandates")
+}
+
+/// Capital reserved/deployed against a commerce case or product opportunity
+model CapitalAllocation {
+  id                 String           @id @default(uuid()) @db.Uuid
+  organizationId     String           @map("organization_id") @db.Uuid
+  capitalAccountId   String           @map("capital_account_id") @db.Uuid
+  mandateId          String?          @map("mandate_id") @db.Uuid
+  commerceCaseId     String?          @map("commerce_case_id") @db.Uuid
+  productId          String?          @map("product_id") @db.Uuid
+  amountReservedMinor Int             @default(0) @map("amount_reserved_minor")
+  amountDeployedMinor Int             @default(0) @map("amount_deployed_minor")
+  amountReturnedMinor Int             @default(0) @map("amount_returned_minor")
+  currency           String           @db.VarChar(3)
+  status             AllocationStatus @default(proposed)
+  economicsJson      Json             @default("{}") @map("economics_json")
+  /// forecast | committed | settled | realized — never mix labels
+  evidenceJson       Json             @default("{}") @map("evidence_json")
+  idempotencyKey     String           @map("idempotency_key") @db.VarChar(128)
+  metadataJson       Json             @default("{}") @map("metadata_json")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capitalAccount CommerceCapitalAccount @relation(fields: [capitalAccountId], references: [id], onDelete: Cascade)
+  mandate        CommerceMandate?       @relation(fields: [mandateId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, capitalAccountId, status])
+  @@map("capital_allocations")
+}
+
+/// Funding intent — usable capital only after verified provider event (not browser redirect)
+model FundingIntent {
+  id                   String              @id @default(uuid()) @db.Uuid
+  organizationId       String              @map("organization_id") @db.Uuid
+  capitalAccountId     String              @map("capital_account_id") @db.Uuid
+  amountMinor          Int                 @map("amount_minor")
+  currency             String              @db.VarChar(3)
+  status               FundingIntentStatus @default(created)
+  provider             String              @default("sandbox") @db.VarChar(32)
+  providerReference    String?             @map("provider_reference") @db.VarChar(128)
+  idempotencyKey       String              @map("idempotency_key") @db.VarChar(128)
+  metadataJson         Json                @default("{}") @map("metadata_json")
+  confirmedAt          DateTime?           @map("confirmed_at") @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  capitalAccount CommerceCapitalAccount @relation(fields: [capitalAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, capitalAccountId, status])
+  @@map("funding_intents")
 }

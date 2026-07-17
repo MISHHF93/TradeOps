@@ -18,6 +18,9 @@ export const fixtureMarketplaceManifest: ConnectorManifest = {
     'readOrders',
     'readFees',
     'readInventory',
+    'attachImageToListing',
+    'setPrimaryImage',
+    'readProductImages',
   ],
 };
 

@@ -1,4 +1,10 @@
-import { ApprovalButtons } from '../../../components/terminal-actions';
+import Link from 'next/link';
+import {
+  ProcessPageHeader,
+  ProcessRelatedLinks,
+} from '../../../components/commerce/process-chrome';
+import { ApprovalActionCell } from '../../../components/terminal/approval-actions';
+import { PROCESS_LABELS } from '../../../lib/process-ux';
 import { terminalGet } from '../../../lib/terminal-api';
 
 export default async function ApprovalsPage() {
@@ -9,27 +15,62 @@ export default async function ApprovalsPage() {
       status: string;
       note: string | null;
       createdAt: string;
-      listing: { id: string; status: string; sku: string } | null;
+      decidedAt?: string | null;
+      listing: {
+        id: string;
+        status: string;
+        sku: string;
+        productId?: string;
+      } | null;
       supplierPurchaseOrder: { id: string; isDraft: boolean; costMinor: number } | null;
     }>
   >('/api/v1/approvals');
 
   const rows = result.ok ? result.data : [];
+  const pending = rows.filter((r) => r.status === 'pending').length;
 
   return (
     <section>
-      <h1>Approval queue</h1>
-      <p className="lede">
-        Default is human approval before listing publish and supplier purchase-order execution. Full
-        automation is off.
-      </p>
+      <ProcessPageHeader
+        pill="Stage view · Approve"
+        title={PROCESS_LABELS.viewApprovals}
+        lede={`Consequential actions only: marketplace publish, supplier POs, price changes. Research never lands here.${
+          pending ? ` · ${pending} pending` : ' · queue clear'
+        }`}
+        currentStage="approve"
+        breadcrumbs={[
+          { href: '/terminal/process', label: PROCESS_LABELS.boardTitle },
+          { label: PROCESS_LABELS.viewApprovals },
+        ]}
+        toolbar={
+          <>
+            <Link className="btn primary" href="/terminal/process">
+              {PROCESS_LABELS.openProcess}
+            </Link>
+            <Link className="btn ghost" href="/terminal/tasks">
+              {PROCESS_LABELS.viewTasks}
+            </Link>
+          </>
+        }
+      />
+      <ProcessRelatedLinks primary="approvals" />
       {!result.ok ? <p className="form-error">{result.error}</p> : null}
-      <table className="scanner-table">
+      {rows.length === 0 ? (
+        <article className="panel">
+          <p>
+            No actions require approval. Listing publish and supplier purchase submissions appear when
+            a case reaches <strong>Prepare → Approve</strong>. Open the{' '}
+            <Link href="/terminal/process">{PROCESS_LABELS.openProcess}</Link> or{' '}
+            <Link href="/terminal/tasks">{PROCESS_LABELS.viewTasks}</Link>.
+          </p>
+        </article>
+      ) : null}
+      <table className="scanner-table" aria-label="Approval queue">
         <thead>
           <tr>
             <th>Kind</th>
             <th>Status</th>
-            <th>Note</th>
+            <th>Note / target</th>
             <th>Created</th>
             <th>Action</th>
           </tr>
@@ -37,9 +78,28 @@ export default async function ApprovalsPage() {
         <tbody>
           {rows.map((a) => (
             <tr key={a.id}>
-              <td>{a.kind}</td>
-              <td>{a.status}</td>
               <td>
+                <code>{a.kind}</code>
+                {a.listing?.status === 'draft' ? (
+                  <span className="meta"> · draft</span>
+                ) : null}
+              </td>
+              <td>
+                <span
+                  className={
+                    a.status === 'pending'
+                      ? 'text-warning'
+                      : a.status === 'approved'
+                        ? 'text-positive'
+                        : a.status === 'rejected'
+                          ? 'text-negative'
+                          : undefined
+                  }
+                >
+                  {a.status}
+                </span>
+              </td>
+              <td style={{ whiteSpace: 'normal', maxWidth: 360 }}>
                 {a.note}
                 {a.listing ? ` · listing ${a.listing.sku} (${a.listing.status})` : ''}
                 {a.supplierPurchaseOrder
@@ -47,7 +107,16 @@ export default async function ApprovalsPage() {
                   : ''}
               </td>
               <td>{new Date(a.createdAt).toLocaleString()}</td>
-              <td>{a.status === 'pending' ? <ApprovalButtons approvalId={a.id} /> : '—'}</td>
+              <td>
+                <ApprovalActionCell
+                  approvalId={a.id}
+                  status={a.status}
+                  kind={a.kind}
+                  listingId={a.listing?.id}
+                  productId={a.listing?.productId}
+                  note={a.note}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

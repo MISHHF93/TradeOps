@@ -1,12 +1,13 @@
 # ADR-0004: Server-side session authentication
 
-**Status:** Accepted  
+**Status:** Accepted (amended)  
 **Date:** 2026-07-15  
-**Milestone:** M1
+**Milestone:** M1  
+**Amendments:** 2026-07-16 Direct Founder Access
 
 ## Context
 
-TradeOps is a multi-tenant B2B SaaS console. Merchants need durable login, organization switching, and RBAC before connectors or commerce data exist.
+TradeOps is a multi-tenant B2B SaaS console. Merchants need durable login, organization switching, and RBAC before connectors or commerce data exist. The founder-operated phase also needs zero-friction local entry without deleting the multi-tenant auth foundation.
 
 ## Decision
 
@@ -16,19 +17,22 @@ TradeOps is a multi-tenant B2B SaaS console. Merchants need durable login, organ
 4. **Guards:** Global Nest `AuthGuard` + `PermissionsGuard`; routes opt out with `@Public()`.
 5. **RBAC:** System roles map to a fixed permission catalog in `@tradeops/domain` (custom roles later).
 6. **Audit:** Login, logout, failed login, org create/switch, and switch denials write `audit_events`.
+7. **Access mode** (`TRADEOPS_ACCESS_MODE`) is the central switch — see `packages/config/src/access-mode.ts`.
+
+## Access modes
+
+| Mode | Identity |
+|------|----------|
+| `founder_direct` (default) | Server resolves deterministic founder user+org without login UX |
+| `authenticated` / `multi_tenant` | Session cookie required; `/login` · `/register` available |
 
 ## Consequences
 
 - Cookie auth works with CORS `credentials: true` between web and API on localhost.
 - Revocation is immediate (row update) without JWT denylist complexity.
 - Future SSO/OAuth can issue the same session row type after IdP assertion.
-
-## Local development amendment (2026-07-16)
-
-- Web **login/register pages removed** for local-first product use.
-- `AUTH_BYPASS=true` (non-production only) makes API guards impersonate the seeded demo owner (`founder@tradeops.local` / org `demo-commerce`) without a session cookie.
-- API `POST /auth/login|register` remain available for future multi-tenant UI; not required for the local terminal.
-- Bypass is forced **off** when `NODE_ENV=production` on the API process.
+- Founder direct mode still attaches owner RBAC and org-scoped queries — not unrestricted global access.
+- Legacy `AUTH_BYPASS=true` remains for development; prefer `TRADEOPS_ACCESS_MODE=founder_direct`.
 
 ## Supersedes
 

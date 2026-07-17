@@ -14,13 +14,16 @@
 ## Production
 
 1. Deploy revision  
-2. `pnpm db:migrate:deploy`  
+2. `pnpm db:migrate:deploy` (includes product artifacts)  
 3. Health: `/api/v1/health/live`  
-4. Register / login / org  
-5. AI workspace shadow run  
-6. Workflow template list/run dry  
-7. Public pages + sitemap + robots  
-8. Confirm `/terminal` noindex  
+4. Confirm `TRADEOPS_ACCESS_MODE` is **not** `founder_direct` on public multi-user hosts  
+5. Register / login / org (authenticated mode)  
+6. AI workspace shadow run  
+7. Workflow template list/run dry  
+8. Live examples catalog loads  
+9. Product artifact list/bootstrap on a test product  
+10. Public pages + sitemap + robots  
+11. Confirm `/terminal` noindex  
 
 ## Rollback
 

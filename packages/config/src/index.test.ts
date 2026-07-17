@@ -13,6 +13,7 @@ describe('loadEnv', () => {
     assert.match(env.DATABASE_URL, /postgresql:\/\//);
     assert.match(env.REDIS_URL, /redis:\/\//);
     assert.equal(env.AUTH_BYPASS, true);
+    assert.equal(env.TRADEOPS_ACCESS_MODE, 'founder_direct');
   });
 
   it('coerces numeric ports from strings', () => {
@@ -28,6 +29,13 @@ describe('loadEnv', () => {
     resetEnvCache();
     assert.equal(loadEnv({ AUTH_BYPASS: 'true' }).AUTH_BYPASS, true);
   });
+
+  it('parses TRADEOPS_ACCESS_MODE', () => {
+    assert.equal(
+      loadEnv({ TRADEOPS_ACCESS_MODE: 'authenticated' }).TRADEOPS_ACCESS_MODE,
+      'authenticated',
+    );
+  });
 });
 
 describe('isAuthBypassEnabled', () => {
@@ -35,13 +43,27 @@ describe('isAuthBypassEnabled', () => {
     resetEnvCache();
   });
 
-  it('is on in development by default', () => {
+  it('is on in development by default (founder_direct)', () => {
     const env = loadEnv({ NODE_ENV: 'development' });
     assert.equal(isAuthBypassEnabled(env), true);
   });
 
-  it('never enables bypass in production', () => {
-    const env = loadEnv({ NODE_ENV: 'production', AUTH_BYPASS: 'true' });
+  it('legacy AUTH_BYPASS alone is off in production when mode is authenticated', () => {
+    const env = loadEnv({
+      NODE_ENV: 'production',
+      AUTH_BYPASS: 'true',
+      TRADEOPS_ACCESS_MODE: 'authenticated',
+    });
     assert.equal(isAuthBypassEnabled(env), false);
   });
+
+  it('founder_direct enables identity in production for private founder deploy', () => {
+    const env = loadEnv({
+      NODE_ENV: 'production',
+      AUTH_BYPASS: 'false',
+      TRADEOPS_ACCESS_MODE: 'founder_direct',
+    });
+    assert.equal(isAuthBypassEnabled(env), true);
+  });
 });
+

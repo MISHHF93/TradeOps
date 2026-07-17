@@ -12,7 +12,15 @@ export const fixtureSupplierManifest: ConnectorManifest = {
   family: 'supplier',
   isFixture: true,
   version: '0.1.0',
-  capabilities: ['searchProducts', 'readProduct', 'readSupplier', 'readInventory', 'quoteShipping'],
+  capabilities: [
+    'searchProducts',
+    'readProduct',
+    'readSupplier',
+    'readInventory',
+    'quoteShipping',
+    'readProductImages',
+    'readDocuments',
+  ],
 };
 
 registerConnectorManifest(fixtureSupplierManifest);

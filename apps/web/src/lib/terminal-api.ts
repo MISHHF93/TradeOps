@@ -21,7 +21,9 @@ export async function terminalGet<T>(path: string) {
 export type ScannerRow = {
   productId: string;
   product: string;
+  description?: string;
   category: string;
+  brand?: string | null;
   sourcePlatform: string;
   supplier: string;
   supplierCostMinor: number;
@@ -45,4 +47,9 @@ export type ScannerRow = {
   currency: string;
   score: number;
   hasActiveListing: boolean;
+  rating?: number;
+  reviewCount?: number;
+  primaryImageUrl?: string | null;
+  mediaCount?: number;
+  galleryImageUrls?: string[];
 };

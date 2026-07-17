@@ -1,9 +1,11 @@
+import { ChartLegend, Sparkline } from '../../../components/charts';
+import { Money } from '../../../components/commerce/money';
 import { formatMoney } from '../../../lib/money';
 import { terminalGet } from '../../../lib/terminal-api';
 
 /**
  * Cash view — deliberately separates revenue, contribution, committed cash, and pending payouts.
- * Never labels revenue as profit.
+ * Never labels revenue as profit. Chart series: revenue=accent, profit=green (§11).
  */
 export default async function CashFlowPage() {
   const portfolio = await terminalGet<{
@@ -37,13 +39,32 @@ export default async function CashFlowPage() {
   const atRisk = p.refundExposureMinor;
   const availableEstimate = Math.max(0, pendingPayouts - committed - atRisk);
 
+  const spark = [
+    Math.max(0, p.revenueMinor * 0.6),
+    Math.max(0, p.revenueMinor * 0.75),
+    Math.max(0, orderRevenue * 0.9),
+    orderRevenue,
+  ];
+
   return (
     <section>
-      <h1>Cash flow</h1>
-      <p className="lede">
-        Cash is not profit. Revenue is not profit. Contribution profit is after fees, COGS, shipping,
-        ads allocation, and return reserve — before fixed operating costs.
-      </p>
+      <header className="terminal-header">
+        <div>
+          <h1 className="workspace-title-active">Cash flow</h1>
+          <p className="lede">
+            Cash is not profit. Revenue is not profit. Contribution profit is after fees, COGS, shipping,
+            ads allocation, and return reserve — before fixed operating costs.
+          </p>
+        </div>
+      </header>
+
+      <article className="chart-surface" style={{ marginBottom: 16 }}>
+        <ChartLegend series={['revenue', 'profit', 'loss', 'forecast', 'confidence']} />
+        <Sparkline values={spark} className="chart-sparkline" label="Revenue trend (illustrative)" />
+        <p className="meta" style={{ margin: '8px 0 0' }}>
+          Revenue series uses accent (analytical). Profit/loss use semantic green/red only.
+        </p>
+      </article>
 
       <div className="detail-grid">
         <article className="panel">
@@ -83,11 +104,15 @@ export default async function CashFlowPage() {
           <ul className="kv">
             <li>
               <span>Contribution / net profit estimate</span>
-              <strong>{formatMoney(p.netProfitEstimateMinor, c)}</strong>
+              <strong>
+                <Money minor={p.netProfitEstimateMinor} currency={c} signed />
+              </strong>
             </li>
             <li>
               <span>Available cash estimate</span>
-              <strong>{formatMoney(availableEstimate, c)}</strong>
+              <strong>
+                <Money minor={availableEstimate} currency={c} signed />
+              </strong>
             </li>
           </ul>
           <p className="meta">

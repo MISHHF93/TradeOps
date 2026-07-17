@@ -1,33 +1,40 @@
 import Link from 'next/link';
-import { fetchApiHealth } from '../lib/api';
+import { redirect } from 'next/navigation';
 import { StatusBadge } from '../components/status-badge';
+import { fetchApiHealth } from '../lib/api';
+import { FOUNDER_WORKSPACE_PATH, isFounderDirectAccess } from '../lib/access-mode';
 
 /**
- * Public marketing home — no private merchant data.
- * Entry to free tools + registration + authenticated workspace.
+ * Root route.
+ * founder_direct → terminal command center immediately.
+ * authenticated / multi_tenant → public marketing home.
  */
 export default async function HomePage() {
+  if (isFounderDirectAccess()) {
+    redirect(FOUNDER_WORKSPACE_PATH);
+  }
+
   const health = await fetchApiHealth();
 
   return (
     <section className="hero public-landing">
       <div>
-        <p className="pill">Public website · free tools · merchant workspace</p>
-        <h1>The AI operating system for multichannel physical commerce</h1>
+        <p className="pill">AI Commerce Operating System</p>
+        <h1>Run commerce better—above every channel</h1>
         <p className="lede">
-          TradeOps connects authorized storefronts, marketplaces, and suppliers into one canonical
-          commerce world. Score real profit, run an interactive AI operator, automate weekend catalog
-          work in shadow mode, and keep humans in the loop for money-risking actions.
+          TradeOps is not another storefront. It is the intelligent layer above Shopify, Amazon,
+          eBay, suppliers, and logistics: discover opportunities, automate operations, and measure
+          real profitability—while you keep your stores and payment processors.
         </p>
         <div className="cta-row">
           <Link className="btn primary" href="/register">
-            Start free registration
-          </Link>
-          <Link className="btn ghost" href="/tools">
-            Try free tools
+            Open TradeOps
           </Link>
           <Link className="btn ghost" href="/product">
-            Product overview
+            Six pillars
+          </Link>
+          <Link className="btn ghost" href="/tools">
+            Free tools
           </Link>
         </div>
         <p className="meta" style={{ marginTop: 14 }}>
@@ -78,30 +85,10 @@ export default async function HomePage() {
           <h2>Marketplace orchestration</h2>
           <p>
             Shopify GraphQL Admin, Amazon SP-API, eBay, AliExpress, and Google Merchant are registered
-            as official adapters — live only with your credentials.
+            as live-capable adapters; fixtures stay labeled until you authorize real accounts.
           </p>
           <p className="meta">
             <Link href="/integrations">Integrations →</Link>
-          </p>
-        </article>
-        <article className="card">
-          <h2>Who it serves</h2>
-          <p>
-            Multichannel merchants, operators, and commerce teams who need real unit economics,
-            supplier risk, and controlled automation — not vanity dashboards.
-          </p>
-          <p className="meta">
-            <Link href="/how-it-works">How it works →</Link>
-          </p>
-        </article>
-        <article className="card">
-          <h2>Security first</h2>
-          <p>
-            Session cookies, multi-tenant isolation, permission gates, audit events, and fail-closed
-            policy. Local AUTH_BYPASS is development-only and off in production.
-          </p>
-          <p className="meta">
-            <Link href="/security">Security →</Link>
           </p>
         </article>
       </div>

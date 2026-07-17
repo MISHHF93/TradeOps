@@ -11,6 +11,7 @@ export * from './corpus-csv';
 export * from './ai-classifiers';
 export * from './response-envelope';
 export * from './capability-catalog';
+export * from './capability-executor';
 export * from './search-manager';
 export * from './tavily-client';
 export * from './ai-gateway';

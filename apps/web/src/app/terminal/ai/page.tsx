@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AiOperatorConsole } from '../../../components/ai-operator-console';
+import { AiGatewayConsole } from '../../../components/ai/ai-gateway-console';
 import { PredictionConsole } from '../../../components/ai/prediction-console';
 import { RagConsole } from '../../../components/ai/rag-console';
 import { XaiStatusBar } from '../../../components/ai/xai-status-bar';
@@ -62,12 +63,12 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
   return (
     <section>
       <ProcessPageHeader
-        pill="AI Operator · process-aware"
-        title="AI Operator"
+        pill="TradeOps AI · unified stack"
+        title="TradeOps AI"
         lede={
           caseId
-            ? 'Bound to a Commerce Case. Recommend the highest-value valid next step for the current stage — do not free-form chat.'
-            : 'Lifecycle-aware operator. Bind a case from Process for stage-aware recommendations, or run global discover/health objectives.'
+            ? 'Bound to a Commerce Case. Gateway + operator recommend the highest-value valid next step for the current stage — one AI, not a swarm of agents.'
+            : 'One AI Operator: xAI Grok + Tavily research + capability gateway. Text and validated JSON in every response. Operational truth only from connectors.'
         }
         currentStage={caseStage}
         breadcrumbs={[
@@ -94,6 +95,8 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
       <ProcessRelatedLinks primary="process" />
 
       <XaiStatusBar />
+
+      <AiGatewayConsole initialObjective={presetObjective} />
 
       {caseId && caseHint ? (
         <article className="panel" style={{ marginBottom: 12 }}>

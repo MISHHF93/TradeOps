@@ -1,11 +1,61 @@
 /**
  * Internet Search Manager — centralized public-web / social retrieval.
  * Does NOT replace authenticated connectors for operational truth.
+ *
+ * Pipeline: Intent → Policy → Provider Router → Search → Deduplicate → Rank → Cite
  */
 
 import { getAiPlatformConfig, type AiPlatformConfig, type SearchProviderId } from '@tradeops/config';
 import type { TradeOpsEvidence } from './response-envelope';
 import { tavilyExtract, tavilySearch } from './tavily-client';
+
+/**
+ * Source hierarchy (lower rank = higher trust).
+ * Social may identify trends but must not sole-source safety/pricing/inventory claims.
+ */
+export const SOURCE_TRUST_RANK: Record<TradeOpsEvidence['sourceType'], number> = {
+  connector: 1,
+  database: 1,
+  document: 3,
+  calculation: 2,
+  web: 6,
+  x: 7,
+  rag: 4,
+};
+
+const OFFICIAL_DOMAIN_HINTS =
+  /\.(gov|mil)(\/|$)|manufacturer|oem|official|docs\.|support\.|help\.|fda\.|nhtsa|iso\.org|astm\.org/i;
+
+const MARKETPLACE_DOMAIN_HINTS =
+  /amazon\.|ebay\.|walmart\.|shopify\.|alibaba\.|aliexpress\./i;
+
+const INDUSTRY_PUB_HINTS =
+  /reuters\.|bloomberg\.|wsj\.|ft\.com|automotive|aftermarket|s&p|gartner|forrester/i;
+
+export function evidenceTrustScore(e: TradeOpsEvidence): number {
+  let score = SOURCE_TRUST_RANK[e.sourceType] ?? 9;
+  const url = e.url ?? '';
+  const title = e.title ?? '';
+  if (e.sourceType === 'connector' || e.sourceType === 'database') return 1;
+  if (OFFICIAL_DOMAIN_HINTS.test(url) || OFFICIAL_DOMAIN_HINTS.test(title)) score = Math.min(score, 2);
+  else if (MARKETPLACE_DOMAIN_HINTS.test(url)) score = Math.min(score, 4);
+  else if (INDUSTRY_PUB_HINTS.test(url) || INDUSTRY_PUB_HINTS.test(title)) score = Math.min(score, 5);
+  if (e.provider === 'tavily' && e.freshness === 'live') score = Math.min(score, score);
+  return score;
+}
+
+/** Deduplicate by URL/title and sort by trust (best first). */
+export function rankAndDeduplicateEvidence(items: TradeOpsEvidence[]): TradeOpsEvidence[] {
+  const seen = new Set<string>();
+  const out: TradeOpsEvidence[] = [];
+  for (const e of items) {
+    const key = (e.url || `${e.provider}:${e.title || e.snippet || ''}`).toLowerCase().trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out.sort((a, b) => evidenceTrustScore(a) - evidenceTrustScore(b));
+}
 
 export type InformationNeed =
   | 'no_search'
@@ -228,7 +278,28 @@ export async function runSearchManager(input: {
     warnings.push('Search allowed but no citations retrieved — check TAVILY_API_KEY or xAI credits');
   }
 
-  return { informationNeed, policy, evidence, warnings, queriesRun };
+  // Prefer official domains when policy requires them (soft filter + re-rank)
+  let ranked = rankAndDeduplicateEvidence(evidence);
+  if (policy.requireOfficialSources) {
+    const official = ranked.filter(
+      (e) => evidenceTrustScore(e) <= 3 || OFFICIAL_DOMAIN_HINTS.test(e.url ?? '') || OFFICIAL_DOMAIN_HINTS.test(e.title ?? ''),
+    );
+    if (official.length > 0) {
+      ranked = official;
+    } else {
+      warnings.push('requireOfficialSources: no high-trust official domains found; returning ranked general results');
+    }
+  }
+
+  // Social evidence alone is never enough for safety / inventory / finance claims
+  const onlySocial = ranked.length > 0 && ranked.every((e) => e.sourceType === 'x');
+  if (onlySocial) {
+    warnings.push(
+      'Evidence is social-only — do not treat as sole proof for compatibility, safety, pricing, certification, inventory, or financial actions',
+    );
+  }
+
+  return { informationNeed, policy, evidence: ranked, warnings, queriesRun };
 }
 
 export async function extractUrlEvidence(url: string, env?: NodeJS.ProcessEnv): Promise<TradeOpsEvidence[]> {

@@ -123,9 +123,30 @@ Platform-level: xAI + Tavily keys. Tenant-level: Shopify/Stripe/etc. via encrypt
 
 ## Progressive depth
 
-- Full Grok function-calling loop over all capabilities (partial — catalog + gateway synthesis live)  
-- xAI native Web/X tool invocation in multi-step agent loop  
-- Tavily Crawl + Research endpoints  
-- AJV full schema validation  
+| Layer | Status |
+|-------|--------|
+| Gateway `POST /ai/gateway/run` + envelope | **Live** |
+| Search Manager intent → policy → Tavily | **Live** |
+| Source trust ranking + dedupe | **Live** |
+| Capability catalog + executor (read ops from context; writes → approval) | **Live** |
+| Tavily Search / Extract / Crawl / Research client | **Live** (Research falls back to search if plan/endpoint unavailable) |
+| UI: `/terminal/ai` gateway console (text + JSON cards) | **Live** |
+| Full multi-hop Grok native function-calling loop | Progressive (tools schemas exported via `capabilitiesAsXaiTools`) |
+| xAI native Web/X tool invocation in agent loop | Progressive (policy records intent; Tavily retrieval primary) |
+| AJV full schema validation | Progressive (lightweight server validator today) |
+| Per-vendor adapters behind every capability | Progressive (operationalContext + existing connector ops) |
+
+## Frontend contract
+
+```typescript
+const res = await fetch('/api/v1/ai/gateway/run', {
+  method: 'POST',
+  body: JSON.stringify({ objective: '…' }),
+});
+// Human: res.output.text
+// Cards / automation: res.output.json
+// Provenance: res.evidence
+// Writes: res.actions (requiresApproval)
+```
 
 Related: [TRADEOPS_XAI_CONFIGURATION.md](./TRADEOPS_XAI_CONFIGURATION.md), [TRADEOPS_API_KEYS_CATALOG.md](./TRADEOPS_API_KEYS_CATALOG.md).

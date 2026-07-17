@@ -1,6 +1,8 @@
 /**
  * TradeOps AI Gateway — single entry for the frontend.
  * User → Gateway → Grok → tools/search/capabilities → validated text+JSON envelope.
+ *
+ * One visible AI Operator. Skills (research, commerce, payments, …) are internal.
  */
 
 import {
@@ -8,8 +10,13 @@ import {
   getAiPlatformConfig,
   getXaiConfig,
 } from '@tradeops/config';
-import { completeWithXai } from './llm-client';
+import {
+  invokeCapability,
+  suggestCapabilitiesForObjective,
+  type CapabilityInvokeResult,
+} from './capability-executor';
 import { listCapabilitiesPublic } from './capability-catalog';
+import { completeWithXai } from './llm-client';
 import {
   buildEnvelope,
   validateObjectivePayload,
@@ -18,7 +25,11 @@ import {
   type TradeOpsEvidence,
   GATEWAY_OBJECTIVE_JSON_SCHEMA,
 } from './response-envelope';
-import { classifyInformationNeed, runSearchManager } from './search-manager';
+import {
+  classifyInformationNeed,
+  rankAndDeduplicateEvidence,
+  runSearchManager,
+} from './search-manager';
 
 export type AiGatewayRequest = {
   tenantId: string;
@@ -29,6 +40,8 @@ export type AiGatewayRequest = {
   operationalContext?: Record<string, unknown>;
   /** Force skip public search */
   disableSearch?: boolean;
+  /** Max pre-invoked capabilities before Grok synthesis */
+  maxCapabilityInvocations?: number;
 };
 
 export type AiGatewayResult = TradeOpsAIResponse<Record<string, unknown>>;
@@ -43,24 +56,40 @@ function systemPrompt(): string {
     '3. Prefer structured JSON matching the required schema. Also write clear human text.',
     '4. Recommend write actions with requiresApproval=true; never claim execution without approval.',
     '5. Be honest about missing credentials or missing data.',
+    '6. Rank confidence lower when evidence is weak, social-only, or operational data is missing.',
     'Respond with a single JSON object only (no markdown fences) containing:',
     'text, objective, recommendations[], confidence, sources[]',
+    'Each recommendation: title, reason, score (0-1), optional product, estimatedDemand, estimatedMarginPercent, risk.',
   ].join('\n');
 }
 
-function buildUserMessage(input: AiGatewayRequest, evidence: TradeOpsEvidence[], need: string): string {
+function buildUserMessage(
+  input: AiGatewayRequest,
+  evidence: TradeOpsEvidence[],
+  need: string,
+  capabilityResults: CapabilityInvokeResult[],
+): string {
   const parts = [
     `Objective: ${input.objective}`,
     `Information need classification: ${need}`,
     '',
-    'Evidence (public research — not operational truth):',
+    'Evidence (ranked by source trust — not all operational truth):',
   ];
   if (evidence.length === 0) {
     parts.push('(none retrieved — answer from general knowledge + operational context only)');
   } else {
-    for (const e of evidence.slice(0, 12)) {
+    for (const e of evidence.slice(0, 16)) {
       parts.push(
         `- [${e.sourceType}/${e.provider}] ${e.title ?? ''} ${e.url ?? ''} ${e.snippet ?? ''}`.trim(),
+      );
+    }
+  }
+  if (capabilityResults.length) {
+    parts.push('');
+    parts.push('Capability gateway results (normalized tools):');
+    for (const r of capabilityResults.slice(0, 8)) {
+      parts.push(
+        `- ${r.capability} ok=${r.ok} class=${r.informationClass}: ${JSON.stringify(r.data).slice(0, 800)}`,
       );
     }
   }
@@ -100,6 +129,9 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
   const xai = getXaiConfig();
   const warnings: string[] = [];
   const toolsInvoked: string[] = [];
+  const actions: TradeOpsAiAction[] = [];
+  let evidence: TradeOpsEvidence[] = [];
+  const capabilityResults: CapabilityInvokeResult[] = [];
 
   if (!input.tenantId) {
     return buildEnvelope({
@@ -115,23 +147,62 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
   }
 
   const need = classifyInformationNeed(input.objective);
-  let evidence: TradeOpsEvidence[] = [];
   let searchUsed = false;
 
-  if (!input.disableSearch && need !== 'no_search' && need !== 'authenticated_operational_data') {
+  // 1) Capability pre-pass (normalized tools — no vendor APIs exposed)
+  const suggested = suggestCapabilitiesForObjective(input.objective);
+  const maxCaps = Math.min(
+    input.maxCapabilityInvocations ?? 4,
+    platform.aiMaxToolCalls,
+    6,
+  );
+  for (const name of suggested.slice(0, maxCaps)) {
+    // Skip public research caps when search disabled or pure operational
+    if (
+      name.startsWith('research.') &&
+      (input.disableSearch || need === 'authenticated_operational_data' || need === 'no_search')
+    ) {
+      continue;
+    }
+    toolsInvoked.push(name);
+    const result = await invokeCapability({
+      capability: name,
+      parameters: { query: input.objective, objective: input.objective },
+      tenantId: input.tenantId,
+      operationalContext: input.operationalContext,
+    });
+    capabilityResults.push(result);
+    evidence.push(...result.evidence);
+    warnings.push(...result.warnings);
+    actions.push(...result.actions);
+  }
+
+  // 2) Search Manager if still needed and research not already run
+  const researchAlready = toolsInvoked.some((t) => t.startsWith('research.'));
+  if (
+    !input.disableSearch &&
+    need !== 'no_search' &&
+    need !== 'authenticated_operational_data' &&
+    !researchAlready
+  ) {
     toolsInvoked.push('research.web_search');
     const search = await runSearchManager({ objective: input.objective });
-    evidence = search.evidence;
+    evidence.push(...search.evidence);
     warnings.push(...search.warnings);
-    searchUsed = search.evidence.some((e) => e.provider === 'tavily' || e.provider.startsWith('xai'));
+    searchUsed = search.evidence.some(
+      (e) => e.provider === 'tavily' || e.provider.startsWith('xai'),
+    );
   } else if (need === 'authenticated_operational_data') {
     warnings.push(
       'Classified as operational — public web search skipped; use connector data for inventory/orders/payments.',
     );
+  } else if (researchAlready) {
+    searchUsed = evidence.some((e) => e.sourceType === 'web' || e.sourceType === 'x');
   }
 
+  evidence = rankAndDeduplicateEvidence(evidence);
+
   if (!xai.apiKey || !xai.configured) {
-    // Tools-only fallback envelope without free-form Grok
     const text =
       evidence.length > 0
         ? `xAI is not configured or unfunded. Retrieved ${evidence.length} public source(s). Add XAI credits at console.x.ai and set XAI_API_KEY for Grok synthesis.`
@@ -150,11 +221,12 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
           url: e.url,
         })),
         informationNeed: need,
+        capabilitiesInvoked: toolsInvoked,
       },
       status: 'partial',
       confidence: 0.2,
       evidence,
-      actions: [],
+      actions,
       warnings: [...warnings, 'xai_not_available'],
       meta: {
         schemaVersion: platform.outputSchemaVersion,
@@ -168,9 +240,9 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
 
   const completion = await completeWithXai({
     system: systemPrompt(),
-    user: buildUserMessage(input, evidence, need),
+    user: buildUserMessage(input, evidence, need, capabilityResults),
     temperature: 0.3,
-    maxTokens: 1800,
+    maxTokens: 2000,
     model: platform.xaiModel || xai.chatModel,
   });
 
@@ -192,10 +264,12 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
           url: e.url,
         })),
         error: completion.error,
+        capabilitiesInvoked: toolsInvoked,
       },
       status: 'failed',
       confidence: 0,
       evidence,
+      actions,
       warnings: [...warnings, completion.error ?? 'completion_failed'],
       meta: {
         schemaVersion: platform.outputSchemaVersion,
@@ -243,10 +317,12 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
           url: e.url,
         })),
         rawParseErrors: validated.errors,
+        capabilitiesInvoked: toolsInvoked,
       },
       status: 'partial',
       confidence: 0.4,
       evidence,
+      actions,
       warnings: [...warnings, ...validated.errors, 'structured_output_validation_partial'],
       meta: {
         schemaVersion: platform.outputSchemaVersion,
@@ -260,7 +336,6 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
   }
 
   const v = validated.value;
-  // Merge search evidence into sources if model omitted them
   const sourceMap = new Map(
     v.sources.map((s) => [`${s.provider}:${s.url ?? s.sourceType}`, s]),
   );
@@ -275,9 +350,11 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
     }
   }
 
-  const actions: TradeOpsAiAction[] = [];
-  // Suggest RFQ when discovery-like objective
-  if (/supplier|rfq|procure|wholesale/i.test(input.objective)) {
+  // Suggest RFQ when discovery-like and not already queued
+  if (
+    /supplier|rfq|procure|wholesale/i.test(input.objective) &&
+    !actions.some((a) => a.capability === 'procurement.create_rfq')
+  ) {
     actions.push({
       actionId: `action_rfq_${Date.now().toString(36)}`,
       capability: 'procurement.create_rfq',
@@ -297,6 +374,7 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       confidence: v.confidence,
       sources: [...sourceMap.values()],
       informationNeed: need,
+      capabilitiesInvoked: toolsInvoked,
     },
     status: 'completed',
     confidence: Math.min(1, Math.max(0, v.confidence)),
@@ -327,6 +405,11 @@ export function gatewayCatalogPublic() {
       'analytics',
       'procurement',
       'industrial',
+    ],
+    informationClasses: [
+      'public_web',
+      'social_signal',
+      'authenticated_operational',
     ],
     note: 'User sees one TradeOps AI. Skills and tools are internal. Operational truth uses connectors; public web uses Tavily/xAI search only.',
   };

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { buildSearchPolicy, classifyInformationNeed } from './search-manager';
+import {
+  buildSearchPolicy,
+  classifyInformationNeed,
+  evidenceTrustScore,
+  rankAndDeduplicateEvidence,
+} from './search-manager';
 
 describe('Search Manager intent', () => {
   it('skips search for pure operational questions', () => {
@@ -29,5 +34,34 @@ describe('Search Manager intent', () => {
       classifyInformationNeed('What is the social sentiment and trending talk on X about EV tires?'),
       'social_signal',
     );
+  });
+
+  it('ranks connector evidence above social', () => {
+    const ranked = rankAndDeduplicateEvidence([
+      {
+        sourceType: 'x',
+        provider: 'xai_x',
+        title: 'tweet',
+        retrievedAt: new Date().toISOString(),
+        freshness: 'live',
+      },
+      {
+        sourceType: 'connector',
+        provider: 'shopify',
+        title: 'orders',
+        retrievedAt: new Date().toISOString(),
+        freshness: 'live',
+      },
+      {
+        sourceType: 'web',
+        provider: 'tavily',
+        title: 'blog',
+        url: 'https://random.example/blog',
+        retrievedAt: new Date().toISOString(),
+        freshness: 'live',
+      },
+    ]);
+    assert.equal(ranked[0]?.sourceType, 'connector');
+    assert.ok(evidenceTrustScore(ranked[0]!) < evidenceTrustScore(ranked[ranked.length - 1]!));
   });
 });

@@ -40,9 +40,10 @@ export class AiController {
   /**
    * Unified AI Gateway catalog — one AI, capabilities + response contract.
    * Frontend should not need vendor REST knowledge.
+   * Public so Integration Hub / AI page can load catalog without secrets.
    */
+  @Public()
   @Get('gateway')
-  @RequirePermissions('ai:read')
   gatewayCatalog() {
     return gatewayCatalogPublic();
   }

@@ -50,3 +50,12 @@ playwright-report
 .data/
 .start-out.log
 .start-err.log
+.start-log.txt
+.db-log.txt
+
+# Local runtime storage (RAG index cache, artifacts, PGlite spill)
+.tradeops-storage/
+
+# Prisma backup files
+packages/database/prisma/*.bak
+*.prisma.bak

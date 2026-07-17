@@ -71,7 +71,8 @@ pnpm --filter @tradeops/api build
 pnpm --filter @tradeops/web typecheck
 ```
 
-Core package tests (2026-07-17): **87** passing (14+5+13+55). API build + web typecheck green.
+Core package tests (2026-07-17 verification re-run): **all green** — config 25, auth 4, connector-core 14, live-http 5, commerce-engine 56, ai-runtime 19 (incl. RAG), workflow-engine 4, saas 3, fixtures 1+1, google-merchant 3, harmonization 3, logging 1, database 2, contracts 3.  
+API build + web typecheck + worker build green.
 
 ---
 

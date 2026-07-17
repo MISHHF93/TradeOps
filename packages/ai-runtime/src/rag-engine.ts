@@ -20,7 +20,9 @@ export type RagSourceType =
   | 'sop'
   | 'connector'
   | 'manual'
-  | 'policy';
+  | 'policy'
+  | 'artifact'
+  | 'prediction';
 
 export type RagDocument = {
   id: string;
@@ -32,6 +34,8 @@ export type RagDocument = {
   isFixture?: boolean;
   observedAt?: string;
   metadata?: Record<string, unknown>;
+  /** Optional dense vector (unit L2) when embeddings available */
+  dense?: number[];
 };
 
 export type RagChunk = {
@@ -47,6 +51,8 @@ export type RagChunk = {
   /** Sparse term weights (TF component after index build becomes TF-IDF) */
   terms: Record<string, number>;
   metadata?: Record<string, unknown>;
+  /** Optional dense vector for hybrid retrieval */
+  dense?: number[];
 };
 
 export type RagIndexStats = {
@@ -58,6 +64,9 @@ export type RagIndexStats = {
   sourceBreakdown: Record<string, number>;
   trainedAt: string;
   modelVersion: string;
+  embeddingMode: 'tfidf' | 'hybrid_dense';
+  denseDim: number;
+  artifactDocuments: number;
 };
 
 export type RagIndex = {
@@ -226,21 +235,62 @@ export function chunkDocument(
       observedAt: doc.observedAt,
       terms: termFrequency(tokens),
       metadata: doc.metadata,
+      // First chunk inherits document dense vector when present
+      dense: idx === 0 ? doc.dense : undefined,
     };
   });
 }
 
+/** Local hashing projection — deterministic dense fallback (no network). */
+export function localDenseEmbed(text: string, dim = 64): number[] {
+  const vec = new Array(dim).fill(0) as number[];
+  const tokens = tokenize(text);
+  if (tokens.length === 0) return vec;
+  for (const t of tokens) {
+    let h = 2166136261;
+    for (let i = 0; i < t.length; i++) {
+      h ^= t.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    const idx = Math.abs(h) % dim;
+    const sign = h & 1 ? 1 : -1;
+    vec[idx] = (vec[idx] ?? 0) + sign;
+  }
+  const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
+  return vec.map((v) => v / norm);
+}
+
+export function cosineDense(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i]! * b[i]!;
+  return dot;
+}
+
 /**
  * Build a sparse TF-IDF index from documents.
+ * Optional dense vectors on documents enable hybrid retrieve.
  * This is the "train" step for org-specific retrieval.
  */
 export function buildRagIndex(
   organizationId: string,
   documents: RagDocument[],
   now = new Date(),
+  options?: { attachLocalDense?: boolean; denseDim?: number },
 ): RagIndex {
+  const denseDim = options?.denseDim ?? 64;
+  const docs =
+    options?.attachLocalDense === false
+      ? documents
+      : documents.map((d) => ({
+          ...d,
+          dense:
+            d.dense ??
+            localDenseEmbed(`${d.title}\n${d.body}`.slice(0, 2000), denseDim),
+        }));
+
   const chunks: RagChunk[] = [];
-  for (const doc of documents) {
+  for (const doc of docs) {
     chunks.push(...chunkDocument(doc));
   }
 
@@ -267,15 +317,22 @@ export function buildRagIndex(
       weighted[k] = weighted[k]! / norm;
     }
     c.terms = weighted;
+    // Fill dense for chunks missing parent vector
+    if (!c.dense) {
+      c.dense = localDenseEmbed(c.text.slice(0, 2000), denseDim);
+    }
   }
 
   const sourceBreakdown: Record<string, number> = {};
   let fixtureChunks = 0;
+  let denseCount = 0;
   for (const c of chunks) {
     sourceBreakdown[c.sourceType] = (sourceBreakdown[c.sourceType] ?? 0) + 1;
     if (c.isFixture) fixtureChunks += 1;
+    if (c.dense?.length) denseCount += 1;
   }
 
+  const hasDense = denseCount > 0;
   return {
     organizationId,
     chunks,
@@ -289,7 +346,10 @@ export function buildRagIndex(
       liveChunks: chunks.length - fixtureChunks,
       sourceBreakdown,
       trainedAt: now.toISOString(),
-      modelVersion: RAG_MODEL_VERSION,
+      modelVersion: hasDense ? `${RAG_MODEL_VERSION}+dense` : RAG_MODEL_VERSION,
+      embeddingMode: hasDense ? 'hybrid_dense' : 'tfidf',
+      denseDim: hasDense ? denseDim : 0,
+      artifactDocuments: documents.filter((d) => d.sourceType === 'artifact').length,
     },
   };
 }
@@ -308,6 +368,7 @@ function cosineSparse(a: Record<string, number>, b: Record<string, number>): num
 
 /**
  * Retrieve top-k chunks for a query. Never invents content.
+ * Hybrid score = α*dense + (1-α)*tfidf when dense vectors present.
  */
 export function retrieve(
   index: RagIndex,
@@ -317,10 +378,13 @@ export function retrieve(
     excludeFixtures?: boolean;
     sourceTypes?: RagSourceType[];
     minScore?: number;
+    denseQuery?: number[];
+    hybridAlpha?: number;
   },
 ): RagHit[] {
   const topK = options?.topK ?? 8;
   const minScore = options?.minScore ?? 0.02;
+  const alpha = options?.hybridAlpha ?? 0.35;
   const qTokens = tokenize(query);
   if (qTokens.length === 0 || index.chunks.length === 0) return [];
 
@@ -336,6 +400,12 @@ export function retrieve(
     qWeighted[k] = qWeighted[k]! / qNorm;
   }
 
+  const qDense =
+    options?.denseQuery ??
+    (index.stats.embeddingMode === 'hybrid_dense'
+      ? localDenseEmbed(query, index.stats.denseDim || 64)
+      : undefined);
+
   const hits: RagHit[] = [];
   for (const c of index.chunks) {
     if (options?.excludeFixtures && c.isFixture) continue;
@@ -345,7 +415,12 @@ export function retrieve(
     ) {
       continue;
     }
-    const score = cosineSparse(qWeighted, c.terms);
+    const sparse = cosineSparse(qWeighted, c.terms);
+    let score = sparse;
+    if (qDense && c.dense?.length === qDense.length) {
+      const dense = cosineDense(qDense, c.dense);
+      score = alpha * dense + (1 - alpha) * sparse;
+    }
     if (score < minScore) continue;
     hits.push({
       chunkId: c.id,

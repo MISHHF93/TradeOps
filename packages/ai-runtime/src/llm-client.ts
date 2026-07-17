@@ -130,6 +130,101 @@ export async function completeWithXai(
   }
 }
 
+export type EmbedResult = {
+  ok: boolean;
+  vectors?: number[][];
+  model?: string;
+  error?: string;
+  provider: 'xai' | 'local';
+  latencyMs: number;
+};
+
+/**
+ * Try xAI OpenAI-compatible embeddings. On failure, caller should use localDenseEmbed.
+ * Some xAI deployments may not expose embeddings — fail closed, never invent vectors.
+ */
+export async function embedWithXai(
+  texts: string[],
+  options: LlmClientOptions & { model?: string } = {},
+): Promise<EmbedResult> {
+  const t0 = Date.now();
+  const apiKey = options.apiKey ?? resolveXaiApiKey();
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: 'XAI_API_KEY not configured',
+      provider: 'xai',
+      latencyMs: Date.now() - t0,
+    };
+  }
+  if (!texts.length) {
+    return {
+      ok: true,
+      vectors: [],
+      provider: 'xai',
+      latencyMs: Date.now() - t0,
+    };
+  }
+
+  const baseUrl = (options.baseUrl ?? 'https://api.x.ai/v1').replace(/\/$/, '');
+  const model = options.model ?? options.defaultModel ?? 'text-embedding-3-small';
+  const fetchFn = options.fetchImpl ?? fetch;
+
+  try {
+    const res = await fetchFn(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model, input: texts }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: `xAI embeddings HTTP ${res.status}`,
+        provider: 'xai',
+        model,
+        latencyMs,
+      };
+    }
+    const json = (await res.json()) as {
+      data?: Array<{ embedding?: number[]; index?: number }>;
+    };
+    const data = json.data ?? [];
+    if (!data.length) {
+      return {
+        ok: false,
+        error: 'Empty embeddings response',
+        provider: 'xai',
+        model,
+        latencyMs,
+      };
+    }
+    const sorted = [...data].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    const vectors = sorted.map((d) => {
+      const v = d.embedding ?? [];
+      const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
+      return v.map((x) => x / norm);
+    });
+    return {
+      ok: true,
+      vectors,
+      model,
+      provider: 'xai',
+      latencyMs,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+      provider: 'xai',
+      latencyMs: Date.now() - t0,
+    };
+  }
+}
+
 export const RAG_SYSTEM_PROMPT = `You are the TradeOps commerce operator assistant.
 Rules:
 - Answer ONLY using the provided retrieved context and the user objective.

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AiOperatorConsole } from '../../../components/ai-operator-console';
+import { PredictionConsole } from '../../../components/ai/prediction-console';
 import { RagConsole } from '../../../components/ai/rag-console';
 import {
   ProcessPageHeader,
@@ -117,6 +118,7 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
       />
 
       <RagConsole />
+      <PredictionConsole />
 
       {tools.ok ? (
         <article className="panel" style={{ marginTop: 16 }}>

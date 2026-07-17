@@ -22,7 +22,8 @@
 | [TRADEOPS_PARTNER_VALUE_FRAMEWORK.md](./TRADEOPS_PARTNER_VALUE_FRAMEWORK.md) | Value for every ecosystem participant |
 | [TRADEOPS_NORMALIZATION_ARCHITECTURE.md](./TRADEOPS_NORMALIZATION_ARCHITECTURE.md) | External → canonical mapping |
 | [TRADEOPS_AI_OPERATING_MODEL.md](./TRADEOPS_AI_OPERATING_MODEL.md) | AI as operational manager |
-| [TRADEOPS_RAG_ENGINE.md](./TRADEOPS_RAG_ENGINE.md) | **RAG engine** — org train/query + optional xAI grounding |
+| [TRADEOPS_RAG_ENGINE.md](./TRADEOPS_RAG_ENGINE.md) | **RAG engine** — artifacts, CSV, hybrid dense, xAI optional |
+| [TRADEOPS_PREDICTIVE_ENGINE.md](./TRADEOPS_PREDICTIVE_ENGINE.md) | **Prediction engine** — demand/profit/signal train·run·eval |
 | [TRADEOPS_IMPLEMENTATION_ROADMAP_ECOSYSTEM.md](./TRADEOPS_IMPLEMENTATION_ROADMAP_ECOSYSTEM.md) | Phased roadmap |
 | [../README.md](../README.md) | Project overview + quick start |
 | [FIRST_RUN.md](./FIRST_RUN.md) | First-time boot sequences |

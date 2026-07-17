@@ -1,0 +1,7 @@
+organizationId,artifactId,productId,productTitle,artifactType,purpose,sourceType,sourcePlatform,title,altText,description,mimeType,filename,storageKey,externalUrl,rightsStatus,publicationStatus,visibility,qualityScore,completenessScore,confidence,isFixture,collectedAt,textForRag,dataClass
+org-sample,art-sample-1,prod-sample-1,Insulated Water Bottle 32oz,image,primary,generated,fixture-supplier,Primary hero,Stainless bottle on white background,Main listing image for catalog,image/svg+xml,hero.svg,artifacts/sample/hero.svg,,unknown,ready,listing_eligible,72,80,0.7,true,2026-07-17T00:00:00.000Z,"Product: Insulated Water Bottle 32oz
+Artifact title: Primary hero
+Alt: Stainless bottle on white background
+Description: Main listing image for catalog
+Type: image
+Purpose: primary",fixture

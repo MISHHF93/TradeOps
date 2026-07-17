@@ -231,9 +231,58 @@ export function registerBuiltinTools(): void {
   });
 
   registerTool({
+    name: 'runPredictionEngine',
+    description:
+      'Run transparent demand/profit/signal predictions for top opportunities (or a productId). Writes DemandForecast rows. Empty history → zero units, low confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        horizonDays: { type: 'number' },
+        limit: { type: 'number' },
+      },
+    },
+    requiredPermissions: ['ai:write', 'products:read'],
+    risk: {
+      actionClass: 'draft',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 60_000,
+    idempotent: false,
+    execute: async (input, ctx) => {
+      const run = ctx.deps.runPredictionEngine as
+        | ((args: {
+            organizationId: string;
+            productId?: string;
+            horizonDays?: number;
+            limit?: number;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!run) {
+        return {
+          ok: false,
+          note: 'Host did not inject runPredictionEngine — use POST /api/v1/ai/prediction/run',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        horizonDays?: number;
+        limit?: number;
+      };
+      return run({
+        organizationId: ctx.organizationId,
+        productId: i.productId,
+        horizonDays: i.horizonDays,
+        limit: i.limit,
+      });
+    },
+  });
+
+  registerTool({
     name: 'trainRagIndex',
     description:
-      'Rebuild the org RAG (retrieval) index from products, cases, operator runs, connectors, and SOPs. Continuous retrieval training — not GPU fine-tuning of foundation weights.',
+      'Rebuild the org RAG (retrieval) index from products, artifacts, cases, operator runs, connectors, and SOPs. Continuous retrieval training — not GPU fine-tuning of foundation weights.',
     inputSchema: {
       type: 'object',
       properties: {},

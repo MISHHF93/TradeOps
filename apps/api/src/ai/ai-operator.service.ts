@@ -31,6 +31,7 @@ import { EventFabricService } from '../events/event-fabric.service';
 import { HarmonizationService } from '../harmonization/harmonization.service';
 import { SaasService } from '../saas/saas.service';
 import { RagService } from './rag.service';
+import { PredictionService } from './prediction.service';
 
 /** Prisma JSON columns accept structured values at runtime; cast for strict InputJsonValue. */
 function asJson(value: unknown): object {
@@ -55,6 +56,7 @@ export class AiOperatorService implements OnModuleInit {
     private readonly commercePayments: CommercePaymentService,
     @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
     private readonly rag: RagService,
+    private readonly prediction: PredictionService,
   ) {}
 
   onModuleInit(): void {
@@ -1224,6 +1226,25 @@ export class AiOperatorService implements OnModuleInit {
                 generate,
                 autoTrainIfMissing: true,
               }),
+            runPredictionEngine: async ({
+              organizationId,
+              productId,
+              horizonDays,
+              limit,
+            }: {
+              organizationId: string;
+              productId?: string;
+              horizonDays?: number;
+              limit?: number;
+            }) => {
+              const h: 7 | 14 | 30 =
+                horizonDays === 7 || horizonDays === 30 ? horizonDays : 14;
+              return this.prediction.run(organizationId, {
+                productId,
+                horizonDays: h,
+                limit,
+              });
+            },
             draftListing: async ({
               organizationId,
               productId,

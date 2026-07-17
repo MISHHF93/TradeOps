@@ -5,6 +5,7 @@ import type { AuthContext } from '../identity/types';
 import { EventFabricService } from '../events/event-fabric.service';
 import { AiOperatorService } from './ai-operator.service';
 import { RagService } from './rag.service';
+import { PredictionService } from './prediction.service';
 import type { RagSourceType } from '@tradeops/ai-runtime';
 
 @Controller('ai')
@@ -12,6 +13,7 @@ export class AiController {
   constructor(
     private readonly operator: AiOperatorService,
     private readonly rag: RagService,
+    private readonly prediction: PredictionService,
     private readonly events: EventFabricService,
   ) {}
 
@@ -226,13 +228,20 @@ export class AiController {
   }
 
   /**
-   * Rebuild org sparse TF-IDF index from products, cases, runs, connectors, SOPs.
-   * This is continuous retrieval training — not GPU fine-tuning of model weights.
+   * Rebuild org retrieval index (products, artifacts, cases, runs, connectors, SOPs).
+   * Continuous retrieval training — not GPU fine-tuning of model weights.
    */
   @Post('rag/train')
   @RequirePermissions('ai:write')
   ragTrain(@CurrentAuth() auth: AuthContext) {
     return this.rag.train(auth.activeOrganizationId!, auth.userId);
+  }
+
+  /** Export ProductArtifact metadata to repo-root artifacts-corpus.csv */
+  @Post('rag/export-csv')
+  @RequirePermissions('ai:read')
+  ragExportCsv(@CurrentAuth() auth: AuthContext) {
+    return this.rag.exportArtifactCsv(auth.activeOrganizationId!);
   }
 
   /**
@@ -268,6 +277,126 @@ export class AiController {
       generate: body.generate === true,
       autoTrainIfMissing: body.autoTrainIfMissing !== false,
     });
+  }
+
+  // ─── Prediction Engine ────────────────────────────────────────────────────
+
+  @Get('prediction/status')
+  @RequirePermissions('ai:read')
+  predictionStatus(@CurrentAuth() auth: AuthContext) {
+    return this.prediction.status(auth.activeOrganizationId!);
+  }
+
+  @Post('prediction/train')
+  @RequirePermissions('ai:write')
+  predictionTrain(@CurrentAuth() auth: AuthContext) {
+    return this.prediction.train(auth.activeOrganizationId!);
+  }
+
+  @Post('prediction/run')
+  @RequirePermissions('ai:write', 'products:read')
+  predictionRun(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      productId?: string;
+      horizonDays?: 7 | 14 | 30;
+      limit?: number;
+    },
+  ) {
+    return this.prediction.run(auth.activeOrganizationId!, body);
+  }
+
+  @Post('prediction/evaluate')
+  @RequirePermissions('ai:read')
+  predictionEvaluate(@CurrentAuth() auth: AuthContext) {
+    return this.prediction.evaluate(auth.activeOrganizationId!);
+  }
+
+  @Post('prediction/export-csv')
+  @RequirePermissions('ai:write', 'products:read')
+  predictionExportCsv(@CurrentAuth() auth: AuthContext) {
+    return this.prediction.exportCsv(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Full intelligence rebuild: artifact CSV → RAG train → prediction train → prediction run.
+   */
+  @Post('intelligence/rebuild')
+  @RequirePermissions('ai:write', 'products:read')
+  async intelligenceRebuild(@CurrentAuth() auth: AuthContext) {
+    const orgId = auth.activeOrganizationId!;
+    const steps: Array<Record<string, unknown>> = [];
+
+    try {
+      const csv = await this.rag.exportArtifactCsv(orgId);
+      steps.push({ step: 'export_artifact_csv', ok: true, ...csv });
+    } catch (e) {
+      steps.push({
+        step: 'export_artifact_csv',
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    try {
+      const train = await this.rag.train(orgId, auth.userId);
+      steps.push({
+        step: 'rag_train',
+        ok: true,
+        stats: train.stats,
+        embeddingNote: train.embeddingNote,
+        csvPath: train.csvPath,
+      });
+    } catch (e) {
+      steps.push({
+        step: 'rag_train',
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    try {
+      const predTrain = await this.prediction.train(orgId);
+      steps.push({
+        step: 'prediction_train',
+        ok: true,
+        sampleSize: predTrain.sampleSize,
+        modelVersion: predTrain.weights.modelVersion,
+      });
+    } catch (e) {
+      steps.push({
+        step: 'prediction_train',
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    try {
+      const predRun = await this.prediction.run(orgId, { limit: 25 });
+      steps.push({
+        step: 'prediction_run',
+        ok: true,
+        count: predRun.count,
+        modelVersion: predRun.modelVersion,
+      });
+    } catch (e) {
+      steps.push({
+        step: 'prediction_run',
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    const okCount = steps.filter((s) => s.ok).length;
+    return {
+      organizationId: orgId,
+      steps,
+      summary: `${okCount}/${steps.length} steps ok`,
+      honesty: {
+        note: 'Rebuild trains retrieval + transparent prediction corrections. Not GPU fine-tuning. Fixtures remain labeled.',
+      },
+    };
   }
 
   @Post('harmonize')

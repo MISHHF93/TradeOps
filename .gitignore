@@ -56,6 +56,11 @@ playwright-report
 # Local runtime storage (RAG index cache, artifacts, PGlite spill)
 .tradeops-storage/
 
+# Runtime corpus / prediction exports (sample CSV is committed separately)
+artifacts-corpus.csv
+predictions.csv
+
+
 # Prisma backup files
 packages/database/prisma/*.bak
 *.prisma.bak

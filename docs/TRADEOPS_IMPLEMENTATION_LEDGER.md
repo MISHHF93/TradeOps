@@ -45,8 +45,11 @@
 | Inventory protection shadow | Operational foundations | Draft pause/reduce; no external reconcile without approval |
 | Live-example connector honesty | Operational | CONNECTED only when install status is connected |
 | Fixture-skew intelligence | Operational | Majority fixtures in mixed catalog surface insight |
-| RAG Engine (org knowledge) | Operational foundations | TF-IDF train/query; optional xAI grounded answers; navigator auto-ground |
+| RAG Engine (org knowledge) | Operational | Artifacts in corpus; hybrid dense; CSV export; navigator auto-ground |
+| Artifact corpus CSV | Operational | Repo-root export + sample file |
+| Prediction engine v1 | Operational foundations | Bias fit from outcomes; batch run → DemandForecast |
 | LLM free-form (xAI) | Optional | `XAI_API_KEY` — retrieval works without it |
+| Dense embeddings (xAI API) | Optional | Tries embeddings endpoint; falls back to local dense |
 | Agency client hierarchy | Operational foundations | Create/list client orgs under parent |
 | Enterprise SSO / legal entities | Planned | Not built |
 | B2B negotiated catalogs | Planned | Not built |

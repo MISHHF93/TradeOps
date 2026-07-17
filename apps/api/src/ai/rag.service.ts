@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  artifactCorpusToCsv,
+  artifactToCorpusRow,
+  buildArtifactTextForRag,
   buildRagIndex,
   completeWithXai,
   deserializeRagIndex,
+  embedWithXai,
   isLlmConfigured,
   knowledgeEntriesToDocuments,
   queryRagIndex,
@@ -73,12 +77,22 @@ export class RagService {
       trained: Boolean(index),
       stats: index?.stats ?? null,
       llmConfigured: isLlmConfigured(),
-      embeddingModel: 'rag-tfidf-v1',
+      embeddingModel: index?.stats.modelVersion ?? 'rag-tfidf-v1',
+      embeddingMode: index?.stats.embeddingMode ?? 'tfidf',
       generationProvider: isLlmConfigured() ? 'xai' : null,
       honesty: {
-        note: 'Train rebuilds an org-specific retrieval index from canonical store data. This is not GPU fine-tuning of foundation model weights. Optional free-form answers require XAI_API_KEY.',
+        note: 'Train rebuilds an org-specific retrieval index (products, artifacts, cases, runs, connectors, SOPs). Not GPU fine-tuning. Optional free-form answers and dense API embeddings require XAI_API_KEY; local dense hybrid always available.',
       },
     };
+  }
+
+  private repoRoot(): string {
+    // Prefer monorepo root when API runs from apps/api
+    const cwd = process.cwd();
+    if (existsSync(join(cwd, 'pnpm-workspace.yaml'))) return cwd;
+    const parent = join(cwd, '..', '..');
+    if (existsSync(join(parent, 'pnpm-workspace.yaml'))) return parent;
+    return cwd;
   }
 
   /**
@@ -260,14 +274,187 @@ export class RagService {
       });
     }
 
+    // Product artifacts — text metadata only (no binary embed)
+    try {
+      const artifacts = await this.prisma.client.productArtifact.findMany({
+        where: { organizationId },
+        include: {
+          product: {
+            select: {
+              title: true,
+              sourcePlatform: true,
+              sourceProvenance: true,
+            },
+          },
+        },
+        take: 800,
+        orderBy: { collectedAt: 'desc' },
+      });
+      for (const a of artifacts) {
+        const isFixture =
+          Boolean(a.product?.sourcePlatform?.startsWith('fixture')) ||
+          a.sourceType === 'generated' ||
+          Boolean(a.sourcePlatform?.includes('fixture'));
+        const text = buildArtifactTextForRag({
+          productTitle: a.product?.title,
+          title: a.title,
+          altText: a.altText,
+          description: a.description,
+          artifactType: String(a.artifactType),
+          purpose: String(a.purpose),
+          mimeType: a.mimeType,
+          rightsStatus: String(a.rightsStatus),
+          publicationStatus: String(a.publicationStatus),
+        });
+        docs.push({
+          id: `artifact:${a.id}`,
+          sourceType: 'artifact',
+          sourceId: a.id,
+          title: a.title || `${a.artifactType} · ${a.purpose}`,
+          body: [
+            text,
+            a.filename ? `Filename: ${a.filename}` : '',
+            a.storageKey ? `Storage key: ${a.storageKey}` : '',
+            a.qualityScore != null ? `Quality: ${a.qualityScore}` : '',
+            a.completenessScore != null
+              ? `Completeness: ${a.completenessScore}`
+              : '',
+            isFixture ? 'TEST FIXTURE — not live marketplace media' : '',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          tags: [String(a.artifactType), String(a.purpose), String(a.publicationStatus)],
+          isFixture,
+          observedAt: a.collectedAt?.toISOString?.() ?? undefined,
+          metadata: {
+            productId: a.productId,
+            artifactId: a.id,
+            mimeType: a.mimeType,
+          },
+        });
+      }
+    } catch (e) {
+      this.logger.warn(
+        `artifact corpus skipped: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+
     return docs;
   }
 
-  async train(organizationId: string, userId?: string | null) {
-    const documents = await this.collectDocuments(organizationId);
-    const index = buildRagIndex(organizationId, documents);
+  /**
+   * Export ProductArtifact rows to repo-root artifacts-corpus.csv
+   */
+  async exportArtifactCsv(organizationId: string) {
+    const artifacts = await this.prisma.client.productArtifact.findMany({
+      where: { organizationId },
+      include: {
+        product: {
+          select: {
+            title: true,
+            sourcePlatform: true,
+            sourceProvenance: true,
+          },
+        },
+      },
+      take: 2000,
+      orderBy: { collectedAt: 'desc' },
+    });
+
+    const rows = artifacts.map((a) =>
+      artifactToCorpusRow({
+        organizationId,
+        artifactId: a.id,
+        productId: a.productId,
+        productTitle: a.product?.title,
+        artifactType: String(a.artifactType),
+        purpose: String(a.purpose),
+        sourceType: String(a.sourceType),
+        sourcePlatform: a.sourcePlatform ?? a.product?.sourcePlatform,
+        title: a.title,
+        altText: a.altText,
+        description: a.description,
+        mimeType: a.mimeType,
+        filename: a.filename,
+        storageKey: a.storageKey,
+        externalUrl: a.externalUrl,
+        rightsStatus: String(a.rightsStatus),
+        publicationStatus: String(a.publicationStatus),
+        visibility: String(a.visibility),
+        qualityScore: a.qualityScore,
+        completenessScore: a.completenessScore,
+        confidence: a.confidence,
+        isFixture:
+          Boolean(a.product?.sourcePlatform?.startsWith('fixture')) ||
+          a.sourceType === 'generated',
+        collectedAt: a.collectedAt?.toISOString?.() ?? null,
+        sourceProvenance: a.product?.sourceProvenance,
+      }),
+    );
+
+    const csv = artifactCorpusToCsv(rows);
+    const outPath = join(this.repoRoot(), 'artifacts-corpus.csv');
+    writeFileSync(outPath, csv, 'utf8');
+
+    await this.events.ingest({
+      organizationId,
+      eventType: 'ai.rag.export_csv',
+      providerKey: 'tradeops-rag',
+      externalEventId: `rag-csv-${organizationId}-${Date.now()}`,
+      isFixture: false,
+      payload: { path: outPath, rowCount: rows.length },
+    });
+
+    return {
+      path: outPath,
+      fileName: 'artifacts-corpus.csv',
+      rowCount: rows.length,
+      honesty: {
+        note: 'CSV is text metadata only. Fixture rows labeled. Binaries not embedded.',
+      },
+    };
+  }
+
+  async train(
+    organizationId: string,
+    userId?: string | null,
+    options?: { tryXaiEmbeddings?: boolean },
+  ) {
+    let documents = await this.collectDocuments(organizationId);
+
+    // Optional xAI dense embeddings on first N docs (fail → local dense in buildRagIndex)
+    let embeddingNote = 'local dense hybrid (hashing projection) + TF-IDF';
+    if (options?.tryXaiEmbeddings !== false && isLlmConfigured()) {
+      const batch = documents.slice(0, 40);
+      const texts = batch.map((d) => `${d.title}\n${d.body}`.slice(0, 1500));
+      const emb = await embedWithXai(texts);
+      if (emb.ok && emb.vectors?.length === batch.length) {
+        for (let i = 0; i < batch.length; i++) {
+          documents[i] = { ...documents[i]!, dense: emb.vectors[i] };
+        }
+        // remaining docs get local dense in buildRagIndex
+        embeddingNote = `xAI dense on ${batch.length} docs (${emb.model}); rest local dense + TF-IDF`;
+      } else {
+        embeddingNote = `xAI embeddings unavailable (${emb.error ?? 'n/a'}); using local dense + TF-IDF`;
+      }
+    }
+
+    const index = buildRagIndex(organizationId, documents, new Date(), {
+      attachLocalDense: true,
+    });
     this.memory.set(organizationId, index);
     writeFileSync(this.indexPath(organizationId), serializeRagIndex(index), 'utf8');
+
+    // Also refresh artifact CSV at repo root for offline inspection
+    let csvPath: string | null = null;
+    try {
+      const exp = await this.exportArtifactCsv(organizationId);
+      csvPath = exp.path;
+    } catch (e) {
+      this.logger.warn(
+        `CSV export during train failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
 
     await this.events.ingest({
       organizationId,
@@ -279,14 +466,18 @@ export class RagService {
         stats: index.stats,
         documentCount: documents.length,
         userId: userId ?? null,
+        embeddingNote,
+        csvPath,
       },
     });
 
     return {
       organizationId,
       stats: index.stats,
+      embeddingNote,
+      csvPath,
       honesty: {
-        note: 'Org index rebuilt from canonical store. Not neural fine-tuning. Fixtures counted separately in stats.',
+        note: 'Org index rebuilt from canonical store including ProductArtifacts. Not neural fine-tuning of foundation weights. Fixtures counted separately.',
       },
     };
   }

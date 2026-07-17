@@ -51,7 +51,7 @@ describe('rag engine', () => {
     const index = buildRagIndex('org-1', docs);
     assert.equal(index.stats.documentCount, 3);
     assert.ok(index.stats.chunkCount >= 3);
-    assert.equal(index.stats.modelVersion, 'rag-tfidf-v1');
+    assert.match(index.stats.modelVersion, /rag-tfidf-v1/);
     assert.ok(index.stats.fixtureChunks >= 1);
 
     const hits = retrieve(index, 'canada water bottle margin hiking', { topK: 3 });
@@ -77,13 +77,32 @@ describe('rag engine', () => {
     const empty = queryRagIndex(index, 'zzzznonexistenttermxyz123');
     // may be empty or very low — grounded context must not invent product claims
     assert.match(empty.honesty.note, /not fabricated/i);
-    assert.equal(empty.honesty.embeddingModel, 'rag-tfidf-v1');
+    assert.match(empty.honesty.embeddingModel, /rag-tfidf-v1/);
 
     const q = queryRagIndex(index, 'commerce case evaluate listing draft bottle');
     assert.ok(q.groundedContext.includes('Retrieved org knowledge') || q.hits.length === 0);
     if (q.hits.length) {
       assert.ok(q.citations.length === q.hits.length);
     }
+  });
+
+  it('attaches hybrid dense mode and artifact source type', () => {
+    const withArt = [
+      ...docs,
+      {
+        id: 'a1',
+        sourceType: 'artifact' as const,
+        sourceId: 'art-1',
+        title: 'Warranty PDF',
+        body: 'User manual warranty document for bottle product',
+        isFixture: true,
+      },
+    ];
+    const index = buildRagIndex('org-1', withArt);
+    assert.equal(index.stats.embeddingMode, 'hybrid_dense');
+    assert.ok(index.stats.artifactDocuments >= 1);
+    const hits = retrieve(index, 'warranty manual document bottle', { topK: 5 });
+    assert.ok(hits.length >= 1);
   });
 
   it('LLM key helpers fail closed without env', () => {

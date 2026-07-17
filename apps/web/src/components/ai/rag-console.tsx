@@ -137,6 +137,68 @@ export function RagConsole() {
           type="button"
           className="btn ghost"
           disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              const res = await fetch(`${api}/api/v1/ai/rag/export-csv`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { Accept: 'application/json' },
+              });
+              if (!res.ok) throw new Error(`Export HTTP ${res.status}`);
+              const body = (await res.json()) as { rowCount?: number; fileName?: string };
+              setResult({
+                query: 'export-csv',
+                hits: [],
+                honesty: {
+                  note: `Wrote ${body.fileName ?? 'artifacts-corpus.csv'} (${body.rowCount ?? 0} rows) at repo root.`,
+                },
+              });
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Export artifacts CSV
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              const res = await fetch(`${api}/api/v1/ai/intelligence/rebuild`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+                body: '{}',
+              });
+              if (!res.ok) throw new Error(`Rebuild HTTP ${res.status}`);
+              const body = await res.json();
+              setResult({
+                query: 'intelligence-rebuild',
+                hits: [],
+                answer: JSON.stringify(body, null, 2).slice(0, 2500),
+              });
+              void refreshStatus();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Full rebuild (CSV + RAG + predict)
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={busy}
           onClick={() => void refreshStatus()}
         >
           Refresh status

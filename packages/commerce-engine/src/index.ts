@@ -20,3 +20,4 @@ export * from './data-provenance';
 export * from './production-isolation';
 export * from './intelligence-engine';
 export * from './workspace';
+export * from './prediction-engine';

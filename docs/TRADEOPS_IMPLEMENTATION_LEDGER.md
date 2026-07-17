@@ -50,6 +50,10 @@
 | Prediction engine v1 | Operational foundations | Bias fit from outcomes; batch run → DemandForecast |
 | LLM free-form (xAI) | Optional | `XAI_API_KEY` — retrieval works without it |
 | Dense embeddings (xAI API) | Optional | Tries embeddings endpoint; falls back to local dense |
+| Production multi-tenancy | Operational foundations | Tenant/Workspace/Team/RBAC, TenantContext, tenancy APIs, isolation inventory |
+| Internet security harden | Operational | Loopback bind default, security boot, secret rotation helpers |
+| Vendor API key catalog | Operational | paste templates + sync/write-key-docs scripts |
+| Integration hub + credential vault UI | Operational foundations | `/terminal/integrations` — env presence matrix, usage quotas, never shows secrets |
 | Industrial Commerce OS | Operational foundations | Verticals, industrial product profile, procurement engine, digital twin, industrial personas, ERP/PIM registry |
 | AI procurement evaluate | Operational foundations | Requirements match, quotes, substitutes, RFQ draft — award approval-gated |
 | Agency client hierarchy | Operational foundations | Create/list client orgs under parent |

@@ -846,6 +846,7 @@ const PERSONA_MORE_NAV: Record<
   ],
   developer: [
     { id: 'industrial', href: '/terminal/industrial', label: 'Industrial OS' },
+    { id: 'integrations', href: '/terminal/integrations', label: 'Integration hub' },
     { id: 'objectives', href: '/terminal/objectives', label: 'Execution history' },
     { id: 'examples', href: '/terminal/live-examples', label: 'Live examples' },
     { id: 'process', href: '/terminal/process', label: 'Process cases' },
@@ -858,6 +859,7 @@ const PERSONA_MORE_NAV: Record<
     { id: 'onboarding', href: '/onboarding', label: 'Onboarding' },
     { id: 'plans', href: '/platform/plans', label: 'Plans' },
     { id: 'connectors', href: '/terminal/connectors', label: 'Connectors' },
+    { id: 'integrations', href: '/terminal/integrations', label: 'Integration hub' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'All personas', kind: 'admin' },
   ],
 };

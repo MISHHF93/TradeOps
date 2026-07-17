@@ -44,6 +44,8 @@ loadDotEnv();
 
 const API_PORT = Number(process.env.API_PORT || 4000);
 const WEB_PORT = Number(process.env.WEB_PORT || 3000);
+const API_HOST = process.env.API_HOST || '127.0.0.1';
+const WEB_HOST = process.env.WEB_HOST || '127.0.0.1';
 
 function freePorts(ports) {
   try {
@@ -261,8 +263,12 @@ const databaseUrl = await ensureDatabase();
 
 // Shared env for local stack. Next.js `next start` requires NODE_ENV=production;
 // API stays on development so AUTH_BYPASS (local no-login) remains active.
+// Bind loopback by default so founder_direct is not reachable from LAN/WAN.
 const sharedEnv = {
   API_PORT: String(API_PORT),
+  API_HOST,
+  WEB_HOST,
+  HOSTNAME: WEB_HOST,
   PORT: String(WEB_PORT),
   WEB_PORT: String(WEB_PORT),
   API_PUBLIC_URL: process.env.API_PUBLIC_URL || `http://127.0.0.1:${API_PORT}`,
@@ -274,6 +280,13 @@ const sharedEnv = {
   DATABASE_URL: databaseUrl,
 };
 
+console.log(`  Bind:     API ${API_HOST}:${API_PORT} · Web ${WEB_HOST}:${WEB_PORT}`);
+if (API_HOST === '0.0.0.0' || API_HOST === '::') {
+  console.warn(
+    '  ⚠ API_HOST is public-facing. Prefer 127.0.0.1 unless behind a reverse proxy. See docs/TRADEOPS_INTERNET_SECURITY.md',
+  );
+}
+
 const children = [
   run(pnpm, ['--filter', '@tradeops/api', 'start'], 'api', {
     ...sharedEnv,
@@ -281,7 +294,17 @@ const children = [
   }),
   run(
     pnpm,
-    ['--filter', '@tradeops/web', 'exec', 'next', 'start', '-p', String(WEB_PORT)],
+    [
+      '--filter',
+      '@tradeops/web',
+      'exec',
+      'next',
+      'start',
+      '-H',
+      WEB_HOST,
+      '-p',
+      String(WEB_PORT),
+    ],
     'web',
     {
       ...sharedEnv,

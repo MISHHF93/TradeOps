@@ -33,6 +33,7 @@
 | [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md) | Founder-direct mode |
 | [TRADEOPS_ACCESS_MODES.md](./TRADEOPS_ACCESS_MODES.md) | founder_direct / authenticated / multi_tenant |
 | [TRADEOPS_SECURITY_MODEL.md](./TRADEOPS_SECURITY_MODEL.md) | Access + tenancy security |
+| [TRADEOPS_INTERNET_SECURITY.md](./TRADEOPS_INTERNET_SECURITY.md) | **LAN/internet bind, secrets, API keys** — harden before public network |
 | [WINDOWS_APP_CONTROL.md](./WINDOWS_APP_CONTROL.md) | Restricted Windows host |
 | [TRADEOPS_EXECUTION_STATUS.md](./TRADEOPS_EXECUTION_STATUS.md) | **Doc claims vs built code** |
 | [TRADEOPS_MARKDOWN_SCAN.md](./TRADEOPS_MARKDOWN_SCAN.md) | Full inventory of markdown files |

@@ -25,6 +25,17 @@ export {
 } from './access-mode';
 
 export {
+  assertSecurityBoot,
+  evaluateSecurityBoot,
+  isLoopbackHost,
+  isPublicNetworkBind,
+  isWeakAppSecret,
+  isWeakCredentialsKey,
+  type SecurityBootEnv,
+  type SecurityBootResult,
+} from './security-boot';
+
+export {
   getXaiConfig,
   isXaiConfigured,
   parseAiMode,
@@ -47,10 +58,16 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   API_PORT: z.coerce.number().int().positive().default(4000),
-  API_HOST: z.string().default('0.0.0.0'),
+  /**
+   * Default 127.0.0.1 — loopback only. Use 0.0.0.0 only behind a reverse proxy
+   * with auth, and never with founder_direct on the public internet.
+   */
+  API_HOST: z.string().default('127.0.0.1'),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
+  /** Prefer 127.0.0.1 so Next binds loopback when start.mjs passes -H */
+  WEB_HOST: z.string().default('127.0.0.1'),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
-  API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+  API_PUBLIC_URL: z.string().url().default('http://127.0.0.1:4000'),
 
   DATABASE_URL: z
     .string()

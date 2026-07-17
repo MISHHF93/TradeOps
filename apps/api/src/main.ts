@@ -1,11 +1,14 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { loadEnv } from '@tradeops/config';
+import { assertSecurityBoot, loadEnv, publicAccessWarning } from '@tradeops/config';
 import { createLogger } from '@tradeops/logging';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
+  // Refuse insecure public binds with founder_direct / weak secrets
+  assertSecurityBoot(process.env);
+
   const env = loadEnv();
   const logger = createLogger({ service: 'api', level: env.LOG_LEVEL });
 
@@ -17,9 +20,12 @@ async function bootstrap(): Promise<void> {
 
   app.use(cookieParser());
 
+  // Strict CORS: only the configured web origin (not *)
   app.enableCors({
     origin: env.WEB_ORIGIN,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
 
   app.setGlobalPrefix('api/v1');
@@ -29,6 +35,15 @@ async function bootstrap(): Promise<void> {
     { host: env.API_HOST, port: env.API_PORT, env: env.NODE_ENV },
     'TradeOps API listening',
   );
+  const warn = publicAccessWarning(env);
+  if (warn) {
+    logger.warn(warn);
+  }
+  if (env.API_HOST === '0.0.0.0' || env.API_HOST === '::') {
+    logger.warn(
+      'API is bound to all interfaces. Ensure firewall + reverse proxy TLS; prefer API_HOST=127.0.0.1 for local work.',
+    );
+  }
 }
 
 bootstrap().catch((error: unknown) => {

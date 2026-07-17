@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { loadEnv } from '@tradeops/config';
+import { tenantCacheKey } from '@tradeops/domain';
 import Redis from 'ioredis';
 
 export type RedisHealthResult = {
@@ -8,6 +9,9 @@ export type RedisHealthResult = {
   message?: string;
 };
 
+/**
+ * Redis access — all cache keys for tenant data MUST use tenantCacheKey / tenantGet/Set.
+ */
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   readonly client: Redis;
@@ -28,6 +32,51 @@ export class RedisService implements OnModuleDestroy {
     this.client.on('error', () => {
       /* health endpoint reports degraded */
     });
+  }
+
+  /** Tenant-isolated cache get */
+  async tenantGet(
+    organizationId: string,
+    namespace: string,
+    ...parts: string[]
+  ): Promise<string | null> {
+    try {
+      await this.connect();
+      return await this.client.get(tenantCacheKey(organizationId, namespace, ...parts));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Tenant-isolated cache set with optional TTL seconds */
+  async tenantSet(
+    organizationId: string,
+    namespace: string,
+    value: string,
+    ttlSeconds?: number,
+    ...parts: string[]
+  ): Promise<boolean> {
+    try {
+      await this.connect();
+      const key = tenantCacheKey(organizationId, namespace, ...parts);
+      if (ttlSeconds && ttlSeconds > 0) {
+        await this.client.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.client.set(key, value);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async tenantDel(organizationId: string, namespace: string, ...parts: string[]): Promise<void> {
+    try {
+      await this.connect();
+      await this.client.del(tenantCacheKey(organizationId, namespace, ...parts));
+    } catch {
+      /* ignore */
+    }
   }
 
   async connect(): Promise<void> {

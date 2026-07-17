@@ -834,9 +834,11 @@ export class CommerceController {
 
   private requireOrg(auth: AuthContext): asserts auth is AuthContext & {
     activeOrganizationId: string;
+    tenant: NonNullable<AuthContext['tenant']>;
+    membershipId: string;
   } {
-    if (!auth.activeOrganizationId) {
-      throw new BadRequestException('Active organization required');
+    if (!auth.activeOrganizationId || !auth.tenant || !auth.membershipId) {
+      throw new BadRequestException('Active organization membership required');
     }
   }
 }

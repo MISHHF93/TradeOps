@@ -22,6 +22,9 @@ export function TerminalShell({
   founderSlot,
   logoutSlot,
   workspace,
+  tenantLabel,
+  workspaceLabel,
+  commerceMode,
 }: {
   children: ReactNode;
   founderDirect: boolean;
@@ -35,6 +38,9 @@ export function TerminalShell({
   founderSlot?: ReactNode;
   logoutSlot?: ReactNode;
   workspace?: ResolvedWorkspace | null;
+  tenantLabel?: string | null;
+  workspaceLabel?: string | null;
+  commerceMode?: string | null;
 }) {
   const [aiOpen, setAiOpen] = useState(true);
 
@@ -58,6 +64,9 @@ export function TerminalShell({
           showLogout={!founderDirect}
           logoutSlot={logoutSlot}
           workspace={workspace}
+          tenantLabel={tenantLabel}
+          workspaceLabel={workspaceLabel}
+          commerceMode={commerceMode}
         />
         <main className="terminal-main" id="main-workspace">
           {children}

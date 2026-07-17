@@ -96,49 +96,66 @@ async function bootstrap(): Promise<void> {
           accessToken || merchantId ? { accessToken, merchantId } : null,
         );
 
-        const org =
-          (await prisma.organization.findFirst({ where: { slug: 'demo-commerce' } })) ??
-          (await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } }));
+        // Multi-tenant: process each organization that has a Google Merchant install
+        // (or fall back to demo org for local shadow). Never mix products across tenants.
+        const installs = await prisma.connectorInstallation.findMany({
+          where: { providerKey: GOOGLE_MERCHANT_PROVIDER_KEY },
+          select: { organizationId: true },
+        });
+        let orgIds = [...new Set(installs.map((i) => i.organizationId))];
+        if (orgIds.length === 0) {
+          const fallback =
+            (await prisma.organization.findFirst({ where: { slug: 'demo-commerce' } })) ??
+            (await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } }));
+          if (fallback) orgIds = [fallback.id];
+        }
 
-        if (!org) {
+        if (orgIds.length === 0) {
           logger.warn('No organization for weekend Google feed');
           return { ok: false, reason: 'organization_missing' };
         }
 
-        const products = await prisma.product.findMany({
-          where: { organizationId: org.id },
-          take: 100,
-          orderBy: { updatedAt: 'desc' },
-        });
+        const perTenant: Array<Record<string, unknown>> = [];
+        for (const organizationId of orgIds) {
+          const products = await prisma.product.findMany({
+            where: { organizationId },
+            take: 100,
+            orderBy: { updatedAt: 'desc' },
+          });
 
-        const result = await connector.prepareWeekendFeed(
-          products.map((p) => ({
-            externalId: p.externalId,
-            title: p.title,
-            description: p.description,
-            targetPriceMinor: p.targetPriceMinor,
-            currency: p.currency,
-            inventoryQuantity: p.inventoryQuantity,
-            sourcePlatform: p.sourcePlatform,
-            dataConfidence: p.dataConfidence,
-            dataFreshnessAt: p.dataFreshnessAt,
-            isFixtureSource: p.sourcePlatform.startsWith('fixture'),
-          })),
-        );
+          const result = await connector.prepareWeekendFeed(
+            products.map((p) => ({
+              externalId: p.externalId,
+              title: p.title,
+              description: p.description,
+              targetPriceMinor: p.targetPriceMinor,
+              currency: p.currency,
+              inventoryQuantity: p.inventoryQuantity,
+              sourcePlatform: p.sourcePlatform,
+              dataConfidence: p.dataConfidence,
+              dataFreshnessAt: p.dataFreshnessAt,
+              isFixtureSource: p.sourcePlatform.startsWith('fixture'),
+            })),
+          );
 
-        logger.info(
-          {
-            jobId: job.id,
-            provider: GOOGLE_MERCHANT_PROVIDER_KEY,
-            mode: result.mode,
-            prepared: result.preparedCount,
-            posted: result.postedCount,
-            live: result.livePostSucceeded,
-            status: result.status,
-          },
-          'Google weekend feed job finished',
-        );
-        return result;
+          logger.info(
+            {
+              jobId: job.id,
+              tenantId: organizationId,
+              organizationId,
+              provider: GOOGLE_MERCHANT_PROVIDER_KEY,
+              mode: result.mode,
+              prepared: result.preparedCount,
+              posted: result.postedCount,
+              live: result.livePostSucceeded,
+              status: result.status,
+            },
+            'Google weekend feed tenant finished',
+          );
+          perTenant.push({ organizationId, ...result });
+        }
+
+        return { ok: true, tenants: perTenant.length, results: perTenant };
       }
 
       logger.warn({ jobName: job.name }, 'Unknown job name');

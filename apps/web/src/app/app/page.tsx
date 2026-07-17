@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LogoutButton } from '../../components/auth-forms';
 import { FounderMenu } from '../../components/founder-menu';
+import { WorkspaceSwitcher } from '../../components/forms/workspace-switcher';
 import { OrgSwitcher } from '../../components/org-switcher';
 import { StatusBadge } from '../../components/status-badge';
 import { fetchApiHealth } from '../../lib/api';
@@ -46,10 +47,13 @@ export default async function AppHomePage() {
         </div>
         <div className="app-actions">
           {session && !founder ? (
-            <OrgSwitcher
-              memberships={session.memberships}
-              activeOrganizationId={session.activeOrganization?.id ?? null}
-            />
+            <>
+              <OrgSwitcher
+                memberships={session.memberships}
+                activeOrganizationId={session.activeOrganization?.id ?? null}
+              />
+              <WorkspaceSwitcher activeWorkspaceId={session.activeWorkspaceId ?? null} />
+            </>
           ) : null}
           <Link className="btn primary" href={FOUNDER_WORKSPACE_PATH}>
             Open terminal
@@ -66,7 +70,8 @@ export default async function AppHomePage() {
       </div>
 
       <p className="meta">
-        Access mode: <code>{mode}</code>. Organization scoping and audit ownership still apply.{' '}
+        Access mode: <code>{mode}</code>. Tenant isolation (membership-validated) and audit
+        ownership apply.{' '}
         <StatusBadge status="operational" /> when API healthy.
       </p>
 

@@ -93,28 +93,41 @@ function quoteWinArg(arg) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
+function isNodeExecutable(command) {
+  const s = String(command).toLowerCase().replace(/\//g, '\\');
+  return (
+    s === process.execPath.toLowerCase() ||
+    s.endsWith('\\node.exe') ||
+    s.endsWith('\\node') ||
+    s === 'node' ||
+    s === 'node.exe'
+  );
+}
+
 function run(command, args, name, env = {}) {
-  // Windows: paths like C:\Program Files\nodejs\node.exe must be quoted for cmd.exe /c.
-  // Unquoted spawn spreads into argv and cmd treats C:\Program as the command (breaks PGlite auto-start).
-  const child = isWin
-    ? spawn(
-        process.env.ComSpec || 'cmd.exe',
-        ['/d', '/s', '/c', [quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')],
-        {
+  // Prefer direct spawn for node.exe — avoids cmd.exe splitting "C:\Program Files\nodejs\node.exe".
+  // For pnpm.cmd and other shells, use cmd /c with quoted args on Windows.
+  const child =
+    !isWin || isNodeExecutable(command)
+      ? spawn(command, args, {
           cwd: root,
           stdio: ['ignore', 'pipe', 'pipe'],
           shell: false,
           env: { ...process.env, ...env },
           windowsHide: true,
-          windowsVerbatimArguments: true,
-        },
-      )
-    : spawn(command, args, {
-        cwd: root,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { ...process.env, ...env },
-      });
+        })
+      : spawn(
+          process.env.ComSpec || 'cmd.exe',
+          ['/d', '/s', '/c', [quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')],
+          {
+            cwd: root,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false,
+            env: { ...process.env, ...env },
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+          },
+        );
 
   const prefix = (line) => `[${name}] ${line}`;
   const pipe = (stream) => {

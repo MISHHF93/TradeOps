@@ -42,9 +42,29 @@ export type MembershipWithOrgDto = z.infer<typeof membershipWithOrgSchema>;
 export const sessionUserSchema = z.object({
   user: userSchema,
   activeOrganization: organizationSchema.nullable(),
+  activeWorkspaceId: z.string().uuid().nullable().optional(),
   activeRole: systemRoleSchema.nullable(),
   permissions: z.array(permissionSchema),
   memberships: z.array(membershipWithOrgSchema),
+  /** Server-resolved tenant context when an active org membership exists */
+  tenant: z
+    .object({
+      userId: z.string().uuid(),
+      tenantId: z.string().uuid(),
+      organizationId: z.string().uuid(),
+      workspaceId: z.string().uuid().optional(),
+      membershipId: z.string().uuid(),
+      roleIds: z.array(z.string()),
+      role: systemRoleSchema,
+      permissions: z.array(permissionSchema),
+      featureFlags: z.array(z.string()),
+      subscriptionStatus: z.string(),
+      subscriptionPlan: z.string(),
+      connectedCapabilities: z.array(z.string()),
+      currentObjectiveId: z.string().uuid().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export type SessionUserDto = z.infer<typeof sessionUserSchema>;
 

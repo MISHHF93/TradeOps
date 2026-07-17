@@ -7,13 +7,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isAuthBypassEnabled } from '@tradeops/config';
-import { permissionsForRole } from '@tradeops/domain';
-import type { SystemRole } from '@tradeops/contracts';
 import type { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
 import { IS_PUBLIC_KEY, PERMISSIONS_KEY } from './decorators';
 import { FounderAccessService } from './founder-access.service';
 import { SessionService } from './session.service';
+import { TenantContextService } from './tenant-context.service';
 import type { AuthContext } from './types';
 
 type AuthedRequest = Request & { auth?: AuthContext; cookies?: Record<string, string> };
@@ -23,8 +21,8 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
-    private readonly prisma: PrismaService,
     private readonly founderAccess: FounderAccessService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -65,35 +63,28 @@ export class AuthGuard implements CanActivate {
   private async attachSessionAuth(request: AuthedRequest, token: string): Promise<void> {
     const session = await this.sessions.resolveSession(token);
 
-    let role: SystemRole | null = null;
-    let permissions: AuthContext['permissions'] = [];
-
-    if (session.activeOrganizationId) {
-      const membership = await this.prisma.client.membership.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId: session.activeOrganizationId,
-            userId: session.userId,
-          },
-        },
-      });
-      if (membership) {
-        role = membership.role as SystemRole;
-        permissions = permissionsForRole(role);
-      } else {
-        session.activeOrganizationId = null;
-      }
-    }
-
-    request.auth = {
+    request.auth = await this.tenantContext.resolve({
       userId: session.userId,
       sessionId: session.id,
-      activeOrganizationId: session.activeOrganizationId,
-      role,
-      permissions,
       email: session.user.email,
       displayName: session.user.displayName,
-    };
+      activeOrganizationId: session.activeOrganizationId,
+      activeWorkspaceId: session.activeWorkspaceId ?? null,
+    });
+
+    // Persist cleared invalid org/workspace back to session (non-blocking best effort)
+    if (
+      session.activeOrganizationId !== request.auth.activeOrganizationId ||
+      (session.activeWorkspaceId ?? null) !== request.auth.activeWorkspaceId
+    ) {
+      await this.sessions
+        .setActiveTenant(
+          session.id,
+          request.auth.activeOrganizationId,
+          request.auth.activeWorkspaceId,
+        )
+        .catch(() => undefined);
+    }
   }
 }
 
@@ -113,12 +104,10 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthedRequest>();
     const auth = request.auth;
 
-    // Public routes never hit here with required perms without auth context;
-    // founder_direct still attaches owner permissions — enforce them (org ownership elsewhere).
     if (!auth) {
       throw new UnauthorizedException('Authentication required');
     }
-    if (!auth.activeOrganizationId || !auth.role) {
+    if (!auth.activeOrganizationId || !auth.role || !auth.tenant) {
       throw new ForbiddenException('Active organization required');
     }
 

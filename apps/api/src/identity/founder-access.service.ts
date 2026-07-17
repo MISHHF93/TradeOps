@@ -5,9 +5,8 @@ import {
   isAuthBypassEnabled,
   loadEnv,
 } from '@tradeops/config';
-import { permissionsForRole } from '@tradeops/domain';
-import type { SystemRole } from '@tradeops/contracts';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from './tenant-context.service';
 import type { AuthContext } from './types';
 
 /** Stable synthetic session id for direct founder requests (not a cookie session). */
@@ -20,6 +19,7 @@ const CACHE_TTL_MS = 60_000;
  * Used when TRADEOPS_ACCESS_MODE=founder_direct (or legacy AUTH_BYPASS).
  *
  * Never destructive: does not delete products, connectors, orders, or credentials.
+ * Still binds to a real tenant membership — not unrestricted multi-org data.
  */
 @Injectable()
 export class FounderAccessService implements OnModuleInit {
@@ -27,7 +27,10 @@ export class FounderAccessService implements OnModuleInit {
   private cache: { at: number; auth: AuthContext } | null = null;
   private bootstrapped = false;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     if (!isAuthBypassEnabled()) {
@@ -130,7 +133,7 @@ export class FounderAccessService implements OnModuleInit {
       });
     }
 
-    await this.prisma.client.membership.upsert({
+    const membership = await this.prisma.client.membership.upsert({
       where: {
         organizationId_userId: { organizationId: org.id, userId: user.id },
       },
@@ -139,11 +142,43 @@ export class FounderAccessService implements OnModuleInit {
         userId: user.id,
         role: defaults.role,
         workspacePersona: defaults.workspacePersona,
+        status: 'active',
       },
       update: {
         role: defaults.role,
         workspacePersona: defaults.workspacePersona,
+        status: 'active',
       },
+    });
+
+    // Ensure default workspace under tenant
+    let workspace = await this.prisma.client.workspace.findFirst({
+      where: { organizationId: org.id, isDefault: true },
+    });
+    if (!workspace) {
+      workspace = await this.prisma.client.workspace.create({
+        data: {
+          organizationId: org.id,
+          name: 'Default',
+          slug: 'default',
+          kind: 'default',
+          isDefault: true,
+          status: 'active',
+        },
+      });
+    }
+    await this.prisma.client.workspaceMembership.upsert({
+      where: {
+        workspaceId_userId: { workspaceId: workspace.id, userId: user.id },
+      },
+      create: {
+        workspaceId: workspace.id,
+        membershipId: membership.id,
+        userId: user.id,
+        organizationId: org.id,
+        role: defaults.role,
+      },
+      update: {},
     });
 
     this.bootstrapped = true;
@@ -196,16 +231,18 @@ export class FounderAccessService implements OnModuleInit {
       throw new Error('Founder has no organization membership after bootstrap');
     }
 
-    const role = membership.role as SystemRole;
-    const auth: AuthContext = {
+    const defaultWs = await this.prisma.client.workspace.findFirst({
+      where: { organizationId: membership.organizationId, isDefault: true },
+    });
+
+    const auth = await this.tenantContext.resolve({
       userId: user.id,
       sessionId: FOUNDER_DIRECT_SESSION_ID,
-      activeOrganizationId: membership.organizationId,
-      role,
-      permissions: permissionsForRole(role),
       email: user.email,
       displayName: user.displayName,
-    };
+      activeOrganizationId: membership.organizationId,
+      activeWorkspaceId: defaultWs?.id ?? null,
+    });
     this.cache = { at: Date.now(), auth };
     return { ...auth };
   }

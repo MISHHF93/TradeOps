@@ -30,6 +30,9 @@ export function TerminalSidebar({
   showLogout,
   logoutSlot,
   workspace,
+  tenantLabel,
+  workspaceLabel,
+  commerceMode,
 }: {
   founderDirect: boolean;
   orgName: string;
@@ -40,6 +43,10 @@ export function TerminalSidebar({
   showLogout?: boolean;
   logoutSlot?: React.ReactNode;
   workspace?: ResolvedWorkspace | null;
+  /** Server-resolved tenant display (slug or short id) */
+  tenantLabel?: string | null;
+  workspaceLabel?: string | null;
+  commerceMode?: string | null;
 }) {
   const pathname = usePathname();
   const groups = useMemo(
@@ -63,9 +70,20 @@ export function TerminalSidebar({
       <p className="meta" style={{ margin: '0 0 6px', fontSize: '0.68rem', lineHeight: 1.3 }}>
         {workspace?.operatingPrinciple ?? 'One User · One Workspace · One Objective · One AI'}
       </p>
-      <p className="meta" style={{ margin: '0 0 8px', fontSize: '0.7rem' }}>
+      <p className="meta" style={{ margin: '0 0 4px', fontSize: '0.7rem' }}>
         {workspace?.personaLabel ?? segment ?? '—'} · {planTier ?? '—'} · {role}
       </p>
+      {(tenantLabel || workspaceLabel || commerceMode) && (
+        <p
+          className="meta"
+          style={{ margin: '0 0 8px', fontSize: '0.65rem', opacity: 0.9 }}
+          title="Server-resolved tenant isolation context"
+        >
+          Tenant {tenantLabel ?? '—'}
+          {workspaceLabel ? ` · WS ${workspaceLabel}` : ''}
+          {commerceMode ? ` · ${commerceMode}` : ''}
+        </p>
+      )}
 
       {workspace?.surface?.healthLabel || workspace?.recommendedNextAction ? (
         <div

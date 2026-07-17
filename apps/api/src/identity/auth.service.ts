@@ -3,7 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { hashPassword, verifyPassword } from '@tradeops/auth';
+import { hashPassword, hashSessionToken, verifyPassword } from '@tradeops/auth';
 import type { AuthResponse, LoginRequest, RegisterRequest } from '@tradeops/contracts';
 import { isValidOrganizationSlug, slugifyOrganizationName } from '@tradeops/domain';
 import type { Response } from 'express';
@@ -52,6 +52,11 @@ export class AuthService {
         data: {
           name: input.organizationName.trim(),
           slug,
+          organizationType: 'retailer',
+          commerceMode: 'retail',
+          tenantStatus: 'active',
+          subscriptionStatus: 'trialing',
+          onboardingStatus: 'created',
         },
       });
 
@@ -60,11 +65,32 @@ export class AuthService {
           userId: user.id,
           organizationId: organization.id,
           role: 'owner',
+          status: 'active',
         },
         include: { organization: true },
       });
 
-      return { user, membership };
+      const workspace = await tx.workspace.create({
+        data: {
+          organizationId: organization.id,
+          name: 'Default',
+          slug: 'default',
+          kind: 'default',
+          isDefault: true,
+          status: 'active',
+        },
+      });
+      await tx.workspaceMembership.create({
+        data: {
+          workspaceId: workspace.id,
+          membershipId: membership.id,
+          userId: user.id,
+          organizationId: organization.id,
+          role: 'owner',
+        },
+      });
+
+      return { user, membership, workspaceId: workspace.id };
     });
 
     const token = await this.sessions.createSession(
@@ -72,6 +98,11 @@ export class AuthService {
       result.membership.organizationId,
       meta,
     );
+    const tokenHash = hashSessionToken(token);
+    await this.prisma.client.session.updateMany({
+      where: { tokenHash },
+      data: { activeWorkspaceId: result.workspaceId },
+    });
     this.sessions.setSessionCookie(res, token);
 
     await this.audit.write({
@@ -80,7 +111,7 @@ export class AuthService {
       resourceId: result.user.id,
       actorUserId: result.user.id,
       organizationId: result.membership.organizationId,
-      metadata: { email },
+      metadata: { email, workspaceId: result.workspaceId },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
@@ -89,6 +120,7 @@ export class AuthService {
       user: result.user,
       memberships: [result.membership],
       activeOrganizationId: result.membership.organizationId,
+      activeWorkspaceId: result.workspaceId,
     });
   }
 
@@ -176,8 +208,12 @@ export class AuthService {
   private meCache = new Map<string, { at: number; data: AuthResponse }>();
   private static readonly ME_TTL_MS = 30_000;
 
-  async me(userId: string, activeOrganizationId: string | null): Promise<AuthResponse> {
-    const key = `${userId}:${activeOrganizationId ?? 'none'}`;
+  async me(
+    userId: string,
+    activeOrganizationId: string | null,
+    activeWorkspaceId?: string | null,
+  ): Promise<AuthResponse> {
+    const key = `${userId}:${activeOrganizationId ?? 'none'}:${activeWorkspaceId ?? 'none'}`;
     const hit = this.meCache.get(key);
     if (hit && Date.now() - hit.at < AuthService.ME_TTL_MS) {
       return hit.data;
@@ -190,7 +226,12 @@ export class AuthService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const data = toAuthResponse({ user, memberships, activeOrganizationId });
+    const data = toAuthResponse({
+      user,
+      memberships,
+      activeOrganizationId,
+      activeWorkspaceId: activeWorkspaceId ?? null,
+    });
     this.meCache.set(key, { at: Date.now(), data });
     return data;
   }

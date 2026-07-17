@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { CurrentAuth, RequirePermissions } from '../identity/decorators';
+import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
 import { IndustrialService } from './industrial.service';
 import type {
@@ -12,9 +13,9 @@ import type {
 export class IndustrialController {
   constructor(private readonly industrial: IndustrialService) {}
 
+  /** Server-validated tenant id — never trust client-supplied organizationId alone. */
   private requireOrg(auth: AuthContext): string {
-    if (!auth.activeOrganizationId) throw new Error('No active organization');
-    return auth.activeOrganizationId;
+    return requireOrgId(auth);
   }
 
   @Get('catalog')

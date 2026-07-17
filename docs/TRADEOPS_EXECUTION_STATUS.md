@@ -60,8 +60,14 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 |-------|--------|-------|
 | Session auth foundation | **DONE** | retained for multi-user restore |
 | Direct Founder Access | **DONE** | idempotent founder bootstrap; org-scoped |
-| RBAC + org filters | **DONE** | still enforced under founder_direct |
+| Production multi-tenancy hierarchy | **DONE** | Tenant/Workspace/Team/RBAC migration + TenantContext |
+| Trusted TenantContext resolver | **DONE** | membership-validated; never client-only org id |
+| RBAC + org filters | **DONE** | matrix + DB roles + overrides; founder_direct still scoped |
+| Tenancy APIs + workspace switch | **DONE** | `/api/v1/tenancy/*` |
+| Tenant isolation inventory | **DONE** | `TRADEOPS_TENANT_ISOLATION_INVENTORY.md` |
 | AUTH_BYPASS / access mode | **DONE** | central `access-mode.ts` |
+| Team-level ACLs on every commerce row | **PARTIAL** | models + APIs; progressive row filters |
+| Cross-tenant HTTP e2e matrix | **PARTIAL** | domain/API isolation tests exist |
 | Email verify / password reset | **DOC ONLY** | public multi-tenant launch gap |
 | Credential vault UI | **DOC ONLY** | env for Google today |
 | Segment onboarding | **DONE foundations** | redirected under founder_direct |

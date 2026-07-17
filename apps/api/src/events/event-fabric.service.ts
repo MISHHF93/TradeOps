@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { OperationLoopMode } from '@tradeops/ai-runtime';
+import { requireOrganizationId } from '@tradeops/domain';
 import { PrismaService } from '../prisma/prisma.service';
+import { opsLog } from '../observability/telemetry';
 
 function asJson(value: unknown): object {
   return value as object;
@@ -8,6 +10,7 @@ function asJson(value: unknown): object {
 
 /**
  * Live event fabric — persist webhooks/polls/internal events with honest loop mode labels.
+ * Every event MUST carry a validated organizationId (tenant isolation).
  */
 @Injectable()
 export class EventFabricService {
@@ -24,11 +27,12 @@ export class EventFabricService {
     isFixture?: boolean;
     payload: Record<string, unknown>;
   }) {
+    const organizationId = requireOrganizationId(input.organizationId);
     try {
       if (input.providerKey && input.externalEventId) {
         const existing = await this.prisma.client.commerceEvent.findFirst({
           where: {
-            organizationId: input.organizationId,
+            organizationId,
             providerKey: input.providerKey,
             externalEventId: input.externalEventId,
           },
@@ -40,7 +44,7 @@ export class EventFabricService {
 
       const event = await this.prisma.client.commerceEvent.create({
         data: {
-          organizationId: input.organizationId,
+          organizationId,
           eventType: input.eventType,
           providerKey: input.providerKey ?? null,
           externalEventId: input.externalEventId ?? null,
@@ -50,10 +54,15 @@ export class EventFabricService {
           processedAt: new Date(),
         },
       });
+      opsLog('event.ingest', {
+        organizationId,
+        eventType: input.eventType,
+        providerKey: input.providerKey ?? undefined,
+      });
       return { created: true, event };
     } catch (error) {
       this.logger.warn(
-        `Event ingest failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Event ingest failed tenant=${organizationId.slice(0, 8)}: ${error instanceof Error ? error.message : String(error)}`,
       );
       throw error;
     }
@@ -69,8 +78,9 @@ export class EventFabricService {
     loopMode?: OperationLoopMode;
     isFixture?: boolean;
   }) {
+    const organizationId = requireOrganizationId(input.organizationId);
     const ingested = await this.ingest({
-      organizationId: input.organizationId,
+      organizationId,
       eventType: `webhook.${input.providerKey}.${input.topic}`,
       providerKey: input.providerKey,
       externalEventId:
@@ -86,7 +96,7 @@ export class EventFabricService {
 
     const receipt = await this.prisma.client.webhookReceipt.create({
       data: {
-        organizationId: input.organizationId,
+        organizationId,
         providerKey: input.providerKey,
         topic: input.topic,
         signatureValid: input.signatureValid ?? null,
@@ -94,6 +104,12 @@ export class EventFabricService {
         bodyJson: asJson(input.body),
         commerceEventId: ingested.event.id,
       },
+    });
+
+    opsLog('webhook.receipt', {
+      organizationId,
+      providerKey: input.providerKey,
+      eventType: input.topic,
     });
 
     return { receipt, commerceEvent: ingested.event, created: ingested.created };

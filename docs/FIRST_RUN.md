@@ -22,8 +22,9 @@ With `TRADEOPS_ACCESS_MODE=founder_direct` (default):
 1. `npm start`
 2. Open **http://localhost:3000** → **`/terminal/workspace`** → active **persona home** (intelligence surface)
 3. No login, register, or onboarding
+4. Server still resolves a real **tenant membership + default workspace** (not unrestricted multi-org data)
 
-See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md).
+See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md) and [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md).
 
 ## Prerequisites
 

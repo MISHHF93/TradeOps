@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
+import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
 import { GoogleWeekendService } from './google-weekend.service';
 import { WorkflowService } from './workflow.service';
@@ -38,11 +39,9 @@ export class AutomationController {
       dryRun?: boolean;
     },
   ) {
-    if (!auth.activeOrganizationId) {
-      return { error: 'Active organization required' };
-    }
+    const organizationId = requireOrgId(auth);
     return this.workflows.runTemplate({
-      organizationId: auth.activeOrganizationId,
+      organizationId,
       userId: auth.userId,
       templateKey: body.templateKey ?? 'product_opportunity_discovery',
       variables: body.variables,
@@ -52,7 +51,9 @@ export class AutomationController {
 
   @Get('google/weekend/status')
   @RequirePermissions('connectors:read')
-  googleWeekendStatus(@CurrentAuth() _auth: AuthContext) {
+  googleWeekendStatus(@CurrentAuth() auth: AuthContext) {
+    // Status is platform-wide schedule info; still require auth + org for access control
+    requireOrgId(auth);
     return this.googleWeekend.getStatus();
   }
 
@@ -64,7 +65,7 @@ export class AutomationController {
   ) {
     return this.googleWeekend.prepareWeekendFeed({
       forceShadow: forceShadow === '1' || forceShadow === 'true',
-      organizationId: auth.activeOrganizationId ?? undefined,
+      organizationId: requireOrgId(auth),
       userId: auth.userId,
     });
   }

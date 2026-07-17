@@ -50,11 +50,12 @@ export function OrgSwitcher({
   return (
     <div className="org-switcher">
       <label>
-        Organization
+        Tenant
         <select
           disabled={pending}
           value={activeOrganizationId ?? ''}
           onChange={(e) => void onChange(e.target.value)}
+          aria-label="Active tenant organization"
         >
           {memberships.map((m) => (
             <option key={m.organizationId} value={m.organizationId}>

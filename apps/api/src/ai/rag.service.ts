@@ -23,6 +23,7 @@ import {
   shouldUseXai,
   xaiPublicStatus,
 } from '@tradeops/config';
+import { requireOrganizationId, tenantStoragePath } from '@tradeops/domain';
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
@@ -54,23 +55,32 @@ export class RagService {
     return dir;
   }
 
+  /** Tenant-isolated RAG index path (organizationId required). */
   private indexPath(organizationId: string): string {
-    return join(this.storageDir(), `${organizationId}.json`);
+    const tenantId = requireOrganizationId(organizationId);
+    // Prefer tenantStoragePath segment for consistency; file remains under rag/
+    return join(this.storageDir(), `${tenantStoragePath(tenantId, 'index')}.json`.replace(/\//g, '_'));
   }
 
   getIndex(organizationId: string): RagIndex | null {
-    const cached = this.memory.get(organizationId);
+    const tenantId = requireOrganizationId(organizationId);
+    // Backward-compatible: load new path first, then legacy `{uuid}.json`
+    const cached = this.memory.get(tenantId);
     if (cached) return cached;
-    const path = this.indexPath(organizationId);
+    let path = this.indexPath(tenantId);
+    if (!existsSync(path)) {
+      const legacy = join(this.storageDir(), `${tenantId}.json`);
+      if (existsSync(legacy)) path = legacy;
+    }
     if (!existsSync(path)) return null;
     try {
       const raw = readFileSync(path, 'utf8');
       const index = deserializeRagIndex(raw);
-      this.memory.set(organizationId, index);
+      this.memory.set(tenantId, index);
       return index;
     } catch (e) {
       this.logger.warn(
-        `Failed to load RAG index for ${organizationId}: ${e instanceof Error ? e.message : String(e)}`,
+        `Failed to load RAG index for ${tenantId}: ${e instanceof Error ? e.message : String(e)}`,
       );
       return null;
     }

@@ -9,15 +9,20 @@ import { FounderAccessService } from './founder-access.service';
 import { OrgsController } from './orgs.controller';
 import { OrgsService } from './orgs.service';
 import { SessionService } from './session.service';
+import { TenantContextService } from './tenant-context.service';
+import { TenancyController } from './tenancy.controller';
+import { TenancyService } from './tenancy.service';
 
 @Module({
-  controllers: [AuthController, OrgsController],
+  controllers: [AuthController, OrgsController, TenancyController],
   providers: [
     AuthService,
     AuthRateLimitService,
     OrgsService,
     SessionService,
     AuditService,
+    TenantContextService,
+    TenancyService,
     FounderAccessService,
     {
       provide: APP_GUARD,
@@ -28,6 +33,14 @@ import { SessionService } from './session.service';
       useClass: PermissionsGuard,
     },
   ],
-  exports: [SessionService, AuditService, AuthService, OrgsService, FounderAccessService],
+  exports: [
+    SessionService,
+    AuditService,
+    AuthService,
+    OrgsService,
+    FounderAccessService,
+    TenantContextService,
+    TenancyService,
+  ],
 })
 export class IdentityModule {}

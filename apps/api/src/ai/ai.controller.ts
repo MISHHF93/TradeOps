@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import type { OperationLoopMode } from '@tradeops/ai-runtime';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
+import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
 import { EventFabricService } from '../events/event-fabric.service';
 import { AiOperatorService } from './ai-operator.service';
@@ -27,7 +28,7 @@ export class AiController {
   @Get('status')
   @RequirePermissions('ai:read')
   async aiStatus(@CurrentAuth() auth: AuthContext) {
-    return this.operator.platformAiStatus(auth.activeOrganizationId!);
+    return this.operator.platformAiStatus(requireOrgId(auth));
   }
 
   @Post('xai/probe')
@@ -49,7 +50,7 @@ export class AiController {
   @RequirePermissions('ai:read')
   listRuns(@CurrentAuth() auth: AuthContext, @Query('take') take?: string) {
     return this.operator.listRuns(
-      auth.activeOrganizationId!,
+      requireOrgId(auth),
       Math.min(Number(take ?? 20) || 20, 50),
     );
   }
@@ -57,14 +58,14 @@ export class AiController {
   @Get('runs/:runId')
   @RequirePermissions('ai:read')
   getRun(@CurrentAuth() auth: AuthContext, @Param('runId') runId: string) {
-    return this.operator.getRun(auth.activeOrganizationId!, runId);
+    return this.operator.getRun(requireOrgId(auth), runId);
   }
 
   /** Live Example Framework catalog + readiness */
   @Get('live-examples')
   @RequirePermissions('ai:read')
   liveExamples(@CurrentAuth() auth: AuthContext) {
-    return this.operator.listLiveExamplesWithReadiness(auth.activeOrganizationId!);
+    return this.operator.listLiveExamplesWithReadiness(requireOrgId(auth));
   }
 
   @Post('live-examples/:exampleId/run')
@@ -75,7 +76,7 @@ export class AiController {
     @Body() body: { forceShadow?: boolean },
   ) {
     return this.operator.runLiveExample({
-      organizationId: auth.activeOrganizationId!,
+      organizationId: requireOrgId(auth),
       userId: auth.userId,
       exampleId,
       forceShadow: body?.forceShadow !== false,
@@ -104,7 +105,7 @@ export class AiController {
   ) {
     if (body.exampleId?.trim()) {
       return this.operator.runLiveExample({
-        organizationId: auth.activeOrganizationId!,
+        organizationId: requireOrgId(auth),
         userId: auth.userId,
         exampleId: body.exampleId.trim(),
         forceShadow: body.forceShadow !== false,
@@ -119,7 +120,7 @@ export class AiController {
     // Flatten so existing AI console still receives cycle fields + package.
     if (body.navigate !== false) {
       return this.operator.resolveObjective({
-        organizationId: auth.activeOrganizationId!,
+        organizationId: requireOrgId(auth),
         userId: auth.userId,
         objective,
         loopMode: body.loopMode,
@@ -168,7 +169,7 @@ export class AiController {
     }
 
     return this.operator.runObjective({
-      organizationId: auth.activeOrganizationId!,
+      organizationId: requireOrgId(auth),
       userId: auth.userId,
       objective,
       loopMode: body.loopMode,
@@ -204,7 +205,7 @@ export class AiController {
       };
     }
     return this.operator.resolveObjective({
-      organizationId: auth.activeOrganizationId!,
+      organizationId: requireOrgId(auth),
       userId: auth.userId,
       objective,
       loopMode: body.loopMode,
@@ -223,7 +224,7 @@ export class AiController {
     @Query('take') take?: string,
   ) {
     const entries = await this.operator.loadPriorKnowledge(
-      auth.activeOrganizationId!,
+      requireOrgId(auth),
       Math.min(Number(take ?? 20) || 20, 50),
     );
     return {
@@ -240,7 +241,7 @@ export class AiController {
   @Get('rag/status')
   @RequirePermissions('ai:read')
   ragStatus(@CurrentAuth() auth: AuthContext) {
-    return this.rag.status(auth.activeOrganizationId!);
+    return this.rag.status(requireOrgId(auth));
   }
 
   /**
@@ -250,14 +251,14 @@ export class AiController {
   @Post('rag/train')
   @RequirePermissions('ai:write')
   ragTrain(@CurrentAuth() auth: AuthContext) {
-    return this.rag.train(auth.activeOrganizationId!, auth.userId);
+    return this.rag.train(requireOrgId(auth), auth.userId);
   }
 
   /** Export ProductArtifact metadata to repo-root artifacts-corpus.csv */
   @Post('rag/export-csv')
   @RequirePermissions('ai:read')
   ragExportCsv(@CurrentAuth() auth: AuthContext) {
-    return this.rag.exportArtifactCsv(auth.activeOrganizationId!);
+    return this.rag.exportArtifactCsv(requireOrgId(auth));
   }
 
   /**
@@ -285,7 +286,7 @@ export class AiController {
         note: 'Ask a retrieval question against your trained org index.',
       };
     }
-    return this.rag.query(auth.activeOrganizationId!, {
+    return this.rag.query(requireOrgId(auth), {
       query,
       topK: body.topK,
       excludeFixtures: body.excludeFixtures,
@@ -301,13 +302,13 @@ export class AiController {
   @Get('prediction/status')
   @RequirePermissions('ai:read')
   predictionStatus(@CurrentAuth() auth: AuthContext) {
-    return this.prediction.status(auth.activeOrganizationId!);
+    return this.prediction.status(requireOrgId(auth));
   }
 
   @Post('prediction/train')
   @RequirePermissions('ai:write')
   predictionTrain(@CurrentAuth() auth: AuthContext) {
-    return this.prediction.train(auth.activeOrganizationId!);
+    return this.prediction.train(requireOrgId(auth));
   }
 
   @Post('prediction/run')
@@ -321,19 +322,19 @@ export class AiController {
       limit?: number;
     },
   ) {
-    return this.prediction.run(auth.activeOrganizationId!, body);
+    return this.prediction.run(requireOrgId(auth), body);
   }
 
   @Post('prediction/evaluate')
   @RequirePermissions('ai:read')
   predictionEvaluate(@CurrentAuth() auth: AuthContext) {
-    return this.prediction.evaluate(auth.activeOrganizationId!);
+    return this.prediction.evaluate(requireOrgId(auth));
   }
 
   @Post('prediction/export-csv')
   @RequirePermissions('ai:write', 'products:read')
   predictionExportCsv(@CurrentAuth() auth: AuthContext) {
-    return this.prediction.exportCsv(auth.activeOrganizationId!);
+    return this.prediction.exportCsv(requireOrgId(auth));
   }
 
   /**
@@ -342,7 +343,7 @@ export class AiController {
   @Post('intelligence/rebuild')
   @RequirePermissions('ai:write', 'products:read')
   async intelligenceRebuild(@CurrentAuth() auth: AuthContext) {
-    const orgId = auth.activeOrganizationId!;
+    const orgId = requireOrgId(auth);
     const steps: Array<Record<string, unknown>> = [];
 
     try {
@@ -419,14 +420,14 @@ export class AiController {
   @Post('harmonize')
   @RequirePermissions('products:read', 'ai:write')
   harmonize(@CurrentAuth() auth: AuthContext) {
-    return this.operator.runHarmonization(auth.activeOrganizationId!);
+    return this.operator.runHarmonization(requireOrgId(auth));
   }
 
   @Get('events')
   @RequirePermissions('analytics:read', 'ai:read')
   listEvents(@CurrentAuth() auth: AuthContext, @Query('take') take?: string) {
     return this.events.listRecent(
-      auth.activeOrganizationId!,
+      requireOrgId(auth),
       Math.min(Number(take ?? 50) || 50, 100),
     );
   }
@@ -450,7 +451,7 @@ export class AiController {
     },
   ) {
     return this.events.recordWebhook({
-      organizationId: auth.activeOrganizationId!,
+      organizationId: requireOrgId(auth),
       providerKey,
       topic: body.topic ?? 'unknown',
       body: body.payload ?? body,

@@ -49,7 +49,9 @@
 | [TRADEOPS_WORKFLOW_TEMPLATES.md](./TRADEOPS_WORKFLOW_TEMPLATES.md) | Template catalog |
 | [TRADEOPS_AI_OPERATOR.md](./TRADEOPS_AI_OPERATOR.md) | AI operator |
 | [TRADEOPS_AI_EVALUATION.md](./TRADEOPS_AI_EVALUATION.md) | Self-evaluation artifacts |
-| [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md) | Tenancy |
+| [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md) | **Production multi-tenancy** — hierarchy, TenantContext, isolation rules |
+| [TRADEOPS_TENANT_ISOLATION_INVENTORY.md](./TRADEOPS_TENANT_ISOLATION_INVENTORY.md) | Per-surface tenant isolation inventory |
+| [TRADEOPS_MULTI_TENANCY_EXECUTION.md](./TRADEOPS_MULTI_TENANCY_EXECUTION.md) | Professor-mode multi-tenancy execution checklist (DONE/PARTIAL) |
 | [TRADEOPS_SECURITY_REVIEW.md](./TRADEOPS_SECURITY_REVIEW.md) | Security gates |
 | [TRADEOPS_GOOGLE_SEARCH.md](./TRADEOPS_GOOGLE_SEARCH.md) | SEO / Search Console steps |
 | [TRADEOPS_GA4.md](./TRADEOPS_GA4.md) | Analytics policy + env-gated gtag (off by default) |

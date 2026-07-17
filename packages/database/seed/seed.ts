@@ -136,13 +136,232 @@ async function main() {
 
   const org = await prisma.organization.upsert({
     where: { slug: 'demo-commerce' },
-    create: { name: 'Demo Commerce Co', slug: 'demo-commerce' },
-    update: { name: 'Demo Commerce Co' },
+    create: {
+      name: 'Demo Commerce Co',
+      slug: 'demo-commerce',
+      organizationType: 'retailer',
+      commerceMode: 'hybrid',
+      industry: 'general_merchandise',
+      defaultCurrency: 'USD',
+      tenantStatus: 'active',
+      subscriptionStatus: 'active',
+      subscriptionPlan: 'evaluation',
+      planTier: 'evaluation',
+      onboardingStatus: 'complete',
+      onboardingComplete: true,
+      featureFlags: { multi_workspace: true, industrial: true },
+    },
+    update: {
+      name: 'Demo Commerce Co',
+      commerceMode: 'hybrid',
+      tenantStatus: 'active',
+      onboardingComplete: true,
+      featureFlags: { multi_workspace: true, industrial: true },
+    },
   });
 
-  await prisma.membership.upsert({
+  const membership = await prisma.membership.upsert({
     where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
-    create: { organizationId: org.id, userId: user.id, role: 'owner' },
+    create: {
+      organizationId: org.id,
+      userId: user.id,
+      role: 'owner',
+      status: 'active',
+      workspacePersona: 'founder',
+    },
+    update: { role: 'owner', status: 'active' },
+  });
+
+  // Permission catalog (idempotent by key)
+  const permissionKeys: Array<{ key: string; name: string; category: string }> = [
+    { key: 'org:read', name: 'Read organization', category: 'org' },
+    { key: 'org:write', name: 'Write organization', category: 'org' },
+    { key: 'members:read', name: 'Read members', category: 'members' },
+    { key: 'members:write', name: 'Write members', category: 'members' },
+    { key: 'connectors:read', name: 'Read connectors', category: 'connectors' },
+    { key: 'connectors:write', name: 'Write connectors', category: 'connectors' },
+    { key: 'products:read', name: 'Read products', category: 'products' },
+    { key: 'products:write', name: 'Write products', category: 'products' },
+    { key: 'orders:read', name: 'Read orders', category: 'orders' },
+    { key: 'orders:write', name: 'Write orders', category: 'orders' },
+    { key: 'inventory:read', name: 'Read inventory', category: 'inventory' },
+    { key: 'inventory:write', name: 'Write inventory', category: 'inventory' },
+    { key: 'analytics:read', name: 'Read analytics', category: 'analytics' },
+    { key: 'automation:read', name: 'Read automation', category: 'automation' },
+    { key: 'automation:write', name: 'Write automation', category: 'automation' },
+    { key: 'ai:read', name: 'Read AI', category: 'ai' },
+    { key: 'ai:write', name: 'Write AI', category: 'ai' },
+    { key: 'settings:read', name: 'Read settings', category: 'settings' },
+    { key: 'settings:write', name: 'Write settings', category: 'settings' },
+    { key: 'audit:read', name: 'Read audit', category: 'audit' },
+    { key: 'developer:read', name: 'Read developer', category: 'developer' },
+    { key: 'developer:write', name: 'Write developer', category: 'developer' },
+  ];
+  for (const p of permissionKeys) {
+    await prisma.permission.upsert({
+      where: { key: p.key },
+      create: { key: p.key, name: p.name, category: p.category },
+      update: { name: p.name, category: p.category },
+    });
+  }
+
+  // System role templates (platform-wide, organizationId null) — membership-scoped, never on User
+  const systemRoleDefs: Array<{
+    key: string;
+    name: string;
+    description: string;
+    permissions: string[];
+  }> = [
+    {
+      key: 'owner',
+      name: 'Owner',
+      description: 'Full tenant owner',
+      permissions: permissionKeys.map((p) => p.key),
+    },
+    {
+      key: 'admin',
+      name: 'Admin',
+      description: 'Tenant administrator',
+      permissions: permissionKeys.map((p) => p.key),
+    },
+    {
+      key: 'manager',
+      name: 'Manager',
+      description: 'Commerce operations manager',
+      permissions: [
+        'org:read',
+        'members:read',
+        'connectors:read',
+        'products:read',
+        'products:write',
+        'orders:read',
+        'orders:write',
+        'inventory:read',
+        'inventory:write',
+        'analytics:read',
+        'automation:read',
+        'automation:write',
+        'ai:read',
+        'settings:read',
+      ],
+    },
+    {
+      key: 'analyst',
+      name: 'Analyst',
+      description: 'Read-heavy analytics',
+      permissions: [
+        'org:read',
+        'products:read',
+        'orders:read',
+        'inventory:read',
+        'analytics:read',
+        'ai:read',
+        'connectors:read',
+      ],
+    },
+    {
+      key: 'viewer',
+      name: 'Viewer',
+      description: 'Read-only',
+      permissions: [
+        'org:read',
+        'products:read',
+        'orders:read',
+        'inventory:read',
+        'analytics:read',
+        'connectors:read',
+      ],
+    },
+    {
+      key: 'developer',
+      name: 'Developer',
+      description: 'Connector and developer tooling',
+      permissions: [
+        'org:read',
+        'connectors:read',
+        'developer:read',
+        'developer:write',
+        'audit:read',
+        'settings:read',
+      ],
+    },
+  ];
+
+  const allPerms = await prisma.permission.findMany();
+  const permByKey = new Map(allPerms.map((p) => [p.key, p]));
+  let ownerRoleId: string | null = null;
+
+  for (const def of systemRoleDefs) {
+    let role = await prisma.role.findFirst({
+      where: { key: def.key, isSystem: true, organizationId: null },
+    });
+    if (!role) {
+      role = await prisma.role.create({
+        data: {
+          key: def.key,
+          name: def.name,
+          description: def.description,
+          isSystem: true,
+          organizationId: null,
+        },
+      });
+    } else {
+      role = await prisma.role.update({
+        where: { id: role.id },
+        data: { name: def.name, description: def.description },
+      });
+    }
+    if (def.key === 'owner') ownerRoleId = role.id;
+
+    for (const key of def.permissions) {
+      const perm = permByKey.get(key);
+      if (!perm) continue;
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionId: { roleId: role.id, permissionId: perm.id },
+        },
+        create: { roleId: role.id, permissionId: perm.id },
+        update: {},
+      });
+    }
+  }
+
+  if (ownerRoleId) {
+    await prisma.membershipRole.upsert({
+      where: {
+        membershipId_roleId: { membershipId: membership.id, roleId: ownerRoleId },
+      },
+      create: { membershipId: membership.id, roleId: ownerRoleId },
+      update: {},
+    });
+  }
+  // Default workspace
+  let workspace = await prisma.workspace.findFirst({
+    where: { organizationId: org.id, isDefault: true },
+  });
+  if (!workspace) {
+    workspace = await prisma.workspace.create({
+      data: {
+        organizationId: org.id,
+        name: 'Default',
+        slug: 'default',
+        kind: 'default',
+        isDefault: true,
+        status: 'active',
+      },
+    });
+  }
+  await prisma.workspaceMembership.upsert({
+    where: {
+      workspaceId_userId: { workspaceId: workspace.id, userId: user.id },
+    },
+    create: {
+      workspaceId: workspace.id,
+      membershipId: membership.id,
+      userId: user.id,
+      organizationId: org.id,
+      role: 'owner',
+    },
     update: { role: 'owner' },
   });
 

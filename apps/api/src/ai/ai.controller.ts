@@ -9,7 +9,7 @@ import {
   listSchemasPublic,
   aiProviderPublicStatus,
 } from '@tradeops/ai-runtime';
-import { aiPlatformPublicStatus } from '@tradeops/config';
+import { aiPlatformPublicStatus, environmentManifestPublicStatus } from '@tradeops/config';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
 import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
@@ -169,6 +169,7 @@ export class AiController {
       health,
       prompts: listPromptsPublic(),
       schemas: listSchemasPublic(),
+      environment: environmentManifestPublicStatus(),
     };
   }
 

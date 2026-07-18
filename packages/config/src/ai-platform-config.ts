@@ -185,7 +185,12 @@ export function getAiPlatformConfig(
       (env.COHERE_CHAT_MODEL ?? env.COHERE_MODEL ?? 'command-a-03-2025').trim() ||
       'command-a-03-2025',
     cohereConfigured: Boolean(cohereApiKey),
-    cohereRetrievalEnabled: truthy(env.COHERE_RETRIEVAL_ENABLED, true) && Boolean(cohereApiKey),
+    // Prefer COHERE_RETRIEVAL_ENABLED; fall back to RETRIEVAL_ENABLED if set
+    cohereRetrievalEnabled:
+      truthy(
+        env.COHERE_RETRIEVAL_ENABLED ?? env.RETRIEVAL_ENABLED,
+        true,
+      ) && Boolean(cohereApiKey),
 
     responseMode: (env.AI_RESPONSE_MODE ?? 'json_schema').toLowerCase() as AiPlatformConfig['responseMode'],
     textOutputEnabled: truthy(env.AI_TEXT_OUTPUT_ENABLED, true),

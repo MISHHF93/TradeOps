@@ -57,6 +57,17 @@ export {
   type AiProviderId,
   type SearchProviderId,
 } from './ai-platform-config';
+
+export {
+  PLATFORM_ENV_MANIFEST,
+  TENANT_SCOPED_CREDENTIAL_NAMES,
+  listManifestSecrets,
+  listRequiredProductionEnv,
+  environmentManifestPublicStatus,
+  type EnvVarManifest,
+  type EnvScope,
+  type EnvStorage,
+} from './environment-manifest';
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.

@@ -1,0 +1,526 @@
+{
+  "count": 67,
+  "variables": [
+    {
+      "name": "AI_MAX_TOOL_ROUNDS",
+      "consumers": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "API_HOST",
+      "consumers": [
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "API_PORT",
+      "consumers": [
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "API_PUBLIC_URL",
+      "consumers": [
+        "apps/web/next.config.ts",
+        "apps/web/src/lib/api.ts",
+        "scripts/demo-commerce-loop.mjs",
+        "scripts/e2e-smoke.mjs",
+        "scripts/export-artifact-corpus.mjs",
+        "scripts/google-weekend-prepare.mjs",
+        "scripts/rebuild-intelligence.mjs",
+        "scripts/start.mjs",
+        "scripts/tenant-isolation-smoke.mjs"
+      ],
+      "consumerCount": 9
+    },
+    {
+      "name": "API_TIMEOUT_MS",
+      "consumers": [
+        "apps/web/src/lib/api.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "APPDATA",
+      "consumers": [
+        "scripts/prisma-dev-db.mjs",
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "ARTIFACT_STORAGE_ROOT",
+      "consumers": [
+        "apps/api/src/commerce/artifact-storage.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "AUTH_BYPASS",
+      "consumers": [
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "C",
+      "consumers": [
+        "scripts/prisma-dev-db.mjs",
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "CAPITAL_NETWORK_ENABLED",
+      "consumers": [
+        "packages/config/src/financial-gates.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "CAPITAL_SANDBOX_ENABLED",
+      "consumers": [
+        "packages/config/src/financial-gates.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_API_KEY",
+      "consumers": [
+        "packages/ai-runtime/src/cohere-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_BASE_URL",
+      "consumers": [
+        "packages/ai-runtime/src/cohere-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_CHAT_MODEL",
+      "consumers": [
+        "packages/ai-runtime/src/cohere-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_EMBED_MODEL",
+      "consumers": [
+        "packages/ai-runtime/src/cohere-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_MAX_TOKENS",
+      "consumers": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "COHERE_RERANK_MODEL",
+      "consumers": [
+        "packages/ai-runtime/src/cohere-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "DATABASE_URL",
+      "consumers": [
+        "packages/database/scripts/pg-ping.cjs",
+        "scripts/bootstrap-local.mjs",
+        "scripts/pg-ping.mjs",
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 4
+    },
+    {
+      "name": "EMBEDDED_PG_PORT",
+      "consumers": [
+        "scripts/local-db.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "GOOGLE_MERCHANT_ACCESS_TOKEN",
+      "consumers": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/automation/google-weekend.service.ts",
+        "apps/api/src/public/public-tools.controller.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "consumerCount": 4
+    },
+    {
+      "name": "GOOGLE_MERCHANT_DATA_SOURCE_ID",
+      "consumers": [
+        "apps/api/src/automation/google-weekend.service.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "GOOGLE_MERCHANT_ID",
+      "consumers": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/automation/google-weekend.service.ts",
+        "apps/api/src/public/public-tools.controller.ts",
+        "apps/worker/src/main.ts"
+      ],
+      "consumerCount": 4
+    },
+    {
+      "name": "GROK_API_KEY",
+      "consumers": [
+        "packages/ai-runtime/src/rag-engine.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "NEXT_PUBLIC_API_PUBLIC_URL",
+      "consumers": [
+        "apps/web/next.config.ts",
+        "apps/web/src/lib/api.ts",
+        "scripts/apply-local-secure-env.mjs",
+        "scripts/start.mjs",
+        "scripts/write-env-local.mjs"
+      ],
+      "consumerCount": 5
+    },
+    {
+      "name": "NEXT_PUBLIC_API_TIMEOUT_MS",
+      "consumers": [
+        "apps/web/src/lib/api.ts",
+        "scripts/apply-local-secure-env.mjs",
+        "scripts/write-env-local.mjs"
+      ],
+      "consumerCount": 3
+    },
+    {
+      "name": "NEXT_PUBLIC_GA4_",
+      "consumers": [
+        "apps/api/src/public/capabilities.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "NEXT_PUBLIC_GA4_ENABLED",
+      "consumers": [
+        "apps/api/src/public/capabilities.ts",
+        "apps/web/src/components/feedback/ga4.tsx"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "NEXT_PUBLIC_GA4_MEASUREMENT_ID",
+      "consumers": [
+        "apps/web/src/components/feedback/ga4.tsx",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ],
+      "consumerCount": 3
+    },
+    {
+      "name": "NEXT_PUBLIC_SITE_URL",
+      "consumers": [
+        "apps/web/src/app/robots.ts",
+        "apps/web/src/app/sitemap.ts",
+        "apps/web/src/components/feedback/founder-access-banner.tsx",
+        "apps/web/src/lib/seo.ts"
+      ],
+      "consumerCount": 4
+    },
+    {
+      "name": "NEXT_PUBLIC_TRADEOPS_ACCESS_MODE",
+      "consumers": [
+        "apps/web/src/lib/access-mode.ts",
+        "scripts/apply-local-secure-env.mjs"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "NEXT_PUBLIC_TRADEOPS_SIMULATION_MODE",
+      "consumers": [
+        "apps/web/src/app/terminal/layout.tsx",
+        "packages/commerce-engine/src/production-isolation.ts"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "NODE_ENV",
+      "consumers": [
+        "apps/api/src/capital/network-capital.service.ts",
+        "apps/web/src/components/forms/auth-forms.tsx",
+        "apps/web/src/components/layout/terminal-shell.tsx",
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/database/src/client.ts"
+      ],
+      "consumerCount": 6
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "consumers": [
+        "packages/ai-runtime/src/openai-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "OPENAI_BASE_URL",
+      "consumers": [
+        "packages/ai-runtime/src/openai-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "OPENAI_CHAT_MODEL",
+      "consumers": [
+        "packages/ai-runtime/src/openai-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "OPENAI_MODEL",
+      "consumers": [
+        "packages/ai-runtime/src/openai-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "consumers": [
+        "apps/api/src/observability/telemetry.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "PRISMA_DEV_DB_PORT",
+      "consumers": [
+        "scripts/bootstrap-local.mjs",
+        "scripts/prisma-dev-db.mjs",
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 3
+    },
+    {
+      "name": "PRISMA_DEV_NAME",
+      "consumers": [
+        "scripts/prisma-dev-db.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "PRIVATE_AGREEMENT_LEDGER_ENABLED",
+      "consumers": [
+        "packages/config/src/financial-gates.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "SHOPIFY_ACCESS_TOKEN",
+      "consumers": [
+        "packages/connectors/live-http/src/index.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "SHOPIFY_SHOP_DOMAIN",
+      "consumers": [
+        "packages/connectors/live-http/src/index.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "STRIPE_SECRET_KEY",
+      "consumers": [
+        "apps/api/src/billing/billing.service.ts",
+        "apps/api/src/capital/marketplace-accounts.service.ts"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "STRIPE_WEBHOOK_SECRET",
+      "consumers": [
+        "apps/api/src/billing/billing.service.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TAVILY_API_KEY",
+      "consumers": [
+        "packages/ai-runtime/src/tavily-client.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_ACCESS_MODE",
+      "consumers": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/billing/billing.service.ts",
+        "apps/api/src/commerce/commerce.controller.ts",
+        "apps/api/src/commerce/workspace.service.ts",
+        "apps/web/src/lib/access-mode.ts",
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 6
+    },
+    {
+      "name": "TRADEOPS_AI_MODE",
+      "consumers": [
+        "packages/ai-runtime/src/rag-engine.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_ALLOW_AUTHORIZED_SOURCING",
+      "consumers": [
+        "apps/api/src/billing/commerce-payment-readiness.test.ts",
+        "apps/api/src/billing/commerce-payment.service.ts"
+      ],
+      "consumerCount": 2
+    },
+    {
+      "name": "TRADEOPS_CAPITAL_MODE",
+      "consumers": [
+        "packages/config/src/capital-mode.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_CONNECTOR_PROBE_MS",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_GUARANTEED_RETURNS_ENABLED",
+      "consumers": [
+        "packages/config/src/capital-mode.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_INTERNAL_CUSTODY_ENABLED",
+      "consumers": [
+        "packages/config/src/capital-mode.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_LIVE_SYNC_DISABLED",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_LIVE_SYNC_MS",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_LIVE_SYNC_PROVIDER_COOLDOWN_MS",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_OPS_SYNC_DISABLED",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_POOLED_INVESTMENT_ENABLED",
+      "consumers": [
+        "packages/config/src/capital-mode.test.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_PUBLIC_WARNING",
+      "consumers": [
+        "apps/web/src/components/feedback/founder-access-banner.tsx"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_SECURITY_BOOT",
+      "consumers": [
+        "packages/config/src/security-boot.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_SIMULATION_MODE",
+      "consumers": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/commerce/workspace.service.ts",
+        "apps/api/src/saas/saas.service.ts",
+        "apps/web/src/app/terminal/layout.tsx"
+      ],
+      "consumerCount": 4
+    },
+    {
+      "name": "TRADEOPS_STORAGE_DIR",
+      "consumers": [
+        "apps/api/src/ai/rag.service.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "TRADEOPS_WEBHOOK_DRAIN_MS",
+      "consumers": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "WEB_HOST",
+      "consumers": [
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "WEB_ORIGIN",
+      "consumers": [
+        "apps/api/src/billing/billing.service.ts",
+        "apps/web/src/components/feedback/founder-access-banner.tsx",
+        "scripts/e2e-smoke.mjs"
+      ],
+      "consumerCount": 3
+    },
+    {
+      "name": "WEB_PORT",
+      "consumers": [
+        "scripts/start.mjs"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "WEB_SEARCH_ENABLED",
+      "consumers": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts"
+      ],
+      "consumerCount": 1
+    },
+    {
+      "name": "XAI_API_KEY",
+      "consumers": [
+        "packages/ai-runtime/src/rag-engine.test.ts"
+      ],
+      "consumerCount": 1
+    }
+  ]
+}

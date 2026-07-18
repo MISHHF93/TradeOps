@@ -22,6 +22,8 @@ const PATTERNS = [
   { name: 'aws_key', re: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: 'private_key', re: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
   { name: 'bearer_long', re: /\bBearer\s+[A-Za-z0-9\-._~+/]{40,}=*/i },
+  // Known chat-compromised Cohere key prefix (rotate; must not reappear in source)
+  { name: 'compromised_cohere_prefix', re: /P2zi4O2NIEmz/ },
 ];
 
 const ALLOW_FILES = [

@@ -16,9 +16,26 @@ export class HealthService {
   ) {}
 
   async getHealth(): Promise<HealthResponse> {
+    // Bound total health work so a stuck Redis/DB never hangs load balancers / UI probes.
+    const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((resolve) => {
+          setTimeout(() => resolve(fallback), ms);
+        }),
+      ]);
+
     const [database, redis] = await Promise.all([
-      checkDatabaseHealth(this.prisma.client),
-      this.redis.checkHealth(),
+      withTimeout(
+        checkDatabaseHealth(this.prisma.client),
+        3000,
+        { status: 'down' as const, latencyMs: 3000, message: 'Database health timeout' },
+      ),
+      withTimeout(
+        this.redis.checkHealth(),
+        2000,
+        { status: 'down' as const, latencyMs: 2000, message: 'Redis health timeout' },
+      ),
     ]);
 
     const dependencies: DependencyHealth[] = [

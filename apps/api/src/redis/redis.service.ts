@@ -87,9 +87,17 @@ export class RedisService implements OnModuleDestroy {
 
   async checkHealth(): Promise<RedisHealthResult> {
     const started = performance.now();
+    /** Local first-run often has no Redis — never hang the health endpoint. */
+    const HEALTH_TIMEOUT_MS = 1500;
     try {
-      await this.connect();
-      const pong = await this.client.ping();
+      const ping = (async () => {
+        await this.connect();
+        return this.client.ping();
+      })();
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Redis health timeout')), HEALTH_TIMEOUT_MS);
+      });
+      const pong = await Promise.race([ping, timeout]);
       if (pong !== 'PONG') {
         return {
           status: 'down',

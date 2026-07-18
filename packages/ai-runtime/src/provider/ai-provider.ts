@@ -3,9 +3,17 @@
  * Only adapter implementations may import vendor SDKs.
  */
 
+/** Prior turns for multi-turn chat (roles limited to API-safe values). */
+export type ChatHistoryMessage = {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+};
+
 export type GenerateTextInput = {
   system: string;
   user: string;
+  /** Optional conversation history before the current user turn */
+  history?: ChatHistoryMessage[];
   temperature?: number;
   maxTokens?: number;
   model?: string;
@@ -24,6 +32,7 @@ export type GenerateTextResult = {
 export type StructuredGenerationInput = {
   system: string;
   user: string;
+  history?: ChatHistoryMessage[];
   /** JSON Schema for structured output */
   schema: Record<string, unknown>;
   schemaName: string;

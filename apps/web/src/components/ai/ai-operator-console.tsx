@@ -131,7 +131,16 @@ type OperatorResponse = {
   auditor?: { notes?: string; issues?: string[]; calculationOk?: boolean; policyOk?: boolean };
   recommendations?: Rec[];
   resultsPath?: string;
-  honesty?: { note?: string; fixtureProductsPresent?: boolean; shadowByDefault?: boolean };
+  honesty?: {
+    note?: string;
+    fixtureProductsPresent?: boolean;
+    shadowByDefault?: boolean;
+    cohereNarration?: boolean;
+    liveCredentialsPresent?: boolean;
+  };
+  aiNarrative?: string | null;
+  aiNarrativeProvider?: string | null;
+  aiNarrativeModel?: string | null;
   message?: string;
   toolTrace?: Array<{ tool?: string; ok?: boolean }>;
   executionPackage?: ExecutionPackage;
@@ -350,7 +359,9 @@ export function AiOperatorConsole({
         <div style={{ flex: 1, minWidth: 0 }}>
           <strong>AI Execution Navigator</strong>
           <p className="meta" style={{ margin: 0 }}>
-            Objective → evidence → plan → verification · not a chatbot
+            Objective → ranked catalog evidence → optional <strong>live Cohere narration</strong>.
+            Seeded TEST_FIXTURE products (USB strip, water bottle, yoga mat…) will reappear until
+            live connectors sync — that is data class, not offline AI.
           </p>
         </div>
         <span

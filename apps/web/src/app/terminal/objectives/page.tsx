@@ -9,6 +9,7 @@ export default async function ObjectivesPage() {
     Array<{
       id: string;
       objective: string;
+      description?: string | null;
       status: string;
       decision: string | null;
       decisionNote: string | null;
@@ -24,9 +25,8 @@ export default async function ObjectivesPage() {
         <div>
           <h1 className="workspace-title-active">Objectives</h1>
           <p className="lede">
-            Durable Execution Navigator records (OperatorRun). Each objective resolves to a
-            structured package: evidence, ranked options, plan, risks, and verification — not a
-            chat transcript.
+            Durable Execution Navigator records. Each row is a user goal and outcome summary —
+            system prompts stay server-side and never appear as the objective text.
           </p>
         </div>
         <div className="terminal-toolbar">
@@ -49,6 +49,7 @@ export default async function ObjectivesPage() {
               <th>Status</th>
               <th>Decision</th>
               <th>Objective</th>
+              <th>Description</th>
               <th>Recs</th>
               <th>Open</th>
             </tr>
@@ -56,7 +57,7 @@ export default async function ObjectivesPage() {
           <tbody>
             {(runs.ok ? runs.data : []).length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty">
+                <td colSpan={7} className="empty">
                   No objectives yet. Run a live example or open the AI panel.
                 </td>
               </tr>
@@ -68,9 +69,13 @@ export default async function ObjectivesPage() {
                     <strong className="text-accent">{r.status}</strong>
                   </td>
                   <td>{r.decision ?? '—'}</td>
-                  <td style={{ whiteSpace: 'normal', maxWidth: 420 }}>
-                    {r.objective.slice(0, 160)}
-                    {r.objective.length > 160 ? '…' : ''}
+                  <td style={{ whiteSpace: 'normal', maxWidth: 280 }}>
+                    <strong>{(r.objective || '—').slice(0, 120)}</strong>
+                    {(r.objective?.length ?? 0) > 120 ? '…' : ''}
+                  </td>
+                  <td style={{ whiteSpace: 'normal', maxWidth: 280 }} className="meta">
+                    {(r.description ?? r.decisionNote ?? '—').slice(0, 140)}
+                    {(r.description ?? r.decisionNote ?? '').length > 140 ? '…' : ''}
                   </td>
                   <td>{r.recommendations?.length ?? 0}</td>
                   <td>

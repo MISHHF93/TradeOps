@@ -42,7 +42,9 @@ describe('Capability executor', () => {
       },
     });
     assert.equal(r.ok, true);
-    assert.equal(r.evidence[0]?.sourceType, 'connector');
+    // Tenant snapshot is first-party DB/context, not a live connector REST call
+    assert.equal(r.evidence[0]?.sourceType, 'database');
+    assert.equal(r.evidence[0]?.provider, 'tenant_operational_snapshot');
   });
 
   it('queues write capabilities for approval', async () => {

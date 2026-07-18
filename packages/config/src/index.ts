@@ -61,13 +61,23 @@ export {
 export {
   PLATFORM_ENV_MANIFEST,
   TENANT_SCOPED_CREDENTIAL_NAMES,
+  ENV_ALIASES,
   listManifestSecrets,
   listRequiredProductionEnv,
+  resolveEnvAlias,
   environmentManifestPublicStatus,
   type EnvVarManifest,
-  type EnvScope,
   type EnvStorage,
 } from './environment-manifest';
+
+export {
+  validateEnvironmentConfig,
+  assertProductionEnv,
+  envValidationPublicStatus,
+  type EnvValidationIssue,
+  type EnvValidationResult,
+} from './env-validation';
+
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.
@@ -211,6 +221,7 @@ export { FOUNDER_DIRECT_DEFAULTS as FOUNDER_DEFAULTS };
 export {
   type FinancialGateKey,
   type FinancialGateState,
+  FINANCIAL_GATE_ENV_NAMES,
   isFinancialGateEnabled,
   getFinancialGate,
   listFinancialGates,

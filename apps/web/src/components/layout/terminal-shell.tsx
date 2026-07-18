@@ -25,6 +25,7 @@ export function TerminalShell({
   tenantLabel,
   workspaceLabel,
   commerceMode,
+  navSource,
 }: {
   children: ReactNode;
   founderDirect: boolean;
@@ -41,6 +42,7 @@ export function TerminalShell({
   tenantLabel?: string | null;
   workspaceLabel?: string | null;
   commerceMode?: string | null;
+  navSource?: 'workspace' | 'fallback';
 }) {
   const [aiOpen, setAiOpen] = useState(true);
 
@@ -67,6 +69,7 @@ export function TerminalShell({
           tenantLabel={tenantLabel}
           workspaceLabel={workspaceLabel}
           commerceMode={commerceMode}
+          navSource={navSource}
         />
         <main className="terminal-main" id="main-workspace">
           {children}

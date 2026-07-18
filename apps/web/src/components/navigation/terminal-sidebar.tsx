@@ -3,22 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { buildClientFallbackNav } from '../../lib/nav-catalog';
 import type { ResolvedWorkspace, WorkspaceNavGroup } from '../../lib/workspace';
-import { ThemeToggle } from '../layout/theme-toggle';
-
-/** Fallback when workspace API unavailable — minimal spine only */
-const FALLBACK_NAV: WorkspaceNavGroup[] = [
-  {
-    id: 'focus',
-    label: 'Focus',
-    items: [
-      { id: 'home', href: '/terminal/workspace', label: 'Workspace', kind: 'procedure_hub' },
-      { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'resource' },
-      { id: 'tasks', href: '/terminal/tasks', label: 'Tasks', kind: 'resource' },
-      { id: 'ai', href: '/terminal/ai', label: 'AI', kind: 'resource' },
-    ],
-  },
-];
 
 export function TerminalSidebar({
   founderDirect: _founderDirect,
@@ -33,6 +19,7 @@ export function TerminalSidebar({
   tenantLabel,
   workspaceLabel,
   commerceMode,
+  navSource,
 }: {
   founderDirect: boolean;
   orgName: string;
@@ -47,13 +34,18 @@ export function TerminalSidebar({
   tenantLabel?: string | null;
   workspaceLabel?: string | null;
   commerceMode?: string | null;
+  /** When workspace API failed — show honesty banner */
+  navSource?: 'workspace' | 'fallback';
 }) {
   const pathname = usePathname();
-  const groups = useMemo(
-    () => (workspace?.nav?.length ? workspace.nav : FALLBACK_NAV),
-    [workspace],
-  );
-  // Collapse "More" by default — reduce cognitive load
+  const groups = useMemo((): WorkspaceNavGroup[] => {
+    if (workspace?.nav?.length) return workspace.nav;
+    return buildClientFallbackNav();
+  }, [workspace]);
+
+  const usingFallback = navSource === 'fallback' || !workspace?.nav?.length;
+
+  // Only "More" collapsed by default — Focus / Operate / Platform stay open
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ more: true });
 
   function toggle(id: string) {
@@ -63,15 +55,12 @@ export function TerminalSidebar({
   return (
     <aside className="terminal-nav" aria-label="Persona workspace navigation">
       <div className="terminal-brand">
-        <strong>TradeOps</strong>
-        <span>{workspace?.personaLabel ?? 'Commerce OS'}</span>
+        <strong>{workspace?.personaLabel ?? segment ?? 'Commerce OS'}</strong>
+        <span>{workspace?.mission ?? 'One User · One Workspace · One Objective · One AI'}</span>
       </div>
 
-      <p className="meta" style={{ margin: '0 0 6px', fontSize: '0.68rem', lineHeight: 1.3 }}>
-        {workspace?.operatingPrinciple ?? 'One User · One Workspace · One Objective · One AI'}
-      </p>
       <p className="meta" style={{ margin: '0 0 4px', fontSize: '0.7rem' }}>
-        {workspace?.personaLabel ?? segment ?? '—'} · {planTier ?? '—'} · {role}
+        {planTier ?? '—'} · {role}
       </p>
       {(tenantLabel || workspaceLabel || commerceMode) && (
         <p
@@ -84,6 +73,12 @@ export function TerminalSidebar({
           {commerceMode ? ` · ${commerceMode}` : ''}
         </p>
       )}
+
+      {usingFallback ? (
+        <p className="meta" style={{ margin: '0 0 8px', fontSize: '0.68rem', opacity: 0.95 }}>
+          Catalog nav{workspace ? '' : ' · workspace API offline'}
+        </p>
+      ) : null}
 
       {workspace?.surface?.healthLabel || workspace?.recommendedNextAction ? (
         <div
@@ -129,7 +124,9 @@ export function TerminalSidebar({
 
       <nav className="nav-groups">
         {groups.map((g) => {
-          const isCollapsed = collapsed[g.id] ?? g.id === 'more';
+          // Focus / Operate / Platform expanded unless user collapsed; More starts collapsed
+          const defaultCollapsed = g.id === 'more';
+          const isCollapsed = collapsed[g.id] ?? defaultCollapsed;
           return (
             <div key={g.id} className="nav-group">
               <button
@@ -144,11 +141,12 @@ export function TerminalSidebar({
               {!isCollapsed ? (
                 <ul className="nav-group-items">
                   {g.items.map((item) => {
+                    const pathOnly = item.href.split('?')[0] ?? item.href;
                     const active =
-                      pathname === item.href ||
-                      (item.href !== '/terminal' &&
-                        item.href !== '/terminal/workspace' &&
-                        pathname?.startsWith(item.href));
+                      pathname === pathOnly ||
+                      (pathOnly !== '/terminal' &&
+                        pathOnly !== '/terminal/workspace' &&
+                        Boolean(pathname?.startsWith(pathOnly)));
                     return (
                       <li key={item.id}>
                         <Link
@@ -181,9 +179,8 @@ export function TerminalSidebar({
 
       <div className="terminal-nav-footer">
         <p className="meta" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-          Need something else? Ask AI or open More.
+          Jump anywhere with ⌘K · expand More for persona extras
         </p>
-        <ThemeToggle />
         <p className="meta" style={{ fontSize: '0.75rem', margin: '8px 0 0' }}>
           {orgName}
         </p>

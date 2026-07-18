@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 
-/** Legacy control tower — Terminal is the process control center. */
+/**
+ * Legacy control tower → Ops Command Center.
+ * Canonical COS visibility surface (connectors + AI + events + queues).
+ */
 export default function LegacyControlTowerRedirect() {
-  redirect('/terminal/cockpit');
+  redirect('/terminal/ops');
 }

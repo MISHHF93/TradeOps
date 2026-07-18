@@ -2,24 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { getApiBaseUrl } from '../../lib/api';
-
-type GatewayEvidence = {
-  sourceType: string;
-  provider: string;
-  title?: string;
-  url?: string;
-  retrievedAt: string;
-  freshness: string;
-  snippet?: string;
-};
-
-type GatewayAction = {
-  actionId: string;
-  capability: string;
-  status: string;
-  requiresApproval: boolean;
-  parameters: Record<string, unknown>;
-};
+import type { TradeOpsAiChatResponse } from '../../lib/ai-response-contract';
+import { aiChatDisplayText, isAiBlocked } from '../../lib/ai-response-contract';
 
 type GatewayRecommendation = {
   title: string;
@@ -29,47 +13,6 @@ type GatewayRecommendation = {
   estimatedDemand?: string;
   estimatedMarginPercent?: number;
   risk?: string;
-};
-
-type TradeOpsAIResponse = {
-  requestId: string;
-  tenantId: string;
-  conversationId: string;
-  output: {
-    text: string;
-    /** Legacy gateway shape */
-    json?: {
-      objective?: string;
-      recommendations?: GatewayRecommendation[];
-      confidence?: number;
-      sources?: Array<{ provider: string; sourceType: string; url?: string }>;
-      informationNeed?: string;
-      capabilitiesInvoked?: string[];
-      error?: string;
-    };
-    /** Canonical Cohere runtime shape */
-    artifactType?: string;
-    artifact?: {
-      recommendations?: GatewayRecommendation[];
-      [key: string]: unknown;
-    };
-  };
-  status: string;
-  confidence: number;
-  evidence: GatewayEvidence[];
-  actions: GatewayAction[];
-  warnings: string[];
-  generatedAt: string;
-  intent?: { informationMode?: string; category?: string };
-  meta?: {
-    schemaVersion?: string;
-    aiProvider?: string;
-    provider?: string;
-    model?: string;
-    informationNeed?: string;
-    searchUsed?: boolean;
-    toolsInvoked?: string[];
-  };
 };
 
 type Catalog = {
@@ -91,17 +34,40 @@ type Catalog = {
   note?: string;
 };
 
+/** Presets labeled by what they need so blocked states are expected, not “random fixed answers”. */
 const PRESETS = [
-  'Find high-demand BMW M240i performance parts and identify which ones we could sell profitably.',
-  'Why did our revenue decrease this week?',
-  'What is social sentiment and trending talk on X about aftermarket brake kits?',
-  'Compare supplier options for aluminum charge pipes (public research only).',
+  {
+    label: 'Ops · inventory risks (tenant catalog)',
+    text: 'What are my top inventory risks this week based on our product catalog?',
+  },
+  {
+    label: 'Ops · open cases (tenant data)',
+    text: 'List open product cases that need attention and name the blockers.',
+  },
+  {
+    label: 'Knowledge · operator loop (no tools)',
+    text: 'Explain what the TradeOps operator loop does in one short paragraph.',
+  },
+  {
+    label: 'Research · needs web search keys',
+    text: 'Search the web for current US tariff news on apparel imports.',
+  },
 ];
 
 /**
  * Unified AI Gateway console — one AI, text + validated JSON envelope.
  * Frontend never chooses Tavily vs Shopify vs Stripe; the gateway does.
  */
+type ThreadTurn = {
+  role: 'user' | 'assistant';
+  content: string;
+  status?: string;
+  dataMode?: string;
+  provider?: string | null;
+  model?: string | null;
+  requestId?: string;
+};
+
 export function AiGatewayConsole({
   initialObjective = '',
 }: {
@@ -111,8 +77,10 @@ export function AiGatewayConsole({
   const [disableSearch, setDisableSearch] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [response, setResponse] = useState<TradeOpsAIResponse | null>(null);
+  const [response, setResponse] = useState<TradeOpsAiChatResponse | null>(null);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [thread, setThread] = useState<ThreadTurn[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,49 +107,71 @@ export function AiGatewayConsole({
       e?.preventDefault();
       const obj = objective.trim();
       if (!obj) {
-        setError('Enter an objective.');
+        setError('Enter a message (e.g. Hi).');
         return;
       }
       setBusy(true);
       setError(null);
+      setThread((prev) => [...prev, { role: 'user', content: obj }]);
       try {
         const res = await fetch(`${getApiBaseUrl()}/api/v1/ai/chat`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ message: obj, disableSearch }),
+          body: JSON.stringify({
+            message: obj,
+            disableSearch,
+            conversationId: conversationId ?? undefined,
+          }),
         });
         const text = await res.text();
-        let parsed: unknown = null;
+        let parsed: TradeOpsAiChatResponse | null = null;
         try {
-          parsed = text ? JSON.parse(text) : null;
+          parsed = text ? (JSON.parse(text) as TradeOpsAiChatResponse) : null;
         } catch {
           parsed = null;
         }
-        if (!res.ok) {
-          const msg =
-            typeof parsed === 'object' &&
-            parsed &&
-            'message' in parsed &&
-            typeof (parsed as { message: unknown }).message === 'string'
-              ? (parsed as { message: string }).message
-              : `Gateway HTTP ${res.status}`;
-          setError(msg);
-          setResponse(null);
+        // Nest may return 201 for POST even when body.status is blocked — always use body.
+        if (!res.ok && !parsed) {
+          setError(`Chat HTTP ${res.status}`);
           return;
         }
-        setResponse(parsed as TradeOpsAIResponse);
+        if (parsed) {
+          setResponse(parsed);
+          if (parsed.conversationId) setConversationId(parsed.conversationId);
+          setThread((prev) => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: aiChatDisplayText(parsed),
+              status: parsed.status,
+              dataMode: parsed.dataMode ?? parsed.provenance?.dataMode,
+              provider: parsed.provenance?.aiProvider ?? parsed.meta?.provider,
+              model: parsed.provenance?.aiModel ?? parsed.meta?.model,
+              requestId: parsed.requestId,
+            },
+          ]);
+          if (isAiBlocked(parsed) || parsed.status === 'failed') {
+            setError(
+              [parsed.errorCode, parsed.requiredAction, aiChatDisplayText(parsed)]
+                .filter(Boolean)
+                .join(' — '),
+            );
+          }
+        }
+        setObjective('');
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
-        setResponse(null);
       } finally {
         setBusy(false);
       }
     },
-    [objective, disableSearch],
+    [objective, disableSearch, conversationId],
   );
 
-  const json = response?.output?.json;
+  const json = response?.output?.json as
+    | { recommendations?: GatewayRecommendation[] }
+    | undefined;
   const artifact = response?.output?.artifact;
   const recommendations =
     json?.recommendations ??
@@ -189,34 +179,32 @@ export function AiGatewayConsole({
       ? (artifact?.recommendations as GatewayRecommendation[])
       : []);
 
+  const isBlockedOrFailed = Boolean(
+    response && (isAiBlocked(response) || response.status === 'failed'),
+  );
+
   return (
     <article className="panel" style={{ marginBottom: 16 }}>
-      <h2 style={{ marginTop: 0 }}>TradeOps AI Gateway</h2>
+      <h2 style={{ marginTop: 0 }}>TradeOps AI · live Cohere chat</h2>
       <p className="meta" style={{ marginTop: 0 }}>
-        One AI · Generation via AI Adapter (OpenAI primary) · Enterprise retrieval via Cohere · Search
-        Manager · Capability Gateway. Response always includes <code>output.text</code> and{' '}
-        <code>output.json</code>.
+        Canonical path: <code>POST /api/v1/ai/chat</code> → Cohere agent runtime (not a static script).
+        Look for <strong>Live · cohere · model</strong> under each reply. Catalog answers may say
+        TEST_FIXTURE when only demo products are seeded — that is honesty, not offline mode.
       </p>
 
       {catalog?.platform ? (
         <p className="meta">
-          Generate: <strong>{catalog.platform.aiProvider ?? 'openai'}</strong>
-          {' · '}
-          Retrieve:{' '}
-          <strong>
-            {(catalog as { retrieval?: { engine?: string; cohereConfigured?: boolean } }).retrieval
-              ?.engine ?? 'local'}
-          </strong>
-          {' · '}
-          OpenAI:{' '}
-          {(catalog.platform as { openaiConfigured?: boolean }).openaiConfigured
-            ? 'key set'
-            : 'missing'}
+          Provider: <strong>{(catalog.platform as { aiProvider?: string }).aiProvider ?? 'cohere'}</strong>
           {' · '}
           Cohere:{' '}
           {(catalog.platform as { cohereConfigured?: boolean }).cohereConfigured
             ? 'key set'
-            : 'optional'}
+            : 'missing — set COHERE_API_KEY'}
+          {' · '}
+          OpenAI (optional search):{' '}
+          {(catalog.platform as { openaiConfigured?: boolean }).openaiConfigured
+            ? 'key set'
+            : 'unset'}
           {' · '}
           xAI: {catalog.platform.xaiConfigured ? 'key set' : 'optional'}
           {catalog.skills?.length ? (
@@ -228,9 +216,53 @@ export function AiGatewayConsole({
         </p>
       ) : null}
 
+      {conversationId ? (
+        <p className="meta">
+          Conversation: <code>{conversationId.slice(0, 8)}…</code> (saved in database)
+        </p>
+      ) : (
+        <p className="meta">New conversation will be created on first send and stored in the DB.</p>
+      )}
+
+      {thread.length > 0 ? (
+        <div
+          style={{
+            display: 'grid',
+            gap: 8,
+            marginBottom: 12,
+            maxHeight: 320,
+            overflow: 'auto',
+            padding: 8,
+            border: '1px solid var(--border, #333)',
+            borderRadius: 8,
+          }}
+        >
+          {thread.map((t, i) => (
+            <div
+              key={`${t.role}-${i}`}
+              style={{
+                padding: 8,
+                borderRadius: 6,
+                background:
+                  t.role === 'user' ? 'var(--panel-muted, #111)' : 'transparent',
+              }}
+            >
+              <div className="meta">
+                <strong>{t.role === 'user' ? 'You' : 'TradeOps AI'}</strong>
+                {t.status ? ` · ${t.status}` : ''}
+                {t.dataMode ? ` · ${t.dataMode}` : ''}
+                {t.provider ? ` · ${t.provider}` : ''}
+                {t.model ? ` · ${t.model}` : ''}
+              </div>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{t.content}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <form onSubmit={run}>
         <label className="meta" htmlFor="gateway-objective">
-          Objective
+          Message
         </label>
         <textarea
           id="gateway-objective"
@@ -238,7 +270,7 @@ export function AiGatewayConsole({
           onChange={(ev) => setObjective(ev.target.value)}
           rows={3}
           style={{ width: '100%', marginTop: 6, marginBottom: 8 }}
-          placeholder="e.g. Find high-demand BMW M240i performance parts…"
+          placeholder='Try "Hi" — needs COHERE_API_KEY for a live reply (not a canned script)'
           disabled={busy}
         />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -252,7 +284,20 @@ export function AiGatewayConsole({
             Disable public web search (operational / connector-only)
           </label>
           <button type="submit" className="btn primary" disabled={busy}>
-            {busy ? 'Running…' : 'Run gateway'}
+            {busy ? 'Thinking…' : 'Send'}
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={busy}
+            onClick={() => {
+              setConversationId(null);
+              setThread([]);
+              setResponse(null);
+              setError(null);
+            }}
+          >
+            New conversation
           </button>
         </div>
       </form>
@@ -260,14 +305,15 @@ export function AiGatewayConsole({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
         {PRESETS.map((p) => (
           <button
-            key={p.slice(0, 24)}
+            key={p.label}
             type="button"
             className="btn ghost"
             style={{ fontSize: 12 }}
             disabled={busy}
-            onClick={() => setObjective(p)}
+            onClick={() => setObjective(p.text)}
+            title={p.text}
           >
-            {p.length > 48 ? `${p.slice(0, 48)}…` : p}
+            {p.label}
           </button>
         ))}
       </div>
@@ -285,8 +331,34 @@ export function AiGatewayConsole({
             }}
           >
             <span className="meta">
-              Status: <strong>{response.status}</strong>
+              Status:{' '}
+              <strong
+                className={
+                  isBlockedOrFailed
+                    ? 'text-blocked'
+                    : response.status === 'partial'
+                      ? 'text-warning'
+                      : 'text-accent'
+                }
+              >
+                {response.status}
+              </strong>
             </span>
+            <span className="meta">
+              Mode: <strong>{response.dataMode ?? response.provenance?.dataMode ?? '—'}</strong>
+            </span>
+            <span className="meta">
+              AI:{' '}
+              <strong>
+                {response.provenance?.sourceLabel ??
+                  `${response.meta?.provider ?? '—'} · ${response.meta?.model ?? '—'}`}
+              </strong>
+            </span>
+            {response.meta?.latencyMs != null ? (
+              <span className="meta">
+                Latency: <strong>{response.meta.latencyMs}ms</strong>
+              </span>
+            ) : null}
             <span className="meta">
               Confidence: <strong>{(response.confidence * 100).toFixed(0)}%</strong>
             </span>
@@ -300,10 +372,50 @@ export function AiGatewayConsole({
               </strong>
             </span>
             <span className="meta">
-              Provider: <strong>{response.meta?.provider ?? response.meta?.aiProvider ?? '—'}</strong>
+              Provider:{' '}
+              <strong>
+                {response.provenance?.aiProvider ??
+                  response.meta?.provider ??
+                  response.meta?.aiProvider ??
+                  '—'}
+              </strong>
             </span>
             <span className="meta">id: {response.requestId}</span>
           </div>
+
+          {response.provenance?.sourceLabel ? (
+            <p className="meta" style={{ margin: 0 }}>
+              Source: <strong>{response.provenance.sourceLabel}</strong>
+              {response.provenance.traceId ? (
+                <> · trace {response.provenance.traceId.slice(0, 16)}</>
+              ) : null}
+            </p>
+          ) : null}
+
+          {isBlockedOrFailed ? (
+            <div className="form-error" style={{ padding: 12, borderRadius: 8 }}>
+              <strong>{response.errorCode ?? response.status}</strong>
+              {response.requiredAction ||
+              (typeof response.output?.artifact === 'object' &&
+                response.output.artifact &&
+                'requiredAction' in response.output.artifact) ? (
+                <p style={{ marginBottom: 0 }}>
+                  Action:{' '}
+                  {response.requiredAction ??
+                    String(
+                      (response.output.artifact as { requiredAction?: string }).requiredAction ??
+                        '',
+                    )}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {response.dataMode === 'simulation' ? (
+            <p className="text-warning">
+              <strong>SIMULATION</strong> — not live operational data.
+            </p>
+          ) : null}
 
           <section>
             <h3 style={{ marginBottom: 6 }}>Text</h3>
@@ -313,7 +425,9 @@ export function AiGatewayConsole({
                 lineHeight: 1.5,
                 padding: 12,
                 borderRadius: 8,
-                border: '1px solid var(--border, #333)',
+                border: isBlockedOrFailed
+                  ? '1px solid var(--danger, #a33)'
+                  : '1px solid var(--border, #333)',
                 background: 'var(--panel-muted, transparent)',
               }}
             >

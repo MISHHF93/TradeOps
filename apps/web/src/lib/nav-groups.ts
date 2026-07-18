@@ -1,9 +1,9 @@
 /**
- * @deprecated Static nav groups replaced by Workspace Resolver.
- * Dynamic sidebar is built server-side via GET /api/v1/workspace
- * and rendered in TerminalSidebar from ResolvedWorkspace.nav.
+ * @deprecated Prefer GET /api/v1/workspace (ResolvedWorkspace.nav) and
+ * apps/web/src/lib/nav-catalog.ts hybrid catalog (Focus · Operate · Platform · More).
+ * Static groups retained only for type compatibility — do not add new links here.
  *
- * Kept for type compatibility and fallbacks only.
+ * Architecture: presentation nav is owned by Workspace Layer + commerce-engine buildPersonaNav.
  */
 
 export type NavStatus = 'operational' | 'approval_controlled' | 'credential_blocked' | 'planned';

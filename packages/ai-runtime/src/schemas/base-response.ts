@@ -75,6 +75,22 @@ export type ProposedAction = {
   parameters: Array<{ name: string; value: string }>;
 };
 
+export type DataMode = 'live' | 'cached' | 'simulation' | 'unavailable';
+
+export type RuntimeProvenance = {
+  dataMode: DataMode;
+  aiProvider: string | null;
+  aiModel: string | null;
+  searchProvider: string | null;
+  toolNames: string[];
+  connectorNames: string[];
+  generatedAt: string;
+  providerRequestId?: string;
+  cacheHit: boolean;
+  traceId: string;
+  sourceLabel: string;
+};
+
 export type TradeOpsCanonicalResponse<TArtifact = unknown> = {
   schemaVersion: string;
   requestId: string;
@@ -82,6 +98,12 @@ export type TradeOpsCanonicalResponse<TArtifact = unknown> = {
   workspaceId?: string;
   conversationId: string;
   status: 'completed' | 'partial' | 'blocked' | 'failed';
+  /**
+   * How this response was produced. Never claim "live" for simulation or
+   * missing-provider fallbacks. Never hide blocked behind completed.
+   */
+  dataMode: DataMode;
+  provenance: RuntimeProvenance;
   intent: {
     category: IntentCategory;
     informationMode: InformationMode;
@@ -103,6 +125,9 @@ export type TradeOpsCanonicalResponse<TArtifact = unknown> = {
   warnings: string[];
   confidence: number;
   generatedAt: string;
+  /** When status is blocked/failed — machine-readable, no secrets */
+  errorCode?: string;
+  requiredAction?: string;
   meta?: {
     provider?: string;
     model?: string;
@@ -114,9 +139,13 @@ export type TradeOpsCanonicalResponse<TArtifact = unknown> = {
 };
 
 /** Compact schema for Cohere structured synthesis */
+/**
+ * Cohere-compatible JSON Schema for structured synthesis.
+ * Keep relatively flat — dump-into-prompt is no longer used; response_format.schema is.
+ * Every object includes required[] per Cohere structured-output constraints.
+ */
 export const SYNTHESIS_JSON_SCHEMA = {
   type: 'object',
-  additionalProperties: false,
   required: [
     'text',
     'artifactType',
@@ -130,25 +159,19 @@ export const SYNTHESIS_JSON_SCHEMA = {
     'warnings',
   ],
   properties: {
-    text: { type: 'string' },
+    text: { type: 'string', description: 'Human-readable answer' },
     artifactType: {
       type: 'string',
-      enum: [
-        'answer',
-        'classification',
-        'research_report',
-        'product_comparison',
-        'supplier_comparison',
-        'analytics_report',
-        'operational_brief',
-        'procurement_plan',
-        'execution_plan',
-        'risk_assessment',
-        'document_extraction',
-      ],
+      description: 'answer | classification | research_report | operational_brief | execution_plan | …',
     },
-    artifact: { type: 'object' },
-    confidence: { type: 'number' },
+    artifact: {
+      type: 'object',
+      description: 'Structured payload for the UI',
+      properties: {
+        summary: { type: 'string' },
+      },
+    },
+    confidence: { type: 'number', description: '0..1' },
     objectiveTitle: { type: 'string' },
     objectiveDescription: { type: 'string' },
     successCriteria: {
@@ -157,31 +180,11 @@ export const SYNTHESIS_JSON_SCHEMA = {
     },
     intentCategory: {
       type: 'string',
-      enum: [
-        'general',
-        'research',
-        'product_discovery',
-        'supplier_discovery',
-        'commerce',
-        'payments',
-        'logistics',
-        'analytics',
-        'procurement',
-        'industrial_product',
-        'document_analysis',
-        'mixed',
-      ],
+      description: 'general | research | commerce | logistics | payments | mixed | …',
     },
     informationMode: {
       type: 'string',
-      enum: [
-        'no_search',
-        'public_web',
-        'official_documentation',
-        'internal_retrieval',
-        'authenticated_operational',
-        'mixed_research',
-      ],
+      description: 'no_search | public_web | authenticated_operational | mixed_research | …',
     },
     warnings: {
       type: 'array',
@@ -191,25 +194,12 @@ export const SYNTHESIS_JSON_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        additionalProperties: false,
         required: ['capability', 'description', 'requiresApproval', 'riskLevel'],
         properties: {
           capability: { type: 'string' },
           description: { type: 'string' },
           requiresApproval: { type: 'boolean' },
-          riskLevel: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-          parameters: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['name', 'value'],
-              properties: {
-                name: { type: 'string' },
-                value: { type: 'string' },
-              },
-            },
-          },
+          riskLevel: { type: 'string' },
         },
       },
     },
@@ -243,11 +233,55 @@ export function validateSynthesisPayload(raw: unknown): {
 } {
   const errors: string[] = [];
   if (!raw || typeof raw !== 'object') return { ok: false, errors: ['not an object'] };
-  const o = raw as Record<string, unknown>;
+  const o = { ...(raw as Record<string, unknown>) };
+
+  // Coerce common model drift so prompt execution is not brittle
+  if (typeof o.text !== 'string' && o.text != null) o.text = String(o.text);
+  if (typeof o.confidence === 'string' && o.confidence.trim() !== '') {
+    const n = Number(o.confidence);
+    if (Number.isFinite(n)) o.confidence = n;
+  }
+  // Artifact must be a plain object (models often emit string/array/null)
+  if (
+    o.artifact == null ||
+    typeof o.artifact !== 'object' ||
+    Array.isArray(o.artifact)
+  ) {
+    o.artifact =
+      typeof o.artifact === 'string' && o.artifact.trim()
+        ? { summary: o.artifact }
+        : {};
+  }
+  if (!Array.isArray(o.successCriteria)) o.successCriteria = [];
+  if (!Array.isArray(o.warnings)) o.warnings = [];
+  if (typeof o.objectiveTitle !== 'string' || !o.objectiveTitle.trim()) {
+    o.objectiveTitle = typeof o.text === 'string' ? o.text.slice(0, 80) : 'Response';
+  }
+  if (typeof o.objectiveDescription !== 'string') {
+    o.objectiveDescription = typeof o.text === 'string' ? o.text.slice(0, 200) : '';
+  }
+  if (typeof o.artifactType !== 'string' || !o.artifactType.trim()) {
+    o.artifactType = 'answer';
+  }
+  if (typeof o.intentCategory !== 'string' || !o.intentCategory.trim()) {
+    o.intentCategory = 'general';
+  }
+  if (typeof o.informationMode !== 'string' || !o.informationMode.trim()) {
+    o.informationMode = 'no_search';
+  }
+  // Confidence often omitted or null from free-form structured calls
+  if (typeof o.confidence !== 'number' || !Number.isFinite(o.confidence as number)) {
+    o.confidence = 0.7;
+  }
+
   if (typeof o.text !== 'string' || !o.text.trim()) errors.push('text required');
   if (typeof o.artifactType !== 'string') errors.push('artifactType required');
-  if (!o.artifact || typeof o.artifact !== 'object') errors.push('artifact required');
-  if (typeof o.confidence !== 'number') errors.push('confidence required');
+  if (!o.artifact || typeof o.artifact !== 'object' || Array.isArray(o.artifact)) {
+    errors.push('artifact required');
+  }
+  if (typeof o.confidence !== 'number' || !Number.isFinite(o.confidence as number)) {
+    errors.push('confidence required');
+  }
   if (typeof o.objectiveTitle !== 'string') errors.push('objectiveTitle required');
   if (typeof o.objectiveDescription !== 'string') errors.push('objectiveDescription required');
   if (!Array.isArray(o.successCriteria)) errors.push('successCriteria array required');
@@ -255,5 +289,14 @@ export function validateSynthesisPayload(raw: unknown): {
   if (typeof o.informationMode !== 'string') errors.push('informationMode required');
   if (!Array.isArray(o.warnings)) errors.push('warnings array required');
   if (errors.length) return { ok: false, errors };
-  return { ok: true, value: o as unknown as SynthesisPayload, errors: [] };
+
+  const conf = Math.min(1, Math.max(0, Number(o.confidence)));
+  return {
+    ok: true,
+    value: {
+      ...(o as unknown as SynthesisPayload),
+      confidence: conf,
+    },
+    errors: [],
+  };
 }

@@ -68,7 +68,7 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
         lede={
           caseId
             ? 'Bound to a Commerce Case. Gateway + operator recommend the highest-value valid next step for the current stage — one AI, not a swarm of agents.'
-            : 'One AI Operator: OpenAI generation + Cohere enterprise retrieval (not sole runtime). Search Manager + Capability Gateway. Text + JSON. Operational truth only from connectors.'
+            : 'One AI Operator (Cohere code-first runtime). Search Manager + Capability Gateway. Text + JSON envelopes. Operational truth only from connectors — system prompts never appear as page objectives.'
         }
         currentStage={caseStage}
         breadcrumbs={[
@@ -82,6 +82,9 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
             </Link>
             <Link className="btn ghost" href="/terminal/tasks">
               {PROCESS_LABELS.viewTasks}
+            </Link>
+            <Link className="btn secondary" href="/terminal/ai/runtime-lab">
+              Runtime lab
             </Link>
             {caseId ? (
               <Link className="btn secondary" href={`/terminal/process/${caseId}`}>
@@ -147,6 +150,10 @@ export default async function AiWorkspacePage({ searchParams }: Props) {
           <ul className="meta">
             {runs.data.slice(0, 5).map((r) => (
               <li key={r.id}>
+                <Link href={`/terminal/objectives/${r.id}`}>
+                  {(r.objective || 'Operator run').slice(0, 90)}
+                </Link>
+                {' · '}
                 {new Date(r.startedAt).toLocaleString()} · {r.status} · {r.loopMode}
               </li>
             ))}

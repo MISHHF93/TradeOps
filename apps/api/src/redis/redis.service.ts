@@ -80,8 +80,12 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async connect(): Promise<void> {
-    if (this.client.status === 'wait') {
-      await this.client.connect();
+    try {
+      if (this.client.status === 'wait') {
+        await this.client.connect();
+      }
+    } catch {
+      // Redis optional — callers treat null/false as cache miss
     }
   }
 

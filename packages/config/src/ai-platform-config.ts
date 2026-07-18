@@ -50,14 +50,20 @@ export type AiPlatformConfig = {
   geminiModel: string;
   geminiConfigured: boolean;
 
-  /** Cohere — enterprise retrieval (not sole generation runtime) */
+  /** Cohere — production reasoning / embed / rerank (code-first runtime) */
   cohereApiKey: string | undefined;
   cohereBaseUrl: string;
   cohereEmbedModel: string;
   cohereRerankModel: string;
   cohereChatModel: string;
+  cohereTemperature: number;
+  cohereMaxTokens: number;
+  cohereTimeoutMs: number;
+  cohereMaxRetries: number;
   cohereConfigured: boolean;
   cohereRetrievalEnabled: boolean;
+  /** Master switch for AI runtime (deploy-time; prompts stay in code) */
+  aiRuntimeEnabled: boolean;
 
   responseMode: 'json_schema' | 'json_object' | 'text';
   textOutputEnabled: boolean;
@@ -75,6 +81,9 @@ export type AiPlatformConfig = {
   tavilyCrawlEnabled: boolean;
   tavilyResearchEnabled: boolean;
   tavilyConfigured: boolean;
+
+  /** Master switch for TradeOps Search Manager public internet search */
+  webSearchEnabled: boolean;
 
   /** Preferred public-web search backend family */
   searchProviderPrimary: 'openai' | 'xai' | 'tavily';
@@ -184,6 +193,19 @@ export function getAiPlatformConfig(
     cohereChatModel:
       (env.COHERE_CHAT_MODEL ?? env.COHERE_MODEL ?? 'command-a-03-2025').trim() ||
       'command-a-03-2025',
+    cohereTemperature: (() => {
+      const n = Number(env.COHERE_TEMPERATURE);
+      return Number.isFinite(n) && n >= 0 && n <= 2 ? n : 0.2;
+    })(),
+    cohereMaxTokens: num(
+      env.COHERE_MAX_TOKENS,
+      4000,
+    ),
+    cohereTimeoutMs: num(
+      env.COHERE_TIMEOUT_MS ?? env.COHERE_REQUEST_TIMEOUT_MS,
+      60_000,
+    ),
+    cohereMaxRetries: Math.min(num(env.COHERE_MAX_RETRIES, 2), 5),
     cohereConfigured: Boolean(cohereApiKey),
     // Prefer COHERE_RETRIEVAL_ENABLED; fall back to RETRIEVAL_ENABLED if set
     cohereRetrievalEnabled:
@@ -191,6 +213,7 @@ export function getAiPlatformConfig(
         env.COHERE_RETRIEVAL_ENABLED ?? env.RETRIEVAL_ENABLED,
         true,
       ) && Boolean(cohereApiKey),
+    aiRuntimeEnabled: truthy(env.AI_RUNTIME_ENABLED, true),
 
     responseMode: (env.AI_RESPONSE_MODE ?? 'json_schema').toLowerCase() as AiPlatformConfig['responseMode'],
     textOutputEnabled: truthy(env.AI_TEXT_OUTPUT_ENABLED, true),
@@ -209,19 +232,37 @@ export function getAiPlatformConfig(
     tavilyResearchEnabled: truthy(env.TAVILY_RESEARCH_ENABLED, true) && Boolean(tavilyApiKey),
     tavilyConfigured: Boolean(tavilyApiKey),
 
-    searchProviderPrimary: parseSearchPrimary(env.SEARCH_PROVIDER_PRIMARY),
+    webSearchEnabled: truthy(env.WEB_SEARCH_ENABLED, false),
+    searchProviderPrimary: parseSearchPrimary(
+      env.SEARCH_PROVIDER_PRIMARY ?? env.WEB_SEARCH_PROVIDER,
+    ),
     searchProviderRetrieval: parseSearchRetrieval(env.SEARCH_PROVIDER_RETRIEVAL),
     searchProviderInternal:
       (env.SEARCH_PROVIDER_INTERNAL ?? 'cohere').trim().toLowerCase() === 'local'
         ? 'local'
         : 'cohere',
-    searchRequireCitations: truthy(env.SEARCH_REQUIRE_CITATIONS, true),
-    searchRequireSourceTimestamps: truthy(env.SEARCH_REQUIRE_SOURCE_TIMESTAMPS, true),
-    searchMaxQueriesPerRequest: num(env.SEARCH_MAX_QUERIES_PER_REQUEST, 6),
-    searchMaxResultsPerQuery: num(env.SEARCH_MAX_RESULTS_PER_QUERY, 10),
-    searchDefaultCacheTtlSeconds: num(env.SEARCH_DEFAULT_CACHE_TTL_SECONDS, 3600),
-    searchAllowedDomains: csv(env.SEARCH_ALLOWED_DOMAINS),
-    searchBlockedDomains: csv(env.SEARCH_BLOCKED_DOMAINS),
+    searchRequireCitations: truthy(
+      env.SEARCH_REQUIRE_CITATIONS ?? env.WEB_SEARCH_REQUIRE_CITATIONS,
+      true,
+    ),
+    searchRequireSourceTimestamps: truthy(
+      env.SEARCH_REQUIRE_SOURCE_TIMESTAMPS ?? env.WEB_SEARCH_REQUIRE_TIMESTAMPS,
+      true,
+    ),
+    searchMaxQueriesPerRequest: num(
+      env.SEARCH_MAX_QUERIES_PER_REQUEST ?? env.WEB_SEARCH_MAX_QUERIES_PER_REQUEST,
+      6,
+    ),
+    searchMaxResultsPerQuery: num(
+      env.SEARCH_MAX_RESULTS_PER_QUERY ?? env.WEB_SEARCH_MAX_RESULTS_PER_QUERY,
+      10,
+    ),
+    searchDefaultCacheTtlSeconds: num(
+      env.SEARCH_DEFAULT_CACHE_TTL_SECONDS ?? env.WEB_SEARCH_DEFAULT_CACHE_TTL_SECONDS,
+      3600,
+    ),
+    searchAllowedDomains: csv(env.SEARCH_ALLOWED_DOMAINS ?? env.WEB_SEARCH_ALLOWED_DOMAINS),
+    searchBlockedDomains: csv(env.SEARCH_BLOCKED_DOMAINS ?? env.WEB_SEARCH_BLOCKED_DOMAINS),
 
     aiMaxToolCalls: num(env.AI_MAX_TOOL_CALLS, 15),
     aiMaxExecutionSeconds: num(env.AI_MAX_EXECUTION_SECONDS, 120),
@@ -268,9 +309,13 @@ export function aiPlatformPublicStatus(
     geminiModel: c.geminiModel,
     cohereConfigured: c.cohereConfigured,
     cohereRetrievalEnabled: c.cohereRetrievalEnabled,
+    cohereChatModel: c.cohereChatModel,
     cohereEmbedModel: c.cohereEmbedModel,
+    cohereRerankModel: c.cohereRerankModel,
+    aiRuntimeEnabled: c.aiRuntimeEnabled,
     tavilyConfigured: c.tavilyConfigured,
     search: {
+      enabled: c.webSearchEnabled,
       primary: c.searchProviderPrimary,
       retrieval: c.searchProviderRetrieval,
       internal: c.searchProviderInternal,

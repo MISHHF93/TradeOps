@@ -3,3 +3,4 @@ export * from './rbac';
 export * from './tenancy';
 export * from './tenant-context';
 export * from './tenant-keys';
+export * from './architecture';

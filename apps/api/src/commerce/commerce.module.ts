@@ -40,6 +40,7 @@ import { IndustrialController } from './industrial.controller';
     CommerceRuntimeService,
     LiveConnectorService,
     ConnectorOpsService,
+    EventFabricService,
     IndustrialService,
   ],
 })

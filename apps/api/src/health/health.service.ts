@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import type { DependencyHealth, HealthResponse } from '@tradeops/contracts';
+import {
+  aiPlatformPublicStatus,
+  environmentManifestPublicStatus,
+  envValidationPublicStatus,
+  isAiRuntimeConfigured,
+} from '@tradeops/config';
 import { checkDatabaseHealth } from '@tradeops/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -38,6 +44,10 @@ export class HealthService {
       ),
     ]);
 
+    const envStatus = envValidationPublicStatus();
+    const ai = aiPlatformPublicStatus();
+    const aiConfigured = isAiRuntimeConfigured();
+
     const dependencies: DependencyHealth[] = [
       {
         name: 'postgres',
@@ -49,12 +59,33 @@ export class HealthService {
         name: 'redis',
         status: redis.status,
         latencyMs: redis.latencyMs,
-        ...(redis.message ? { message: redis.message } : {}),
+        message:
+          redis.status === 'up'
+            ? redis.message
+            : `${redis.message ?? 'unavailable'} (optional locally — queues/cache only; API continues)`,
+      },
+      {
+        name: 'ai_runtime',
+        status: aiConfigured ? 'up' : 'down',
+        message: aiConfigured
+          ? `provider=${ai.aiProvider} configured`
+          : `provider=${ai.aiProvider} missing credentials (set server-side key; never public)`,
+      },
+      {
+        name: 'environment_schema',
+        status: envStatus.ok ? 'up' : 'down',
+        message: envStatus.ok
+          ? 'schema ok'
+          : `${envStatus.errorCount} validation error(s) — see GET /api/v1/health/environment`,
       },
     ];
 
-    const anyDown = dependencies.some((dep) => dep.status === 'down');
-    const status = anyDown ? 'degraded' : 'up';
+    // Redis is optional for founder/local — do not degrade overall health when only redis is down.
+    // Postgres down or AI missing still degrades. Operators read redis line for queue readiness.
+    const criticalDown = dependencies.some(
+      (dep) => dep.status === 'down' && dep.name !== 'redis',
+    );
+    const status = criticalDown ? 'degraded' : 'up';
 
     return {
       status,
@@ -68,5 +99,37 @@ export class HealthService {
 
   getLiveness(): { status: 'up'; service: string } {
     return { status: 'up', service: SERVICE_NAME };
+  }
+
+  /**
+   * Environment + provider matrix for operators.
+   * Never includes secret values — only configured / missing / disabled statuses.
+   */
+  getEnvironmentHealth() {
+    const envStatus = envValidationPublicStatus();
+    const manifest = environmentManifestPublicStatus();
+    const ai = aiPlatformPublicStatus();
+    return {
+      status: envStatus.ok ? 'healthy' : 'unhealthy',
+      checkedAt: envStatus.checkedAt,
+      environment: envStatus,
+      ai: {
+        provider: ai.aiProvider,
+        runtimeConfigured: ai.runtimeConfigured,
+        cohereConfigured: ai.cohereConfigured,
+        openaiConfigured: ai.openaiConfigured,
+        xaiConfigured: ai.xaiConfigured,
+        tavilyConfigured: ai.tavilyConfigured,
+        search: ai.search,
+        responseContract: ai.responseContract,
+      },
+      manifest: {
+        total: manifest.totalManifest,
+        configured: manifest.configured,
+        missingRequiredProduction: manifest.missingRequiredProduction,
+        ai: manifest.ai,
+      },
+      note: 'Secret values are never returned. Rotate any key that was exposed in chat.',
+    };
   }
 }

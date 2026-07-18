@@ -26,10 +26,33 @@ try {
 }
 
 const EXTRA_KEYS = [
-  // Platform secrets already present — still list for completeness in catalog docs only
-  // AI extras
-  { keys: ['XAI_API_KEY', 'XAI_BASE_URL', 'XAI_CHAT_MODEL', 'XAI_EMBED_MODEL', 'GROK_API_KEY'], note: 'xAI / Grok (primary AI)' },
-  { keys: ['TRADEOPS_AI_MODE', 'TRADEOPS_AI_DEFAULT_GENERATE', 'TRADEOPS_AI_TIMEOUT_MS', 'TRADEOPS_STORAGE_DIR'], note: 'AI mode controls' },
+  // Platform AI — Cohere is primary (code-first runtime). Never put secrets in NEXT_PUBLIC_*.
+  {
+    keys: [
+      'AI_PROVIDER',
+      'AI_RUNTIME_ENABLED',
+      'COHERE_API_KEY',
+      'COHERE_BASE_URL',
+      'COHERE_CHAT_MODEL',
+      'COHERE_EMBED_MODEL',
+      'COHERE_RERANK_MODEL',
+      'COHERE_TIMEOUT_MS',
+      'COHERE_RETRIEVAL_ENABLED',
+      'WEB_SEARCH_ENABLED',
+      'TAVILY_API_KEY',
+    ],
+    note: 'Primary AI runtime (Cohere) + optional web search',
+  },
+  // Optional alternate AI adapters (not primary)
+  {
+    keys: ['XAI_API_KEY', 'XAI_BASE_URL', 'XAI_MODEL', 'XAI_EMBED_MODEL', 'GROK_API_KEY'],
+    note: 'xAI / Grok (optional adapter only)',
+  },
+  {
+    keys: ['TRADEOPS_AI_MODE', 'TRADEOPS_AI_DEFAULT_GENERATE', 'TRADEOPS_AI_TIMEOUT_MS'],
+    note: 'Legacy AI mode flags (deprecated — prefer AI_PROVIDER + COHERE_*)',
+  },
+  { keys: ['TRADEOPS_STORAGE_DIR'], note: 'Local artifact storage' },
   // Stripe SaaS extras
   {
     keys: [
@@ -54,8 +77,18 @@ const EXTRA_KEYS = [
 ];
 
 const DEFAULT_HINTS = {
+  AI_PROVIDER: 'cohere',
+  AI_RUNTIME_ENABLED: 'true',
+  COHERE_BASE_URL: 'https://api.cohere.com',
+  COHERE_CHAT_MODEL: 'command-a-03-2025',
+  COHERE_EMBED_MODEL: 'embed-v4.0',
+  COHERE_RERANK_MODEL: 'rerank-v3.5',
+  COHERE_TIMEOUT_MS: '60000',
+  COHERE_RETRIEVAL_ENABLED: 'true',
+  WEB_SEARCH_ENABLED: 'false',
   XAI_BASE_URL: 'https://api.x.ai/v1',
-  XAI_CHAT_MODEL: 'grok-4.5',
+  XAI_MODEL: 'grok-4.5',
+  // Legacy aliases kept empty/non-primary
   TRADEOPS_AI_MODE: 'auto',
   TRADEOPS_AI_DEFAULT_GENERATE: '1',
   TRADEOPS_AI_TIMEOUT_MS: '60000',
@@ -121,7 +154,12 @@ function buildCatalogSection() {
     for (const key of block.keys) {
       // Skip keys already emitted from connector list
       const alreadyInConnectors = list.some((c) => (c.credentialEnvKeys || []).includes(key));
-      if (alreadyInConnectors && !['XAI_BASE_URL', 'XAI_CHAT_MODEL', 'XAI_EMBED_MODEL'].includes(key)) {
+      if (
+        alreadyInConnectors &&
+        !['XAI_BASE_URL', 'XAI_MODEL', 'XAI_EMBED_MODEL', 'COHERE_BASE_URL', 'COHERE_CHAT_MODEL'].includes(
+          key,
+        )
+      ) {
         continue;
       }
       const hint = DEFAULT_HINTS[key];

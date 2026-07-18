@@ -93,6 +93,7 @@ export function probeCredentials(providerKey: string): {
     'keepa-api': ['KEEPA_API_KEY'],
     avalara: ['AVALARA_ACCOUNT_ID', 'AVALARA_LICENSE_KEY'],
     taxjar: ['TAXJAR_API_KEY'],
+    cohere: ['COHERE_API_KEY'],
     openai: ['OPENAI_API_KEY'],
     anthropic: ['ANTHROPIC_API_KEY'],
     'google-gemini': ['GOOGLE_AI_API_KEY'],

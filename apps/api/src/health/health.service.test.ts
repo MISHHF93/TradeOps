@@ -46,7 +46,23 @@ describe('HealthService', () => {
     const service = new HealthService(prisma, redis);
     const health = await service.getHealth();
 
-    assert.equal(health.status, 'up');
-    assert.equal(health.dependencies.length, 2);
+    // AI may be unconfigured in CI (no COHERE_API_KEY) → degraded is acceptable.
+    assert.ok(health.status === 'up' || health.status === 'degraded');
+    assert.ok(health.dependencies.length >= 2);
+    assert.ok(health.dependencies.some((d) => d.name === 'postgres'));
+    assert.ok(health.dependencies.some((d) => d.name === 'redis'));
+    assert.ok(health.dependencies.some((d) => d.name === 'ai_runtime'));
+    assert.ok(health.dependencies.some((d) => d.name === 'environment_schema'));
+  });
+
+  it('environment health never includes secret values', () => {
+    const prisma = { client: {} } as unknown as PrismaService;
+    const redis = { checkHealth: async () => ({ status: 'up' as const, latencyMs: 1 }) } as unknown as RedisService;
+    const service = new HealthService(prisma, redis);
+    const envHealth = service.getEnvironmentHealth();
+    const json = JSON.stringify(envHealth);
+    assert.ok(!json.toLowerCase().includes('sk-'));
+    assert.ok(envHealth.checkedAt || envHealth.environment?.checkedAt);
+    assert.ok(['healthy', 'unhealthy'].includes(envHealth.status));
   });
 });

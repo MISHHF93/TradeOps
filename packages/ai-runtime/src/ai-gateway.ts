@@ -1,7 +1,11 @@
 /**
- * TradeOps AI Gateway — single entry for the frontend.
+ * TradeOps AI Gateway — legacy envelope helper.
  *
- * User → Gateway → AI Adapter (OpenAI primary) → Search Manager / Capability Gateway
+ * Production chat uses runCohereAgentLoop (canonical).
+ * This gateway remains for older clients / live-examples and must still use
+ * code-owned prompts (never Playground, never ad-hoc ownership by vendor).
+ *
+ * User → Gateway → AI Adapter → Search Manager / Capability Gateway
  *              → verified text + JSON envelope
  *
  * The frontend never selects a vendor model or search API.
@@ -12,6 +16,7 @@ import {
   getAiPlatformConfig,
 } from '@tradeops/config';
 import { getAiAdapter, listAiAdaptersPublic } from './ai-adapter';
+import { requirePrompt } from './prompts/registry';
 import {
   invokeCapability,
   suggestCapabilitiesForObjective,
@@ -58,16 +63,15 @@ export type AiGatewayRequest = {
 export type AiGatewayResult = TradeOpsAIResponse<Record<string, unknown>>;
 
 function systemPrompt(): string {
+  // Code-owned prompt registry — never Cohere Playground
+  const system = requirePrompt('tradeops-system');
+  const developer = requirePrompt('tradeops-developer');
   return [
-    'You are TradeOps AI — the single AI Operator for a commerce + industrial OS.',
-    'You reason for TradeOps; do not claim a specific model brand unless asked.',
-    'Rules:',
-    '1. Operational facts (inventory, orders, payments, shipments) come ONLY from authenticated connector/database context — never invent them from web search.',
-    '2. Public web/social evidence is for market research only and must be cited.',
-    '3. Prefer structured JSON matching the required schema. Also write clear human text.',
-    '4. Recommend write actions with requiresApproval=true; never claim execution without approval.',
-    '5. Be honest about missing credentials or missing data.',
-    '6. Rank confidence lower when evidence is weak, social-only, or operational data is missing.',
+    system.text,
+    '',
+    '--- Developer instructions ---',
+    developer.text,
+    '',
     'Respond with a single JSON object only (no markdown fences) containing:',
     'text, objective, recommendations[], confidence, sources[]',
     'Each recommendation: title, reason, score (0-1), optional product, estimatedDemand, estimatedMarginPercent, risk.',
@@ -234,10 +238,9 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
   evidence = rankAndDeduplicateEvidence(evidence);
 
   if (!adapter.configured) {
+    // Truthful blocked — never return demo recommendations or fabricated success
     const text =
-      evidence.length > 0
-        ? `AI runtime not configured. Retrieved ${evidence.length} public source(s). Set OPENAI_API_KEY (recommended) or XAI_API_KEY / AI_PROVIDER.`
-        : 'AI runtime not configured. Set OPENAI_API_KEY for the primary OpenAI adapter (or AI_PROVIDER=xai with XAI_API_KEY). Capability tools and connectors still work.';
+      'AI runtime is not configured. Set COHERE_API_KEY with AI_PROVIDER=cohere (production path) or the adapter key for the selected provider. No demo response was substituted.';
     return buildEnvelope({
       tenantId: input.tenantId,
       conversationId: input.conversationId,
@@ -245,7 +248,10 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
       json: {
         objective: input.objective,
         recommendations: [],
-        confidence: 0.2,
+        confidence: 0,
+        error: 'AI_PROVIDER_NOT_CONFIGURED',
+        requiredAction:
+          'Set COHERE_API_KEY (and AI_PROVIDER=cohere) in server env; never use NEXT_PUBLIC_ for secrets.',
         sources: evidence.map((e) => ({
           provider: e.provider,
           sourceType: e.sourceType,
@@ -253,12 +259,13 @@ export async function runAiGateway(input: AiGatewayRequest): Promise<AiGatewayRe
         })),
         informationNeed: need,
         capabilitiesInvoked: toolsInvoked,
+        dataMode: 'unavailable',
       },
-      status: 'partial',
-      confidence: 0.2,
+      status: 'blocked',
+      confidence: 0,
       evidence,
-      actions,
-      warnings: [...warnings, 'ai_runtime_not_configured'],
+      actions: [],
+      warnings: [...warnings, 'AI_PROVIDER_NOT_CONFIGURED'],
       meta: {
         ...metaBase,
         informationNeed: need,
@@ -480,6 +487,8 @@ function knowledgeFromOperationalContext(
 
 export function gatewayCatalogPublic() {
   return {
+    owner: 'tradeops_source_code',
+    productionEntrypoint: 'runCohereAgentLoop',
     platform: aiPlatformPublicStatus(),
     adapters: listAiAdaptersPublic(),
     retrieval: retrievalEnginePublicStatus(),
@@ -501,6 +510,6 @@ export function gatewayCatalogPublic() {
       'authenticated_operational',
       'enterprise_retrieval',
     ],
-    note: 'One TradeOps AI. Generation: AI Adapter (OpenAI primary). Enterprise retrieval: Cohere (embed/rerank). Search Manager + Capability Gateway are provider-agnostic. Operational truth uses connectors only.',
+    note: 'One TradeOps AI owned in source. Production chat: runCohereAgentLoop → Cohere provider. Prompts/schemas/tools/policies are code registries — not Cohere Playground. Search Manager + Capability Gateway stay provider-agnostic. Operational truth uses connectors only.',
   };
 }

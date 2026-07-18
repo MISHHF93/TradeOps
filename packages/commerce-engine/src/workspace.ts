@@ -864,9 +864,78 @@ const PERSONA_MORE_NAV: Record<
   ],
 };
 
+/** Shared Operate hubs — always visible (not persona-hidden). */
+export const SHARED_OPERATE_NAV: Array<{
+  id: string;
+  href: string;
+  label: string;
+  kind?: NavKind;
+}> = [
+  { id: 'discover', href: '/terminal', label: 'Discover', kind: 'procedure_step' },
+  { id: 'cases', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+  { id: 'tasks', href: '/terminal/tasks', label: 'Tasks', kind: 'resource' },
+  { id: 'orders', href: '/terminal/orders', label: 'Orders', kind: 'procedure_step' },
+  { id: 'approvals', href: '/terminal/approvals', label: 'Approvals', kind: 'procedure_step' },
+  { id: 'opportunities', href: '/terminal/opportunities', label: 'Opportunities', kind: 'procedure_step' },
+  { id: 'fulfillment', href: '/terminal/fulfillment', label: 'Fulfillment', kind: 'procedure_step' },
+];
+
+/** Shared Platform hubs — always visible. */
+export const SHARED_PLATFORM_NAV: Array<{
+  id: string;
+  href: string;
+  label: string;
+  kind?: NavKind;
+}> = [
+  { id: 'ops', href: '/terminal/ops', label: 'Ops Center', kind: 'admin' },
+  { id: 'connectors', href: '/terminal/connectors', label: 'Connectors', kind: 'procedure_step' },
+  { id: 'ecosystem', href: '/terminal/ecosystem', label: 'Ecosystem', kind: 'resource' },
+  { id: 'automations', href: '/terminal/automations', label: 'Automations', kind: 'procedure_step' },
+  { id: 'system', href: '/app', label: 'System', kind: 'admin' },
+  { id: 'billing', href: '/app/billing', label: 'Billing', kind: 'admin' },
+  { id: 'status', href: '/status', label: 'Capability status', kind: 'admin' },
+];
+
+function hrefKey(href: string): string {
+  // Normalize for dedupe (ignore query string)
+  const q = href.indexOf('?');
+  return q >= 0 ? href.slice(0, q) : href;
+}
+
+function applyNavBadges(
+  item: WorkspaceNavItem,
+  options?: {
+    pendingApprovals?: number;
+    openTasks?: number;
+    openBlockers?: number;
+    connectorIssues?: number;
+    activeCaseCount?: number;
+  },
+): WorkspaceNavItem {
+  if (item.id === 'tasks' || item.id === 'home') {
+    if (options?.openTasks) item.badge = String(options.openTasks);
+  }
+  if (item.id === 'decisions' || item.id === 'approvals') {
+    if (options?.pendingApprovals) item.badge = String(options.pendingApprovals);
+  }
+  if (item.id === 'process' || item.id === 'cases' || item.href === '/terminal/process') {
+    if (options?.openBlockers) item.badge = String(options.openBlockers);
+    else if (options?.activeCaseCount) item.badge = String(options.activeCaseCount);
+  }
+  if ((item.id === 'connectors' || item.href === '/terminal/connectors') && options?.connectorIssues) {
+    item.badge = String(options.connectorIssues);
+    item.status = 'credential_blocked';
+  }
+  if (item.id === 'ai' || item.href === '/terminal/ai') {
+    item.status = 'approval_controlled';
+  }
+  return item;
+}
+
 /**
- * Build dynamic sidebar — focused primary set + collapsed More.
- * Principle: One user · One workspace · One objective · One AI.
+ * Build dynamic sidebar — hybrid IA:
+ * Focus (persona) · Operate (shared) · Platform (shared) · More (collapsed).
+ * Principle: One user · One workspace · One objective · One AI — without hiding the OS.
  */
 export function buildPersonaNav(
   persona: OperatingPersona,
@@ -878,54 +947,64 @@ export function buildPersonaNav(
     activeCaseCount?: number;
   },
 ): WorkspaceNavGroup[] {
-  const primary = PERSONA_PRIMARY_NAV[persona].map((item) => {
-    const navItem: WorkspaceNavItem = {
+  const primary = PERSONA_PRIMARY_NAV[persona].map((item) =>
+    applyNavBadges(
+      {
+        id: item.id,
+        href: item.href,
+        label: item.label,
+        kind: item.kind ?? 'resource',
+        status: 'operational',
+      },
+      options,
+    ),
+  );
+
+  const focusHrefs = new Set(primary.map((i) => hrefKey(i.href)));
+
+  const operate = SHARED_OPERATE_NAV.filter((item) => !focusHrefs.has(hrefKey(item.href))).map(
+    (item) =>
+      applyNavBadges(
+        {
+          id: `op-${item.id}`,
+          href: item.href,
+          label: item.label,
+          kind: item.kind ?? 'resource',
+          status: 'operational',
+        },
+        options,
+      ),
+  );
+
+  const usedHrefs = new Set([...focusHrefs, ...operate.map((i) => hrefKey(i.href))]);
+
+  const platform = SHARED_PLATFORM_NAV.filter((item) => !usedHrefs.has(hrefKey(item.href))).map(
+    (item) =>
+      applyNavBadges(
+        {
+          id: `pl-${item.id}`,
+          href: item.href,
+          label: item.label,
+          kind: item.kind ?? 'admin',
+          status: 'operational',
+        },
+        options,
+      ),
+  );
+
+  for (const i of platform) usedHrefs.add(hrefKey(i.href));
+
+  const more: WorkspaceNavItem[] = PERSONA_MORE_NAV[persona]
+    .filter((item) => !usedHrefs.has(hrefKey(item.href)))
+    .map((item) => ({
       id: item.id,
       href: item.href,
       label: item.label,
       kind: item.kind ?? 'resource',
-      status: 'operational',
-    };
-    if (item.id === 'tasks' || item.id === 'home') {
-      if (options?.openTasks) navItem.badge = String(options.openTasks);
-    }
-    if (item.id === 'decisions' || item.id === 'approvals') {
-      if (options?.pendingApprovals) navItem.badge = String(options.pendingApprovals);
-    }
-    if (item.id === 'process' || item.id === 'cases') {
-      if (options?.openBlockers) navItem.badge = String(options.openBlockers);
-      else if (options?.activeCaseCount) navItem.badge = String(options.activeCaseCount);
-    }
-    if (item.id === 'connectors' && options?.connectorIssues) {
-      navItem.badge = String(options.connectorIssues);
-      navItem.status = 'credential_blocked';
-    }
-    if (item.id === 'ai') {
-      navItem.status = 'approval_controlled';
-    }
-    return navItem;
-  });
+      status: 'operational' as const,
+    }));
 
-  // Inject badges on operator process / executive decisions if primary didn't catch
-  for (const item of primary) {
-    if (item.id === 'tasks' && options?.openTasks) item.badge = String(options.openTasks);
-    if (item.id === 'decisions' && options?.pendingApprovals) {
-      item.badge = String(options.pendingApprovals);
-    }
-    if (item.href === '/terminal/process' && options?.openBlockers) {
-      item.badge = String(options.openBlockers);
-    }
-  }
-
-  const more: WorkspaceNavItem[] = PERSONA_MORE_NAV[persona].map((item) => ({
-    id: item.id,
-    href: item.href,
-    label: item.label,
-    kind: item.kind ?? 'resource',
-    status: 'operational',
-  }));
-
-  // Add procedure deep-links only under More (not primary chrome)
+  // Procedure deep-links only under More
   const def = PERSONA_DEFINITIONS[persona];
   for (const p of proceduresForPersona(persona)) {
     more.push({
@@ -939,17 +1018,53 @@ export function buildPersonaNav(
   }
 
   return [
-    {
-      id: 'focus',
-      label: 'Focus',
-      items: primary,
-    },
-    {
-      id: 'more',
-      label: 'More',
-      items: more,
-    },
+    { id: 'focus', label: 'Focus', items: primary },
+    { id: 'operate', label: 'Operate', items: operate },
+    { id: 'platform', label: 'Platform', items: platform },
+    { id: 'more', label: 'More', items: more },
   ];
+}
+
+/**
+ * Offline / API-down catalog — same hybrid shape as buildPersonaNav.
+ * Used by web shell when GET /workspace fails so the product never collapses to 4 links.
+ */
+export function buildFallbackNav(persona: OperatingPersona = 'researcher'): WorkspaceNavGroup[] {
+  return buildPersonaNav(persona);
+}
+
+/** Flat destination catalog for command palette / search (all personas union, unique hrefs). */
+export function listTerminalDestinations(): Array<{
+  id: string;
+  label: string;
+  href: string;
+  group: string;
+}> {
+  const seen = new Set<string>();
+  const out: Array<{ id: string; label: string; href: string; group: string }> = [];
+  const push = (group: string, id: string, label: string, href: string) => {
+    const k = hrefKey(href);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ id, label, href, group });
+  };
+  for (const item of SHARED_OPERATE_NAV) {
+    push('Operate', item.id, item.label, item.href);
+  }
+  for (const item of SHARED_PLATFORM_NAV) {
+    push('Platform', item.id, item.label, item.href);
+  }
+  for (const persona of OPERATING_PERSONAS) {
+    for (const item of PERSONA_PRIMARY_NAV[persona]) {
+      push('Focus', `${persona}-${item.id}`, item.label, item.href);
+    }
+    for (const item of PERSONA_MORE_NAV[persona]) {
+      push('More', `${persona}-${item.id}`, item.label, item.href);
+    }
+  }
+  push('Automate', 'ai', 'AI Operator', '/terminal/ai');
+  push('Govern', 'workspace', 'Switch persona', '/terminal/workspace');
+  return out;
 }
 
 /** AI tools allowed for persona (union of procedure step tools + safe reads). */

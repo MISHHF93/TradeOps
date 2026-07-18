@@ -47,20 +47,26 @@ export function FounderMenu({
           <p className="meta" style={{ margin: 0 }}>
             {email ?? 'founder@tradeops.local'}
           </p>
-          <Link href="/terminal/cockpit" onClick={() => setOpen(false)}>
-            Founder Workspace
+          <Link href="/terminal/workspace" onClick={() => setOpen(false)}>
+            Workspace / personas
+          </Link>
+          <Link href="/terminal" onClick={() => setOpen(false)}>
+            Discover
+          </Link>
+          <Link href="/terminal/process" onClick={() => setOpen(false)}>
+            Cases
           </Link>
           <Link href="/app" onClick={() => setOpen(false)}>
-            Settings
+            System settings
           </Link>
           <Link href="/terminal/connectors" onClick={() => setOpen(false)}>
-            Connector Credentials
+            Connectors
           </Link>
           <Link href="/status" onClick={() => setOpen(false)}>
-            System Status
+            Capability status
           </Link>
           <Link href="/app/release-readiness" onClick={() => setOpen(false)}>
-            Backup / readiness
+            Release readiness
           </Link>
           <p className="meta" style={{ margin: '4px 0 0' }}>
             Access mode: <code>{mode}</code>

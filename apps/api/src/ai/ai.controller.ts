@@ -1,19 +1,20 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import type { OperationLoopMode } from '@tradeops/ai-runtime';
 import {
+  agentCatalogPublic,
   gatewayCatalogPublic,
-  runAiGateway,
-  runCohereAgentLoop,
   resolveAIProvider,
   listPromptsPublic,
   listSchemasPublic,
   aiProviderPublicStatus,
+  planAgentsForObjective,
 } from '@tradeops/ai-runtime';
 import { aiPlatformPublicStatus, environmentManifestPublicStatus } from '@tradeops/config';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
 import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
 import { EventFabricService } from '../events/event-fabric.service';
+import { AiChatService } from './ai-chat.service';
 import { AiOperatorService } from './ai-operator.service';
 import { RagService } from './rag.service';
 import { PredictionService } from './prediction.service';
@@ -22,6 +23,7 @@ import type { RagSourceType } from '@tradeops/ai-runtime';
 @Controller('ai')
 export class AiController {
   constructor(
+    private readonly chatService: AiChatService,
     private readonly operator: AiOperatorService,
     private readonly rag: RagService,
     private readonly prediction: PredictionService,
@@ -53,12 +55,35 @@ export class AiController {
   @Public()
   @Get('gateway')
   gatewayCatalog() {
-    return gatewayCatalogPublic();
+    return {
+      ...gatewayCatalogPublic(),
+      agents: agentCatalogPublic(),
+    };
   }
 
   /**
-   * Single entry: objective → AI Adapter / Search Manager + envelope (text + JSON).
-   * Prefer POST /ai/chat for the full Cohere two-stage agent runtime.
+   * Agent orchestration plan — which specialist roles participate for an objective.
+   * Single Cohere runtime; roles shape tools/prompt emphasis.
+   */
+  @Post('agents/plan')
+  @RequirePermissions('ai:read')
+  planAgents(
+    @Body() body: { objective?: string; persona?: string },
+  ) {
+    return planAgentsForObjective(body.objective ?? '', {
+      persona: body.persona,
+    });
+  }
+
+  @Public()
+  @Get('agents')
+  listAgents() {
+    return agentCatalogPublic();
+  }
+
+  /**
+   * Canonical path alias — always Cohere agent loop (no legacy demo gateway fallback).
+   * Prefer POST /ai/chat; this remains for older clients.
    */
   @Post('gateway/run')
   @RequirePermissions('ai:write', 'ai:read')
@@ -67,6 +92,7 @@ export class AiController {
     @Body()
     body: {
       objective?: string;
+      message?: string;
       conversationId?: string;
       disableSearch?: boolean;
       operationalContext?: Record<string, unknown>;
@@ -81,34 +107,35 @@ export class AiController {
     },
   ) {
     const tenantId = requireOrgId(auth);
-    const objective = body.objective?.trim() || 'Summarize current commerce priorities.';
-    // Prefer Cohere agent loop when provider is cohere
-    const provider = resolveAIProvider();
-    if (provider.id === 'cohere' && provider.configured) {
-      return runCohereAgentLoop({
-        message: objective,
-        tenantId,
-        userId: auth.userId,
-        conversationId: body.conversationId,
-        operationalContext: body.operationalContext,
-        knowledgeDocuments: body.knowledgeDocuments,
-        disableSearch: body.disableSearch,
-        permissions: [...(auth.permissions ?? [])],
-      });
+    const objective =
+      body.message?.trim() ||
+      body.objective?.trim() ||
+      '';
+    if (!objective) {
+      return {
+        status: 'blocked',
+        dataMode: 'unavailable',
+        errorCode: 'MESSAGE_REQUIRED',
+        requiredAction: 'Provide message or objective.',
+        output: { text: 'Message is required.', artifactType: 'answer', artifact: {} },
+        warnings: ['message_required'],
+        confidence: 0,
+      };
     }
-    return runAiGateway({
-      tenantId,
+    return this.chatService.chat({
+      organizationId: tenantId,
       userId: auth.userId,
+      message: objective,
       conversationId: body.conversationId,
-      objective,
-      disableSearch: body.disableSearch,
       operationalContext: body.operationalContext,
       knowledgeDocuments: body.knowledgeDocuments,
+      disableSearch: body.disableSearch,
+      permissions: [...(auth.permissions ?? [])],
     });
   }
 
   /**
-   * Canonical Cohere AI chat runtime (professor-mode activation).
+   * Canonical Cohere AI chat runtime + durable conversation history.
    * Server resolves tenant; client never sends API keys, models, or trusted tenant IDs.
    */
   @Post('chat')
@@ -133,20 +160,24 @@ export class AiController {
       }>;
     },
   ) {
-    const tenantId = requireOrgId(auth);
     const message = body.message?.trim();
     if (!message) {
       return {
-        status: 'failed',
+        status: 'blocked',
+        dataMode: 'unavailable',
+        errorCode: 'MESSAGE_REQUIRED',
+        requiredAction: 'Provide a non-empty message.',
         output: { text: 'Message is required.', artifactType: 'answer', artifact: {} },
         warnings: ['message_required'],
         confidence: 0,
+        evidence: [],
+        actions: [],
       };
     }
-    return runCohereAgentLoop({
-      message,
-      tenantId,
+    return this.chatService.chat({
+      organizationId: requireOrgId(auth),
       userId: auth.userId,
+      message,
       conversationId: body.conversationId,
       workspaceId: body.workspaceId,
       requestedArtifactType: body.requestedArtifactType,
@@ -157,20 +188,115 @@ export class AiController {
     });
   }
 
+  /** List durable AI conversations for the active tenant. */
+  @Get('conversations')
+  @RequirePermissions('ai:read')
+  listConversations(@CurrentAuth() auth: AuthContext) {
+    return this.chatService.listConversations(requireOrgId(auth));
+  }
+
+  /** Load a conversation thread (user + assistant turns). */
+  @Get('conversations/:conversationId')
+  @RequirePermissions('ai:read')
+  getConversation(
+    @CurrentAuth() auth: AuthContext,
+    @Param('conversationId') conversationId: string,
+  ) {
+    return this.chatService.getConversation(requireOrgId(auth), conversationId);
+  }
+
+  /**
+   * Safe AI runtime health (no secrets). Verifies provider config + live embed probe when possible.
+   * GET /api/v1/ai/health
+   */
+  @Get('health')
+  @RequirePermissions('ai:read')
+  async aiHealth() {
+    const { getSimulationPolicy } = await import('@tradeops/ai-runtime');
+    const policy = getSimulationPolicy();
+    const provider = resolveAIProvider();
+    const health = await provider.healthCheck();
+    const platform = aiPlatformPublicStatus();
+    const overall =
+      !policy.aiRuntimeEnabled
+        ? 'disabled'
+        : policy.productionSimulationRejected
+          ? 'unhealthy'
+          : !provider.configured
+            ? 'blocked'
+            : health.ok
+              ? 'healthy'
+              : 'unhealthy';
+
+    return {
+      status: overall,
+      runtime: {
+        enabled: policy.aiRuntimeEnabled,
+        provider: provider.id,
+        configured: provider.configured,
+        model: health.model ?? platform.cohereChatModel ?? 'unknown',
+        structuredOutput: platform.responseContract?.mode ?? 'json_schema',
+        toolCalling: 'enabled',
+        simulationMode: policy.simulationEnabled,
+        responseCacheEnabled: policy.responseCacheEnabled,
+        providerProbe: health.ok ? 'healthy' : provider.configured ? 'unhealthy' : 'missing',
+        latencyMs: health.latencyMs,
+        error: health.error ?? null,
+      },
+      dependencies: {
+        search: platform.search?.enabled
+          ? platform.search?.tavilySearch || platform.search?.openaiWeb
+            ? 'configured'
+            : 'enabled_but_no_key'
+          : 'disabled',
+        retrieval: platform.cohereConfigured ? 'cohere' : 'local_or_unavailable',
+        cohere: platform.cohereConfigured ? (health.ok ? 'healthy' : 'unhealthy') : 'missing_key',
+      },
+      lastCheckedAt: health.checkedAt ?? new Date().toISOString(),
+      note: 'No secrets returned. Set COHERE_API_KEY for live runtime. Simulation never auto-enables after provider failure.',
+    };
+  }
+
   /** Provider + prompt health (no secrets). */
   @Get('runtime')
   @RequirePermissions('ai:read')
   async runtimeStatus() {
     const provider = resolveAIProvider();
     const health = await provider.healthCheck();
+    const {
+      getSimulationPolicy,
+      productionAiConfigPublic,
+      assertProductionAiAssetsPresent,
+    } = await import('@tradeops/ai-runtime');
+    try {
+      assertProductionAiAssetsPresent();
+    } catch {
+      /* reported in productionConfig.integrity */
+    }
     return {
       platform: aiPlatformPublicStatus(),
       provider: aiProviderPublicStatus(),
       health,
+      simulation: getSimulationPolicy(),
       prompts: listPromptsPublic(),
       schemas: listSchemasPublic(),
       environment: environmentManifestPublicStatus(),
+      /** Full code-owned Cohere production configuration inventory */
+      productionConfig: productionAiConfigPublic(),
     };
+  }
+
+  /**
+   * Complete production AI configuration from source code (no secrets).
+   * Proves TradeOps owns prompts, schemas, tools, policies — not Playground.
+   */
+  @Get('production-config')
+  @RequirePermissions('ai:read')
+  async productionConfig() {
+    const { productionAiConfigPublic, assertProductionAiAssetsPresent } =
+      await import('@tradeops/ai-runtime');
+    assertProductionAiAssetsPresent();
+    return productionAiConfigPublic();
   }
 
   @Post('xai/probe')

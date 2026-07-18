@@ -4,7 +4,10 @@ import { terminalGet } from '../../../lib/terminal-api';
 
 type RunPayload = {
   id: string;
+  /** User-facing goal only (API strips system/workspace preambles) */
   objective: string;
+  /** Outcome summary — never a system prompt */
+  description?: string | null;
   status: string;
   decision: string | null;
   decisionNote: string | null;
@@ -13,6 +16,9 @@ type RunPayload = {
     timeline?: Array<{ at: string; step: string; status: string; detail?: string }>;
     sources?: Array<{ name: string; status: string; detail?: string }>;
     responseSummary?: string;
+    navigatorSummary?: string;
+    finalAnswer?: string;
+    userObjective?: string;
     candidateStats?: { retrieved: number; ranked: number; normalized: number };
     filtersApplied?: Record<string, unknown>;
     objectiveType?: string;
@@ -45,6 +51,7 @@ export default async function OpportunitiesPage({
     Array<{
       id: string;
       objective: string;
+      description?: string | null;
       status: string;
       decision: string | null;
       startedAt: string;
@@ -63,6 +70,13 @@ export default async function OpportunitiesPage({
 
   const plan = run?.planJson ?? {};
   const recs = run?.recommendations ?? [];
+  const description =
+    run?.description ??
+    plan.navigatorSummary ??
+    plan.responseSummary ??
+    plan.finalAnswer ??
+    run?.decisionNote ??
+    null;
 
   return (
     <section>
@@ -71,8 +85,9 @@ export default async function OpportunitiesPage({
           <p className="pill">Stage view · Evaluate / Qualify</p>
           <h1 className="workspace-title-active">Opportunities</h1>
           <p className="lede">
-            Ranked evaluation results feeding Commerce Cases. Research is read-only — approval is
-            only for publish and purchase. Continue on the Process board after ranking.
+            Ranked product evaluations from operator runs — not system prompts. Research is
+            read-only; approval is only for publish and purchase. Continue on the Process board
+            after ranking.
           </p>
         </div>
         <div className="terminal-toolbar">
@@ -100,7 +115,15 @@ export default async function OpportunitiesPage({
           <div className="detail-grid">
             <article className="panel">
               <h2>Objective</h2>
-              <p>{run.objective}</p>
+              <p>
+                <strong>{run.objective || '—'}</strong>
+              </p>
+              <h3 style={{ marginTop: 12, fontSize: '0.95rem' }}>Description</h3>
+              <p className="meta">
+                {description?.trim()
+                  ? description
+                  : 'No run summary yet. Description is the evaluation outcome — not AI system instructions.'}
+              </p>
               <ul className="kv">
                 <li>
                   <span>Status</span>
@@ -119,7 +142,6 @@ export default async function OpportunitiesPage({
                   <strong>{run.decision ?? '—'}</strong>
                 </li>
               </ul>
-              <p className="meta">{plan.responseSummary ?? run.decisionNote}</p>
             </article>
             <article className="panel">
               <h2>Candidates</h2>
@@ -254,10 +276,13 @@ export default async function OpportunitiesPage({
             {latestRuns.data.map((r) => (
               <li key={r.id}>
                 <Link href={`/terminal/opportunities?runId=${r.id}`}>
-                  {r.objective.slice(0, 80)}
+                  {(r.objective || 'Operator run').slice(0, 80)}
                 </Link>{' '}
                 · {r.status} · {r.recommendations?.length ?? 0} recs ·{' '}
                 {new Date(r.startedAt).toLocaleString()}
+                {r.description ? (
+                  <span className="meta"> — {r.description.slice(0, 100)}</span>
+                ) : null}
               </li>
             ))}
           </ul>

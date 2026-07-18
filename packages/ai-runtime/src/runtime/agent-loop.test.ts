@@ -25,8 +25,15 @@ describe('Cohere runtime foundations', () => {
       warnings: [],
     });
     assert.equal(ok.ok, true);
-    const bad = validateSynthesisPayload({ text: 'x' });
+    // Code-owned schema repair: partial payloads with text are coerced (not fail-open invent)
+    const coerced = validateSynthesisPayload({ text: 'partial answer from model' });
+    assert.equal(coerced.ok, true);
+    assert.equal(coerced.value?.artifactType, 'answer');
+    // Completely empty still fails
+    const bad = validateSynthesisPayload(null);
     assert.equal(bad.ok, false);
+    const empty = validateSynthesisPayload({});
+    assert.equal(empty.ok, false);
   });
 
   it('resolves cohere when key present', () => {

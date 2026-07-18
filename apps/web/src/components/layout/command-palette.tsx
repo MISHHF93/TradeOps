@@ -3,29 +3,24 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FOUNDER_WORKSPACE_PATH } from '../../lib/access-mode';
+import { listClientDestinations } from '../../lib/nav-catalog';
 
 type Cmd = { id: string; label: string; href: string; group: string; kbd?: string };
 
-const COMMANDS: Cmd[] = [
-  { id: 'term', label: 'Open Terminal / command center', href: FOUNDER_WORKSPACE_PATH, group: 'Operate', kbd: 'G T' },
-  { id: 'scan', label: 'Market scanner', href: '/terminal', group: 'Operate', kbd: 'G S' },
-  { id: 'opp', label: 'Opportunities (AI results)', href: '/terminal/opportunities', group: 'Operate' },
-  { id: 'live', label: 'Live examples', href: '/terminal/live-examples', group: 'Operate' },
-  { id: 'obj', label: 'Objective history', href: '/terminal/objectives', group: 'Operate' },
-  { id: 'watch', label: 'Watchlist', href: '/terminal/watchlist', group: 'Operate' },
-  { id: 'orders', label: 'Orders', href: '/terminal/orders', group: 'Operate' },
-  { id: 'ai', label: 'AI Operator workspace', href: '/terminal/ai', group: 'Automate', kbd: 'G A' },
-  { id: 'wf', label: 'Workflows', href: '/terminal/automations', group: 'Automate' },
-  { id: 'appr', label: 'Approvals', href: '/terminal/approvals', group: 'Automate' },
-  { id: 'conn', label: 'Connectors', href: '/terminal/connectors', group: 'Network' },
-  { id: 'cust', label: 'Customers', href: '/terminal/customers', group: 'Network' },
-  { id: 'port', label: 'Portfolio', href: '/terminal/portfolio', group: 'Intelligence' },
-  { id: 'cash', label: 'Cash flow', href: '/terminal/cashflow', group: 'Intelligence' },
-  { id: 'tower', label: 'Control tower', href: '/terminal/control-tower', group: 'Intelligence' },
-  { id: 'sys', label: 'System / settings', href: '/app', group: 'Govern' },
-  { id: 'status', label: 'Capability honesty board', href: '/status', group: 'Govern' },
-];
+const COMMANDS: Cmd[] = listClientDestinations().map((d) => ({
+  id: d.id,
+  label: d.label,
+  href: d.href,
+  group: d.group,
+  kbd:
+    d.href === '/terminal'
+      ? 'G S'
+      : d.href === '/terminal/ai'
+        ? 'G A'
+        : d.href === '/terminal/workspace'
+          ? 'G T'
+          : undefined,
+}));
 
 /**
  * Command palette — AI gateway / visual centerpiece (§12).

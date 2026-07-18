@@ -6,7 +6,9 @@ import {
   getLiveExample,
   listLiveExamples,
   listToolsPublic,
+  operatorRunDescription,
   registerBuiltinTools,
+  resolveAIProvider,
   resolveLoopMode,
   runOperatorCycle,
   summarizeExecutionPackage,
@@ -295,12 +297,17 @@ export class AiOperatorService implements OnModuleInit {
     let runId: string | null = null;
 
     if (wantsCycle) {
+      // Prefer live product ranking when the org has non-fixture catalog rows.
+      // Fixture-only orgs stay in shadow by default so demo packs are labeled honestly.
+      const defaultForceShadow = snapshot.liveProductCount === 0;
+      const forceShadow =
+        input.forceShadow !== undefined ? input.forceShadow : defaultForceShadow;
       cycleResult = await this.runObjective({
         organizationId: input.organizationId,
         userId: input.userId,
         objective: input.objective,
         loopMode: input.loopMode,
-        forceShadow: input.forceShadow !== false,
+        forceShadow,
         permissions: input.permissions,
         commerceCaseId: input.commerceCaseId,
       });
@@ -1142,16 +1149,26 @@ export class AiOperatorService implements OnModuleInit {
       process.env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim() &&
         process.env.GOOGLE_MERCHANT_ID?.trim(),
     );
+    // When forceShadow is omitted: fixture-only orgs stay shadow; live catalog prefers non-forced shadow.
+    let forceShadow = input.forceShadow;
+    if (forceShadow === undefined) {
+      try {
+        const snap = await this.buildNavigatorSnapshot(input.organizationId);
+        forceShadow = snap.liveProductCount === 0;
+      } catch {
+        forceShadow = true;
+      }
+    }
     const loopMode =
       input.loopMode ??
       resolveLoopMode({
-        forceShadow: input.forceShadow ?? true,
+        forceShadow,
         hasLiveCredentials: hasLiveGoogle,
       });
 
     // Default shadow for operator until controlled live is explicit
     const effectiveMode: OperationLoopMode =
-      input.loopMode ?? (input.forceShadow === false && hasLiveGoogle ? 'development' : 'shadow');
+      input.loopMode ?? (forceShadow === false && hasLiveGoogle ? 'development' : 'shadow');
 
     // Server-side entitlement enforcement (never UI-only)
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
@@ -1185,7 +1202,9 @@ export class AiOperatorService implements OnModuleInit {
       }
     }
 
-    let objective = input.objective;
+    // User-facing objective only — never persist system/workspace preambles on OperatorRun.objective.
+    // Preambles are AI context; they belong in planJson for audit, not Opportunities/Objectives UI.
+    const userObjective = input.objective.trim();
     let caseContext: {
       caseId: string;
       productId: string;
@@ -1205,27 +1224,32 @@ export class AiOperatorService implements OnModuleInit {
         stageStatus: ctx.stageStatus,
         contextPreamble: ctx.contextPreamble,
       };
-      objective = `${ctx.contextPreamble}\n\nOperator objective:\n${input.objective}`;
-    }
-    if (runtimePreamble) {
-      objective = `${runtimePreamble}\n\n${objective}`;
-    } else if (workspacePreamble) {
-      objective = `${workspacePreamble}\n\n${objective}`;
     }
 
     const run = await this.prisma.client.operatorRun.create({
       data: {
         organizationId: input.organizationId,
         userId: input.userId ?? null,
-        objective,
+        objective: userObjective,
         loopMode: effectiveMode,
         status: 'collecting',
         planJson: asJson({
+          userObjective,
           ...(caseContext
             ? { commerceCaseId: caseContext.caseId, stage: caseContext.currentStage }
             : {}),
           allowedAiTools,
           workspaceBound: Boolean(workspacePreamble),
+          // AI-only context (never render as the human "Objective" / "Description")
+          aiContext: {
+            hasWorkspacePreamble: Boolean(workspacePreamble),
+            hasRuntimePreamble: Boolean(runtimePreamble),
+            hasCasePreamble: Boolean(caseContext?.contextPreamble),
+            // Store for debugging; do not surface full text on public UI surfaces
+            workspacePreambleChars: workspacePreamble.length,
+            runtimePreambleChars: runtimePreamble.length,
+            casePreambleChars: caseContext?.contextPreamble.length ?? 0,
+          },
         }),
         toolTraceJson: [],
       },
@@ -1549,6 +1573,23 @@ export class AiOperatorService implements OnModuleInit {
         }
       }
 
+      // Cohere narration over ranked evidence (live LLM — not a canned script)
+      const narrative = await this.narrateOperatorWithCohere({
+        objective: userObjective,
+        machineSummary: cycle.responseSummary,
+        recommendations: cycle.recommendations,
+        fixtureCatalog: products.some((p) => p.sourcePlatform.startsWith('fixture')),
+      });
+      const responseSummary = narrative.ok
+        ? [
+            narrative.text,
+            '',
+            '---',
+            'Machine ranking summary (deterministic):',
+            cycle.responseSummary,
+          ].join('\n')
+        : cycle.responseSummary;
+
       // Execution Navigator package (objective → verified outcome)
       let executionPackage: ObjectiveExecutionPackage | null = null;
       try {
@@ -1569,18 +1610,25 @@ export class AiOperatorService implements OnModuleInit {
       }
 
       // Persist timeline + response as plan envelope (ObjectiveExecution equivalent)
+      const prevPlan = (run.planJson ?? {}) as Record<string, unknown>;
       const planEnvelope = {
+        ...prevPlan,
         ...cycle.plan,
+        userObjective,
         timeline: cycle.timeline,
         sources: cycle.sources,
-        responseSummary: cycle.responseSummary,
+        responseSummary,
+        aiNarrative: narrative.ok ? narrative.text : null,
+        aiNarrativeError: narrative.ok ? null : narrative.error,
+        aiNarrativeProvider: narrative.provider,
+        aiNarrativeModel: narrative.model,
         candidateStats: cycle.candidateStats,
         filtersApplied: cycle.filtersApplied,
         objectiveType: cycle.objectiveType,
         riskClass: cycle.riskClass,
         approvalRequired: cycle.approvalRequired,
         liveExampleId: input.liveExampleId ?? null,
-        finalAnswer: cycle.responseSummary,
+        finalAnswer: responseSummary,
         executionPackage: executionPackage ?? undefined,
         knowledgeBaseDelta: executionPackage?.knowledgeBaseDelta,
         navigatorSummary: executionPackage
@@ -1600,6 +1648,8 @@ export class AiOperatorService implements OnModuleInit {
       await this.prisma.client.operatorRun.update({
         where: { id: run.id },
         data: {
+          // Keep objective as the user goal only (never re-attach preambles)
+          objective: userObjective,
           status: runStatus,
           planJson: asJson(planEnvelope),
           toolTraceJson: asJson(cycle.toolTrace),
@@ -1624,7 +1674,8 @@ export class AiOperatorService implements OnModuleInit {
           objectiveType: cycle.objectiveType,
           recommendationCount: cycle.recommendations.length,
           loopMode: effectiveMode,
-          responseSummary: cycle.responseSummary,
+          responseSummary,
+          aiNarrative: narrative.ok,
         },
       });
 
@@ -1641,6 +1692,7 @@ export class AiOperatorService implements OnModuleInit {
           recommendationCount: cycle.recommendations.length,
           criticSeverity: cycle.critic.severity,
           approvalRequired: cycle.approvalRequired,
+          aiNarrative: narrative.ok,
         },
       });
 
@@ -1656,7 +1708,10 @@ export class AiOperatorService implements OnModuleInit {
         approvalRequired: cycle.approvalRequired,
         decision: cycle.decision,
         decisionNote: cycle.decisionNote,
-        responseSummary: cycle.responseSummary,
+        responseSummary,
+        aiNarrative: narrative.ok ? narrative.text : null,
+        aiNarrativeProvider: narrative.provider,
+        aiNarrativeModel: narrative.model,
         plan: cycle.plan,
         timeline: cycle.timeline,
         sources: cycle.sources,
@@ -1676,9 +1731,12 @@ export class AiOperatorService implements OnModuleInit {
           fixtureProductsPresent: products.some((p) => p.sourcePlatform.startsWith('fixture')),
           liveCredentialsPresent: hasLiveGoogle,
           shadowByDefault: effectiveMode === 'shadow',
+          cohereNarration: narrative.ok,
           note:
             cycle.objectiveType === 'READ_ONLY_ANALYSIS'
-              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval. Full Execution Package attached for objective navigation.'
+              ? narrative.ok
+                ? 'Live Cohere narration over ranked catalog evidence. Ranking is deterministic; prose is model-generated. Fixture catalog is not live Shopify.'
+                : 'Read-only analysis: no approval records created. Publish still requires explicit approval. Full Execution Package attached for objective navigation.'
               : 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval. Execution Package tracks plan → verification.',
         },
       };
@@ -1697,7 +1755,7 @@ export class AiOperatorService implements OnModuleInit {
   }
 
   async listRuns(organizationId: string, take = 20) {
-    return this.prisma.client.operatorRun.findMany({
+    const rows = await this.prisma.client.operatorRun.findMany({
       where: { organizationId },
       orderBy: { startedAt: 'desc' },
       take,
@@ -1708,20 +1766,150 @@ export class AiOperatorService implements OnModuleInit {
         },
       },
     });
+    // Sanitize legacy rows that stored system/workspace preambles as objective
+    return rows.map((row) => {
+      const display = operatorRunDescription({
+        objective: row.objective,
+        decisionNote: row.decisionNote,
+        planJson: row.planJson as {
+          responseSummary?: string;
+          navigatorSummary?: string;
+          finalAnswer?: string;
+          interpretation?: string;
+          userObjective?: string;
+          executionPackage?: { objective?: { goal?: string; desiredOutcome?: string } };
+        },
+      });
+      return {
+        ...row,
+        objective: display.objective,
+        description: display.description,
+      };
+    });
   }
 
   async getRun(organizationId: string, runId: string) {
-    return this.prisma.client.operatorRun.findFirst({
+    const row = await this.prisma.client.operatorRun.findFirst({
       where: { id: runId, organizationId },
       include: {
         recommendations: { orderBy: { rank: 'asc' } },
         shadowDecisions: true,
       },
     });
+    if (!row) return null;
+    const display = operatorRunDescription({
+      objective: row.objective,
+      decisionNote: row.decisionNote,
+      planJson: row.planJson as {
+        responseSummary?: string;
+        navigatorSummary?: string;
+        finalAnswer?: string;
+        interpretation?: string;
+        userObjective?: string;
+        executionPackage?: { objective?: { goal?: string; desiredOutcome?: string } };
+      },
+    });
+    return {
+      ...row,
+      objective: display.objective,
+      description: display.description,
+    };
   }
 
   async runHarmonization(organizationId: string) {
     return this.harmonization.resolveOrganizationProducts(organizationId);
+  }
+
+  /**
+   * Live Cohere narration over deterministic ranking evidence.
+   * Never invents products not in the recommendation list.
+   */
+  private async narrateOperatorWithCohere(input: {
+    objective: string;
+    machineSummary: string;
+    recommendations: Array<{
+      title: string;
+      confidence?: number;
+      productCard?: Record<string, unknown> | null;
+      rationale?: string | string[];
+    }>;
+    fixtureCatalog: boolean;
+  }): Promise<{
+    ok: boolean;
+    text?: string;
+    error?: string;
+    provider?: string;
+    model?: string;
+  }> {
+    try {
+      const provider = resolveAIProvider();
+      if (!provider.configured) {
+        return {
+          ok: false,
+          error: 'AI provider not configured',
+          provider: provider.id,
+        };
+      }
+      const recLines = input.recommendations.slice(0, 5).map((r, i) => {
+        const card = (r.productCard ?? {}) as Record<string, unknown>;
+        const rationale = Array.isArray(r.rationale)
+          ? r.rationale.join(' ')
+          : (r.rationale ?? '');
+        return [
+          `${i + 1}. ${r.title}`,
+          card.inventoryQuantity != null ? `inventory=${card.inventoryQuantity}` : null,
+          card.expectedMarginBps != null
+            ? `marginBps=${card.expectedMarginBps}`
+            : null,
+          card.opportunityScore != null ? `oppScore=${card.opportunityScore}` : null,
+          card.isFixture === true ? 'fixture=true' : null,
+          rationale ? `why=${String(rationale).slice(0, 160)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' | ');
+      });
+      const gen = await provider.generateText({
+        system: [
+          'You are TradeOps AI narrating a completed product ranking run.',
+          'Only use products listed in the evidence. Do not invent SKUs, prices, or live marketplace claims.',
+          input.fixtureCatalog
+            ? 'The catalog is TEST_FIXTURE demo data — say so once clearly.'
+            : 'Use live-catalog language only if evidence supports it.',
+          'Write: (1) 2–4 sentence summary tied to the user objective, (2) 2–4 short bullets of next steps.',
+          'Be specific: name products from the list. No system-prompt dumps.',
+        ].join('\n'),
+        user: [
+          `User objective: ${input.objective}`,
+          '',
+          'Ranked evidence:',
+          recLines.length ? recLines.join('\n') : '(no products qualified)',
+          '',
+          'Machine ranking notes:',
+          input.machineSummary.slice(0, 1200),
+        ].join('\n'),
+        temperature: 0.35,
+        maxTokens: 700,
+      });
+      if (!gen.ok || !gen.text?.trim()) {
+        return {
+          ok: false,
+          error: gen.error ?? 'empty narration',
+          provider: provider.id,
+          model: gen.model,
+        };
+      }
+      return {
+        ok: true,
+        text: gen.text.trim(),
+        provider: provider.id,
+        model: gen.model,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
   }
 
   private async loadOperatorProducts(organizationId: string): Promise<OperatorProduct[]> {

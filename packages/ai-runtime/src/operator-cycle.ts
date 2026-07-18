@@ -348,6 +348,12 @@ export async function runOperatorCycle(input: {
     );
   }
 
+  const objectiveTokens = extractObjectiveTokens(input.objective);
+  const inventoryRiskIntent =
+    /\b(inventory|stock|low.?stock|out of stock|risk|overs?tock|understock)\b/i.test(
+      input.objective,
+    );
+
   const retrieved = input.products.length;
   let rejectedMissingCost = 0;
   const normalized = input.products.filter((p) => {
@@ -365,8 +371,27 @@ export async function runOperatorCycle(input: {
     `${normalized.length} normalized; ${rejectedMissingCost} rejected for missing cost`,
   );
 
-  const scored = normalized.map((p) => scoreCandidate(p, filters));
+  const scored = normalized.map((p) => {
+    const base = scoreCandidate(p, filters);
+    const objectiveMatch = scoreObjectiveMatch(p, objectiveTokens, input.objective);
+    let rankScore = base.rankScore + objectiveMatch * 18;
+    // Inventory / risk objectives: surface low stock and high-qty risk SKUs first
+    if (inventoryRiskIntent) {
+      if (p.inventoryQuantity <= 0) rankScore += 40;
+      else if (p.inventoryQuantity <= 5) rankScore += 28;
+      else if (p.inventoryQuantity >= 40) rankScore += 12; // overstock risk
+      rankScore += Math.max(0, 30 - Math.min(30, p.inventoryQuantity));
+    }
+    return { ...base, objectiveMatch, rankScore };
+  });
   const passed = scored.filter((c) => c.pass);
+  const anyObjectiveHit = scored.some((c) => c.objectiveMatch > 0);
+  // When the user names a product/category, prefer matches; else use all that passed filters.
+  const relevancePool =
+    anyObjectiveHit && objectiveTokens.length > 0
+      ? passed.filter((c) => c.objectiveMatch > 0)
+      : passed;
+  const pool = relevancePool.length > 0 ? relevancePool : passed;
   const failedReasons = scored
     .filter((c) => !c.pass)
     .slice(0, 8)
@@ -376,10 +401,10 @@ export async function runOperatorCycle(input: {
     timeline,
     'Costs, risks, and opportunity scores evaluated',
     'done',
-    `${passed.length} of ${normalized.length} passed filters`,
+    `${passed.length} of ${normalized.length} passed filters; objective tokens=[${objectiveTokens.slice(0, 6).join(', ')}] matches=${pool.filter((c) => c.objectiveMatch > 0).length}`,
   );
 
-  const candidates = passed
+  const candidates = pool
     .sort((a, b) => b.rankScore - a.rankScore)
     .slice(0, filters.topN ?? 3);
 
@@ -507,6 +532,7 @@ export async function runOperatorCycle(input: {
       forecastConfidence: p.dataConfidence,
       dataFreshnessAt: p.dataFreshnessAt,
       currency: p.currency,
+      inventoryQuantity: p.inventoryQuantity,
       isFixture,
       deliveryEstimateDays: filters.maxDeliveryDays ?? 14,
       currentSignal: p.currentSignal ?? null,
@@ -706,10 +732,22 @@ export async function runOperatorCycle(input: {
       }
     | undefined;
 
+  const fixtureCount = input.products.filter((p) =>
+    p.sourcePlatform.startsWith('fixture'),
+  ).length;
+  const dataClassNote =
+    fixtureCount === input.products.length && input.products.length > 0
+      ? 'DATA CLASS: TEST_FIXTURE (demo catalog — not live Shopify/marketplace).'
+      : fixtureCount > 0
+        ? `DATA CLASS: MIXED (${fixtureCount} fixture / ${input.products.length - fixtureCount} non-fixture).`
+        : 'DATA CLASS: LIVE catalog rows (connector provenance still required for marketplace claims).';
+
   let responseSummary: string;
   if (retrieved === 0) {
     responseSummary = [
-      'I could not search live products because no authorized product-source data is currently available in the organization store.',
+      `OBJECTIVE: ${input.objective.slice(0, 240)}`,
+      '',
+      'I could not search products because no authorized product-source data is currently available in the organization store.',
       '',
       'Available next steps:',
       '1. Connect a supplier source.',
@@ -718,7 +756,9 @@ export async function runOperatorCycle(input: {
     ].join('\n');
   } else if (finalRecs.length === 0) {
     responseSummary = [
-      `I evaluated ${retrieved} product candidate(s) from connected sources.`,
+      `OBJECTIVE: ${input.objective.slice(0, 240)}`,
+      dataClassNote,
+      `I evaluated ${retrieved} product candidate(s) against this objective.`,
       `${rejectedMissingCost} rejected for missing cost data.`,
       `${rejectedByFilter} failed evaluation thresholds (${JSON.stringify(filters)}).`,
       failedReasons.length ? `Examples: ${failedReasons.slice(0, 4).join(' | ')}` : '',
@@ -737,19 +777,28 @@ export async function runOperatorCycle(input: {
       topCard?.expectedMarginBps != null
         ? `${(Number(topCard.expectedMarginBps) / 100).toFixed(1)}%`
         : 'n/a';
+    const rankedTitles = finalRecs
+      .map((r, i) => `${i + 1}. ${r.title}`)
+      .join('\n');
     responseSummary = [
-      `I evaluated ${retrieved} supplier products from connected sources.`,
+      `OBJECTIVE: ${input.objective.slice(0, 240)}`,
+      dataClassNote,
+      `I evaluated ${retrieved} product(s) for this objective (tokens: ${objectiveTokens.slice(0, 8).join(', ') || 'none'}).`,
       `${rejectedMissingCost} rejected for missing cost data.`,
       `${rejectedByFilter} rejected by filters (margin / policy / confidence / cost).`,
-      `${finalRecs.length} product(s) qualified.`,
+      `${finalRecs.length} product(s) ranked for this run:`,
+      rankedTitles,
       '',
       top
         ? [
-            `Strongest opportunity: ${top.title}`,
+            inventoryRiskIntent
+              ? `Top inventory focus: ${top.title}`
+              : `Strongest match for this objective: ${top.title}`,
             `Opportunity score: ${topCard?.opportunityScore ?? '—'}/100`,
             `Confidence: ${(top.confidence * 100).toFixed(0)}%`,
             `Estimated contribution profit: ${profit}`,
             `Expected margin: ${margin}`,
+            `Inventory qty (catalog): ${top.productCard && typeof top.productCard === 'object' && 'inventoryQuantity' in (top.productCard as object) ? (top.productCard as { inventoryQuantity?: number }).inventoryQuantity : '—'}`,
             `Delivery estimate: up to ${topCard?.deliveryEstimateDays ?? filters.maxDeliveryDays ?? '—'} days`,
             `Policy risk: ${topCard?.policyOutcome ?? top.policyRiskScore}`,
             '',
@@ -819,6 +868,75 @@ function deriveSourcesFromProducts(
   });
   sources.push({ name: 'Trend feed', status: 'limited', detail: 'Baseline model only' });
   return sources;
+}
+
+const OBJECTIVE_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'that',
+  'this',
+  'find',
+  'search',
+  'evaluate',
+  'recommend',
+  'product',
+  'products',
+  'list',
+  'show',
+  'what',
+  'which',
+  'our',
+  'are',
+  'need',
+  'needs',
+  'please',
+  'help',
+  'top',
+  'best',
+  'high',
+  'low',
+]);
+
+/** Tokens from the user objective used to bias ranking (not filters that hard-fail). */
+export function extractObjectiveTokens(objective: string): string[] {
+  return objective
+    .toLowerCase()
+    .replace(/[^a-z0-9\s\-]/g, ' ')
+    .split(/[\s\-]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 2 && !OBJECTIVE_STOPWORDS.has(t))
+    .slice(0, 16);
+}
+
+export function scoreObjectiveMatch(
+  product: OperatorProduct,
+  tokens: string[],
+  objective: string,
+): number {
+  if (tokens.length === 0) return 0;
+  const hay = [
+    product.title,
+    product.description,
+    product.category,
+    product.supplierName ?? '',
+    product.sourcePlatform,
+  ]
+    .join(' ')
+    .toLowerCase();
+  let hits = 0;
+  for (const t of tokens) {
+    if (hay.includes(t)) hits += 1;
+  }
+  // multi-word phrases from objective
+  if (/\busb\b/i.test(objective) && /usb/i.test(hay)) hits += 2;
+  if (/\baluminum|aluminium\b/i.test(objective) && /alumin/i.test(hay)) hits += 2;
+  if (/\bholster|weapon|tactical\b/i.test(objective) && /holster|weapon|tactical/i.test(hay)) {
+    hits += 2;
+  }
+  return hits;
 }
 
 function scoreCandidate(

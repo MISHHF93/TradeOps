@@ -14,7 +14,8 @@ Use these files to paste secrets after you register with each vendor.
 2. After you get a key from the vendor dashboard, put it **after** `=`:
 
 ```env
-XAI_API_KEY=xai-your-real-key-here
+AI_PROVIDER=cohere
+COHERE_API_KEY=your-rotated-cohere-key
 STRIPE_SECRET_KEY=sk_test_your_real_key
 SHOPIFY_ACCESS_TOKEN=shpat_your_real_token
 SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
@@ -25,20 +26,25 @@ SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
 
 ```powershell
 pnpm stop
-pnpm start
+node scripts/start-api-with-env.mjs
 ```
 
 Leave unused vendors blank — TradeOps stays fixture/shadow for those.
 
+**Never reuse a Cohere key that was pasted into chat.** Rotate it first.
+
 Regenerate templates: `pnpm run env:write-key-docs`
+
+Canonical env inventory: `docs/environment/ENVIRONMENT_INVENTORY.md`
 
 ---
 
 ## Priority block (start here)
 
 ```env
-# AI — https://console.x.ai
-XAI_API_KEY=
+# AI — Cohere code-first runtime — https://dashboard.cohere.com/
+AI_PROVIDER=cohere
+COHERE_API_KEY=
 
 # Shopify — https://shopify.dev/docs/api/admin-graphql
 SHOPIFY_SHOP_DOMAIN=
@@ -123,6 +129,7 @@ SHIPSTATION_API_SECRET=
 | Avalara | `AVALARA_ACCOUNT_ID` | https://developer.avalara.com/ |
 | Avalara | `AVALARA_LICENSE_KEY` | https://developer.avalara.com/ |
 | TaxJar | `TAXJAR_API_KEY` | https://developers.taxjar.com/api/reference/ |
+| Cohere | `COHERE_API_KEY` | https://docs.cohere.com/ |
 | OpenAI | `OPENAI_API_KEY` | https://platform.openai.com/docs |
 | Anthropic | `ANTHROPIC_API_KEY` | https://docs.anthropic.com/ |
 | Google | `GOOGLE_AI_API_KEY` | https://ai.google.dev/docs |

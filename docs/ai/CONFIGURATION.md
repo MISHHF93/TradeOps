@@ -1,5 +1,8 @@
 # Cohere Runtime Configuration
 
+> **Ownership:** TradeOps source code owns all production AI behavior.  
+> Cohere is the model provider only. See [PRODUCTION_OWNERSHIP.md](./PRODUCTION_OWNERSHIP.md).
+
 ## Required (server only)
 
 ```dotenv
@@ -50,8 +53,11 @@ XAI_API_KEY=
 ## Health (no secrets)
 
 ```http
+GET /api/v1/ai/production-config
 GET /api/v1/ai/runtime
+GET /api/v1/ai/health
 GET /api/v1/ai/gateway
+GET /api/v1/ai/agents
 ```
 
-Shows configured/missing, active provider, model names — never credential values.
+Shows configured/missing, active provider, model names, prompt/schema/tool registries — never credential values.

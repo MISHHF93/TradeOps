@@ -1,70 +1,47 @@
-# Environment Migration Guide
+# Environment migration guide
 
-## AI provider realignment
+## From older demo / multi-provider paste templates
 
-| Before | After (canonical) |
-|--------|-------------------|
-| Ad-hoc multi-LLM experimentation | `AI_PROVIDER=cohere` |
-| Playground-owned prompts | Repo prompts (`tradeops-system@1.0.0`) |
-| xAI as default generation | Cohere generation + embed + rerank |
-| OpenAI primary (prior pivot) | Optional search / generation fallback |
-
-### Keep working systems
-
-- Existing Stripe/SaaS billing env names preserved  
-- Connector production catalog still reads platform-level keys where implemented  
-- `TRADEOPS_ACCESS_MODE` and security boot unchanged  
-- Database `DATABASE_URL` / Redis `REDIS_URL` unchanged  
-
-### Aliases (compatibility)
-
-| Alias | Canonical |
-|-------|-----------|
-| `GROK_API_KEY` | `XAI_API_KEY` |
-| `XAI_CHAT_MODEL` | `XAI_MODEL` |
-| `OPENAI_CHAT_MODEL` | `OPENAI_MODEL` |
+| Old / alias | Use instead |
+|-------------|-------------|
 | `COHERE_MODEL` | `COHERE_CHAT_MODEL` |
-| `RETRIEVAL_ENABLED` | `COHERE_RETRIEVAL_ENABLED` (preferred) |
 | `COHERE_REQUEST_TIMEOUT_MS` | `COHERE_TIMEOUT_MS` |
+| `RETRIEVAL_ENABLED` | `COHERE_RETRIEVAL_ENABLED` |
+| `GROK_API_KEY` | `XAI_API_KEY` (optional only) |
+| `TRADEOPS_AI_MODE` | `AI_PROVIDER` |
+| `WEB_SEARCH_PROVIDER` | `SEARCH_PROVIDER_PRIMARY` |
+| `WEB_SEARCH_MAX_*` | `SEARCH_MAX_*` |
+| `TRADEOPS_POOLED_INVESTMENT_ENABLED` | `POOLED_INVESTMENT_ENABLED` |
+| `TRADEOPS_GUARANTEED_RETURNS_ENABLED` | `GUARANTEED_RETURNS_ENABLED` |
+| `TRADEOPS_INTERNAL_CUSTODY_ENABLED` | `CAPITAL_CUSTODY_ENABLED` |
+| Large vendor paste dump of unused keys | Keep only keys in `PLATFORM_ENV_MANIFEST` + vault list; optional paste sheet: `env.vendors.template` |
 
-## Cohere key rotation (required)
+## Primary AI is Cohere
 
-Any Cohere key that was shared in chat or committed history is **compromised**.
-
-1. Create a **new** key in the Cohere dashboard  
-2. Revoke the old key  
-3. Set only in local gitignored env / deployment secret manager:
-
-```dotenv
-COHERE_API_KEY=
-AI_PROVIDER=cohere
-```
-
-4. Never put the key in `.env.example`, docs, or `NEXT_PUBLIC_*`  
-5. Restart API after change  
-
-## Vendor paste templates
-
-Local `.env` may still contain empty `SHOPIFY_*`, `AMAZON_*`, etc. for developer convenience.
-
-**Production multi-tenant:** move merchant tokens into encrypted connector installations (`CREDENTIALS_MASTER_KEY`), not shared platform env.
+1. Set `AI_PROVIDER=cohere`.  
+2. Set `COHERE_API_KEY` (rotated, server-only).  
+3. Do **not** rely on OpenAI/xAI for the main agent loop unless you intentionally change `AI_PROVIDER`.
 
 ## Search
 
-```dotenv
-WEB_SEARCH_ENABLED=false
-# Optional single path:
-# WEB_SEARCH_ENABLED=true
-# TAVILY_API_KEY=   and/or OPENAI_API_KEY=
+- Default: `WEB_SEARCH_ENABLED=false` (fail closed — no invented citations).  
+- To enable: `WEB_SEARCH_ENABLED=true` **and** `TAVILY_API_KEY` or `OPENAI_API_KEY`.
+
+## Multi-tenant production
+
+1. `TRADEOPS_ACCESS_MODE=multi_tenant` (or `authenticated`).  
+2. `AUTH_BYPASS=false`.  
+3. Strong `APP_SECRET` + `CREDENTIALS_MASTER_KEY`.  
+4. Merchant credentials → connector vault, not global env.  
+5. `assertProductionEnv` must pass on deploy.
+
+## Local founder loop
+
+```bash
+cp .env.example .env
+# fill COHERE_API_KEY with a fresh key
+pnpm db:pglite
+pnpm db:migrate:deploy   # or project migrate scripts
+pnpm db:seed
+node scripts/start-api-with-env.mjs
 ```
-
-Do not enable SerpAPI + Brave + Tavily + Bing simultaneously.
-
-## Checklist
-
-- [ ] Rotate Cohere key  
-- [ ] `AI_PROVIDER=cohere`  
-- [ ] Production: strong `APP_SECRET` + `CREDENTIALS_MASTER_KEY`  
-- [ ] Production: `TRADEOPS_ACCESS_MODE=multi_tenant` or `authenticated` (not public founder)  
-- [ ] No merchant tokens only in global env for multi-tenant  
-- [ ] `node scripts/secret-scan.mjs` clean  

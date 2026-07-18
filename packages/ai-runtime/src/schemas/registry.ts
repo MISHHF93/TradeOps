@@ -197,6 +197,229 @@ register({
   },
 });
 
+register({
+  id: 'risk_assessment',
+  version: '1.0.0',
+  description: 'Policy / compliance risk assessment artifact',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['level', 'findings'],
+    properties: {
+      level: { type: 'string', description: 'low | medium | high | critical' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['title', 'severity'],
+          properties: {
+            title: { type: 'string' },
+            severity: { type: 'string' },
+            mitigation: { type: 'string' },
+          },
+        },
+      },
+      restricted: { type: 'boolean' },
+      recommendation: { type: 'string' },
+    },
+  },
+});
+
+register({
+  id: 'analytics_report',
+  version: '1.0.0',
+  description: 'Analytics / KPI report artifact',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['headline', 'metrics'],
+    properties: {
+      headline: { type: 'string' },
+      metrics: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name', 'value'],
+          properties: {
+            name: { type: 'string' },
+            value: { type: 'string' },
+            period: { type: 'string' },
+            delta: { type: 'string' },
+          },
+        },
+      },
+      insights: { type: 'array', items: { type: 'string' } },
+    },
+  },
+});
+
+register({
+  id: 'procurement_plan',
+  version: '1.0.0',
+  description: 'Procurement / RFQ plan artifact',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['summary', 'lineItems'],
+    properties: {
+      summary: { type: 'string' },
+      lineItems: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['skuOrName', 'quantity'],
+          properties: {
+            skuOrName: { type: 'string' },
+            quantity: { type: 'number' },
+            targetUnitCost: { type: 'number' },
+            supplier: { type: 'string' },
+          },
+        },
+      },
+      requiresApproval: { type: 'boolean' },
+      risks: { type: 'array', items: { type: 'string' } },
+    },
+  },
+});
+
+register({
+  id: 'document_extraction',
+  version: '1.0.0',
+  description: 'Structured extraction from documents / manuals / certificates',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['documentTitle', 'fields'],
+    properties: {
+      documentTitle: { type: 'string' },
+      fields: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['key', 'value'],
+          properties: {
+            key: { type: 'string' },
+            value: { type: 'string' },
+            confidence: { type: 'number' },
+          },
+        },
+      },
+      sourceUri: { type: 'string' },
+    },
+  },
+});
+
+/** Canonical tool-result envelope returned by capability executor */
+register({
+  id: 'tool_result',
+  version: '1.0.0',
+  description: 'Normalized tool/capability execution result (TradeOps-owned)',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['ok', 'capability', 'data', 'warnings'],
+    properties: {
+      ok: { type: 'boolean' },
+      capability: { type: 'string' },
+      write: { type: 'boolean' },
+      requiresApproval: { type: 'boolean' },
+      informationClass: { type: 'string' },
+      data: {
+        type: 'object',
+        description: 'Capability-specific payload; never invent operational facts',
+      },
+      evidence: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['sourceType', 'provider', 'retrievedAt'],
+          properties: {
+            sourceType: { type: 'string' },
+            provider: { type: 'string' },
+            title: { type: 'string' },
+            url: { type: 'string' },
+            snippet: { type: 'string' },
+            retrievedAt: { type: 'string' },
+            freshness: { type: 'string' },
+          },
+        },
+      },
+      actions: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['actionId', 'capability', 'status', 'requiresApproval'],
+          properties: {
+            actionId: { type: 'string' },
+            capability: { type: 'string' },
+            status: { type: 'string' },
+            requiresApproval: { type: 'boolean' },
+          },
+        },
+      },
+      warnings: { type: 'array', items: { type: 'string' } },
+      errorCode: { type: 'string' },
+    },
+  },
+});
+
+/** Frontend / API contract shape (mirrors TradeOpsCanonicalResponse) */
+register({
+  id: 'canonical_api_response',
+  version: '1.0.0',
+  description: 'Public API + frontend contract for AI chat responses',
+  jsonSchema: {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'schemaVersion',
+      'requestId',
+      'tenantId',
+      'conversationId',
+      'status',
+      'dataMode',
+      'output',
+      'evidence',
+      'actions',
+      'warnings',
+      'confidence',
+      'generatedAt',
+    ],
+    properties: {
+      schemaVersion: { type: 'string' },
+      requestId: { type: 'string' },
+      tenantId: { type: 'string' },
+      conversationId: { type: 'string' },
+      status: { type: 'string', description: 'completed | partial | blocked | failed' },
+      dataMode: { type: 'string', description: 'live | cached | simulation | unavailable' },
+      output: {
+        type: 'object',
+        required: ['text', 'artifactType', 'artifact'],
+        properties: {
+          text: { type: 'string' },
+          artifactType: { type: 'string' },
+          artifact: { type: 'object' },
+        },
+      },
+      evidence: { type: 'array' },
+      actions: { type: 'array' },
+      warnings: { type: 'array', items: { type: 'string' } },
+      confidence: { type: 'number' },
+      generatedAt: { type: 'string' },
+      errorCode: { type: 'string' },
+      requiredAction: { type: 'string' },
+      intent: { type: 'object' },
+      objective: { type: 'object' },
+      provenance: { type: 'object' },
+      meta: { type: 'object' },
+    },
+  },
+});
+
 export function getSchema(id: string, version?: string): SchemaRecord | undefined {
   if (version) return schemas.get(`${id}@${version}`);
   return schemas.get(id);

@@ -6,6 +6,7 @@ import {
   environmentManifestPublicStatus,
   listRequiredProductionEnv,
 } from './environment-manifest';
+import { FINANCIAL_GATE_ENV_NAMES } from './financial-gates';
 
 describe('environment manifest', () => {
   it('has unique names', () => {
@@ -40,5 +41,29 @@ describe('environment manifest', () => {
 
   it('lists tenant-scoped credential names', () => {
     assert.ok(TENANT_SCOPED_CREDENTIAL_NAMES.includes('SHOPIFY_ACCESS_TOKEN'));
+    assert.ok(TENANT_SCOPED_CREDENTIAL_NAMES.includes('EASYPOST_API_KEY'));
+    assert.ok(TENANT_SCOPED_CREDENTIAL_NAMES.includes('AMAZON_SP_CLIENT_SECRET'));
+  });
+
+  it('includes every FinancialGateKey env name', () => {
+    const names = new Set(PLATFORM_ENV_MANIFEST.map((v) => v.name));
+    for (const gate of FINANCIAL_GATE_ENV_NAMES) {
+      assert.ok(names.has(gate), `missing financial gate ${gate}`);
+    }
+  });
+
+  it('covers live-http commerce probe credentials in vault list', () => {
+    for (const key of [
+      'SHOPIFY_ACCESS_TOKEN',
+      'WOOCOMMERCE_CONSUMER_SECRET',
+      'PAYPAL_CLIENT_SECRET',
+      'SERPAPI_API_KEY',
+      'FEDEX_CLIENT_ID',
+    ] as const) {
+      assert.ok(
+        (TENANT_SCOPED_CREDENTIAL_NAMES as readonly string[]).includes(key),
+        key,
+      );
+    }
   });
 });

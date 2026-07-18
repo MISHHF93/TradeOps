@@ -32,12 +32,13 @@
 
 ## Nav structure (after)
 
+Hybrid IA (see `TRADEOPS_WORKSPACE_IA.md`):
+
 ```text
-Terminal:   Command center · Process · Tasks
-Commerce:   Discover · Evaluate · Listings · Orders · Fulfillment · Approvals
-Intelligence: Portfolio · Cash flow · Customers · Watchlist
-Automation: AI Operator · Workflows · Execution history · Live examples
-Platform:   Connectors · System · Capability status
+Focus:    Persona primary (5–7)
+Operate:  Discover · Cases · Tasks · Orders · Approvals · Opportunities · Fulfillment
+Platform: Connectors · Ecosystem · Automations · System · Billing · Capability status
+More:     Portfolio · Cash · Signals · Industrial · Live examples · Switch persona · …
 ```
 
 Listings = prepare/approve/publish cases. Fulfillment = sell/source/fulfill cases + orders.

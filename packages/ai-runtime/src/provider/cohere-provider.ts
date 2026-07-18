@@ -78,26 +78,60 @@ function extractChatText(raw: {
   return '';
 }
 
+/**
+ * Cohere Chat API v2 message list.
+ * System prompt is a first-class `system` role (v2 replacement for v1 preamble).
+ * History turns are appended before the current user message.
+ */
+function buildMessages(
+  system: string,
+  user: string,
+  history?: Array<{ role: string; content: string }>,
+): Array<{ role: string; content: string }> {
+  const messages: Array<{ role: string; content: string }> = [];
+  const sys = system?.trim();
+  if (sys) {
+    messages.push({ role: 'system', content: sys });
+  }
+  for (const h of history ?? []) {
+    const role = h.role === 'assistant' ? 'assistant' : h.role === 'system' ? 'system' : 'user';
+    const content = String(h.content ?? '').trim();
+    if (!content) continue;
+    // Avoid duplicate consecutive systems
+    if (role === 'system' && messages.some((m) => m.role === 'system')) continue;
+    messages.push({ role, content });
+  }
+  messages.push({ role: 'user', content: user });
+  return messages;
+}
+
+/**
+ * Cohere structured outputs require:
+ * - top-level type object
+ * - every object has at least one required field
+ * Strip unsupported features that break schema processing.
+ */
+function toCohereJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const clone = JSON.parse(JSON.stringify(schema)) as Record<string, unknown>;
+  // Cohere docs use `schema` key under response_format, not jsonSchema in raw HTTP
+  // Remove draft-only keys that confuse validators
+  delete clone.$schema;
+  delete clone.$id;
+  return clone;
+}
+
 export function createCohereProvider(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): AIProvider {
   const cfg = getAiPlatformConfig(env);
-  const apiKey = resolveKey(env);
+  const apiKey = cfg.cohereApiKey ?? resolveKey(env);
   const chatModel = cfg.cohereChatModel || 'command-a-03-2025';
   const embedModel = cfg.cohereEmbedModel || 'embed-v4.0';
   const rerankModel = cfg.cohereRerankModel || 'rerank-v3.5';
-  const base = baseUrl(env);
-  const timeoutMs = Number(env.COHERE_TIMEOUT_MS) || 60_000;
-  const temperatureDefault = Number(env.COHERE_TEMPERATURE);
-  const temp =
-    Number.isFinite(temperatureDefault) && temperatureDefault >= 0
-      ? temperatureDefault
-      : 0.2;
-  const maxTokensDefault = Number(env.COHERE_MAX_TOKENS);
-  const maxTok =
-    Number.isFinite(maxTokensDefault) && maxTokensDefault > 0
-      ? maxTokensDefault
-      : 4000;
+  const base = cfg.cohereBaseUrl || baseUrl(env);
+  const timeoutMs = cfg.cohereTimeoutMs || 60_000;
+  const temp = cfg.cohereTemperature;
+  const maxTok = cfg.cohereMaxTokens;
 
   async function cohereFetch(
     path: string,
@@ -130,19 +164,18 @@ export function createCohereProvider(
     async generateText(input: GenerateTextInput): Promise<GenerateTextResult> {
       try {
         const model = input.model ?? chatModel;
+        const messages = buildMessages(input.system, input.user, input.history);
         const { ok, status, json, latencyMs } = await cohereFetch('/v2/chat', {
           model,
           temperature: input.temperature ?? temp,
           max_tokens: input.maxTokens ?? maxTok,
-          messages: [
-            { role: 'system', content: input.system },
-            { role: 'user', content: input.user },
-          ],
+          messages,
         });
         if (!ok) {
           const msg =
             (json.message as string) ||
             (typeof json.error === 'string' ? json.error : undefined) ||
+            (json as { error?: { message?: string } }).error?.message ||
             `Cohere chat HTTP ${status}`;
           const err = mapHttpToAiError(status, msg);
           return { ok: false, error: err.message, code: err.code, latencyMs, model };
@@ -167,53 +200,125 @@ export function createCohereProvider(
     async generateStructured<T>(
       input: StructuredGenerationInput,
     ): Promise<StructuredGenerationResult<T>> {
-      const system = [
-        input.system,
-        '',
-        'Return exactly one JSON object matching the schema. No markdown fences. No text outside the object.',
-        `Schema name: ${input.schemaName}`,
-        `JSON Schema: ${JSON.stringify(input.schema)}`,
-      ].join('\n');
-      const gen = await provider.generateText({
-        system,
-        user: input.user,
-        temperature: input.temperature ?? 0.1,
-        maxTokens: input.maxTokens ?? maxTok,
-        model: input.model ?? chatModel,
-      });
-      if (!gen.ok || !gen.text) {
+      /**
+       * Prompt execution fix:
+       * - Do NOT dump the full JSON schema into the system prompt (breaks instruction following).
+       * - Use Cohere Chat v2 `response_format` with schema enforcement.
+       * - Keep system prompt as behavioral instructions only.
+       */
+      try {
+        const model = input.model ?? chatModel;
+        const system = [
+          input.system.trim(),
+          '',
+          `You must produce a single JSON object for schema "${input.schemaName}".`,
+          'Do not wrap the object in markdown fences. Do not add commentary outside the JSON object.',
+          'Honor tenant isolation. Never invent operational facts or completed external actions.',
+        ].join('\n');
+        const messages = buildMessages(system, input.user, input.history);
+        const schema = toCohereJsonSchema(input.schema);
+        const { ok, status, json, latencyMs } = await cohereFetch('/v2/chat', {
+          model,
+          temperature: input.temperature ?? 0.1,
+          max_tokens: input.maxTokens ?? maxTok,
+          messages,
+          // Cohere Chat API v2 structured outputs (docs: type + schema)
+          response_format: {
+            type: 'json_object',
+            schema,
+          },
+        });
+        if (!ok) {
+          // Fallback: plain json_object without schema if schema was rejected
+          const errMsg =
+            (json.message as string) ||
+            (typeof json.error === 'string' ? json.error : undefined) ||
+            `Cohere structured HTTP ${status}`;
+          if (status === 400 || /schema|response_format/i.test(String(errMsg))) {
+            const retry = await cohereFetch('/v2/chat', {
+              model,
+              temperature: input.temperature ?? 0.1,
+              max_tokens: input.maxTokens ?? maxTok,
+              messages: buildMessages(
+                [
+                  system,
+                  '',
+                  'Required keys: text, artifactType, artifact, confidence, objectiveTitle, objectiveDescription, successCriteria, intentCategory, informationMode, warnings.',
+                  'Generate a JSON object with those keys.',
+                ].join('\n'),
+                input.user,
+                input.history,
+              ),
+              response_format: { type: 'json_object' },
+            });
+            if (!retry.ok) {
+              const err = mapHttpToAiError(retry.status, String(retry.json.message ?? errMsg));
+              return {
+                ok: false,
+                error: err.message,
+                code: err.code,
+                rawText: undefined,
+                latencyMs: retry.latencyMs,
+                model,
+              };
+            }
+            const raw = extractChatText(retry.json as Parameters<typeof extractChatText>[0]);
+            const parsed = parseJsonLoose(raw);
+            if (!parsed || typeof parsed !== 'object') {
+              return {
+                ok: false,
+                error: 'Structured response was not valid JSON',
+                code: 'AIResponseMalformed',
+                rawText: raw,
+                latencyMs: retry.latencyMs,
+                model,
+              };
+            }
+            return {
+              ok: true,
+              value: parsed as T,
+              rawText: raw,
+              latencyMs: retry.latencyMs,
+              model,
+            };
+          }
+          const err = mapHttpToAiError(status, errMsg);
+          return {
+            ok: false,
+            error: err.message,
+            code: err.code,
+            latencyMs,
+            model,
+          };
+        }
+        const rawText = extractChatText(json as Parameters<typeof extractChatText>[0]);
+        const parsed = parseJsonLoose(rawText);
+        if (!parsed || typeof parsed !== 'object') {
+          return {
+            ok: false,
+            error: 'Structured response was not valid JSON',
+            code: 'AIResponseMalformed',
+            rawText,
+            latencyMs,
+            model,
+          };
+        }
         return {
-          ok: false,
-          error: gen.error,
-          code: gen.code,
-          rawText: gen.text,
-          latencyMs: gen.latencyMs,
-          model: gen.model,
+          ok: true,
+          value: parsed as T,
+          rawText,
+          latencyMs,
+          model,
         };
+      } catch (e) {
+        const err = mapUnknownToAiError(e);
+        return { ok: false, error: err.message, code: err.code, latencyMs: 0 };
       }
-      const parsed = parseJsonLoose(gen.text);
-      if (!parsed || typeof parsed !== 'object') {
-        return {
-          ok: false,
-          error: 'Structured response was not valid JSON',
-          code: 'AIResponseMalformed',
-          rawText: gen.text,
-          latencyMs: gen.latencyMs,
-          model: gen.model,
-        };
-      }
-      return {
-        ok: true,
-        value: parsed as T,
-        rawText: gen.text,
-        latencyMs: gen.latencyMs,
-        model: gen.model,
-      };
     },
 
     async selectTools(input: ToolSelectionInput): Promise<ToolSelectionResult> {
       const toolList = input.tools
-        .map((t) => `- ${t.name}: ${t.description} params=${JSON.stringify(t.parameters)}`)
+        .map((t) => `- ${t.name}: ${t.description}`)
         .join('\n');
       const system = [
         input.system,
@@ -224,6 +329,53 @@ export function createCohereProvider(
         'Available tools:',
         toolList || '(none)',
       ].join('\n');
+      // Use structured JSON mode for reliable tool selection
+      const structured = await provider.generateStructured<{
+        calls?: Array<{ name?: string; arguments?: Record<string, unknown> }>;
+      }>({
+        system,
+        user: input.user,
+        schema: {
+          type: 'object',
+          properties: {
+            calls: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string' },
+                  arguments: { type: 'object' },
+                },
+                required: ['name'],
+              },
+            },
+          },
+          required: ['calls'],
+        },
+        schemaName: 'tool_selection',
+        temperature: input.temperature ?? 0,
+        maxTokens: input.maxTokens ?? 800,
+      });
+      if (structured.ok && structured.value) {
+        const calls = Array.isArray(structured.value.calls)
+          ? structured.value.calls
+              .filter((c) => c && typeof c.name === 'string')
+              .map((c) => ({
+                name: String(c.name),
+                arguments:
+                  c.arguments && typeof c.arguments === 'object'
+                    ? (c.arguments as Record<string, unknown>)
+                    : {},
+              }))
+          : [];
+        return {
+          ok: true,
+          calls,
+          rawText: structured.rawText,
+          latencyMs: structured.latencyMs,
+        };
+      }
+      // Last-resort free text parse
       const gen = await provider.generateText({
         system,
         user: input.user,

@@ -40,6 +40,8 @@ export default async function TerminalLayout({ children }: { children: ReactNode
 
   const workspaceRes = await terminalGet<ResolvedWorkspace>('/api/v1/workspace');
   const workspace = workspaceRes.ok ? workspaceRes.data : null;
+  const navSource: 'workspace' | 'fallback' =
+    workspaceRes.ok && workspace?.nav?.length ? 'workspace' : 'fallback';
 
   const connectors = await terminalGet<Array<{ status?: string; isFixture?: boolean }>>(
     '/api/v1/connectors',
@@ -118,6 +120,7 @@ export default async function TerminalLayout({ children }: { children: ReactNode
       tenantLabel={tenantLabel}
       workspaceLabel={workspaceLabel}
       commerceMode={commerceMode}
+      navSource={navSource}
       founderSlot={
         founder ? <FounderMenu email={email} orgName={orgName} /> : undefined
       }

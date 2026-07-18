@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { LiveProjectionPanel } from '../../components/commerce/live-projection-panel';
 import {
   ProcessPageHeader,
   ProcessRelatedLinks,
@@ -37,6 +38,8 @@ export default async function ScannerPage() {
       />
 
       <ProcessRelatedLinks primary="discover" />
+
+      <LiveProjectionPanel />
 
       {isolation?.strict ? (
         <p className="meta" style={{ marginBottom: 12 }}>

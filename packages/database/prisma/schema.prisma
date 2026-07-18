@@ -249,6 +249,7 @@ model Organization {
   shadowDecisions        ShadowDecision[]
   operatorRuns           OperatorRun[]
   operatorRecommendations OperatorRecommendation[]
+  aiConversations        AiConversation[]
   connectorHealthEvents  ConnectorHealthEvent[]
   usageMeters            UsageMeter[]
   watchlistItems         ProductWatchlistItem[]
@@ -1230,6 +1231,47 @@ model OperatorRun {
 
   @@index([organizationId, startedAt])
   @@map("operator_runs")
+}
+
+/// Durable chat thread for Cohere AI runtime (not operator-cycle objectives).
+model AiConversation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  title          String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     AiMessage[]
+
+  @@index([organizationId, updatedAt])
+  @@map("ai_conversations")
+}
+
+/// One user or assistant turn in an AI conversation.
+model AiMessage {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  role             String   @db.VarChar(16)
+  content          String   @db.Text
+  status           String?  @db.VarChar(32)
+  dataMode         String?  @map("data_mode") @db.VarChar(32)
+  intentCategory   String?  @map("intent_category") @db.VarChar(64)
+  informationMode  String?  @map("information_mode") @db.VarChar(64)
+  provider         String?  @db.VarChar(32)
+  model            String?  @db.VarChar(128)
+  requestId        String?  @map("request_id") @db.VarChar(64)
+  errorCode        String?  @map("error_code") @db.VarChar(64)
+  /// Full canonical envelope (no secrets); used for provenance/debug.
+  responseJson     Json?    @map("response_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, conversationId, createdAt])
+  @@map("ai_messages")
 }
 
 model OperatorRecommendation {

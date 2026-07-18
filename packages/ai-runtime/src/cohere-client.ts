@@ -1,10 +1,13 @@
 /**
- * Cohere client — enterprise retrieval, embeddings, classification, rerank.
- * Not the sole generation runtime (OpenAI remains generation primary via AI Adapter).
+ * Cohere client — embeddings, classification, rerank (+ legacy helpers).
+ * Production generation goes through AIProvider (cohere-provider) + agent loop.
+ * Prefer getAiPlatformConfig() for deploy-time knobs; never log API keys.
  *
  * https://docs.cohere.com/reference/embed
  * https://docs.cohere.com/reference/rerank
  */
+
+import { getAiPlatformConfig } from '@tradeops/config';
 
 export type CohereClientOptions = {
   apiKey?: string;
@@ -46,12 +49,12 @@ export type CohereClassifyResult = {
 };
 
 function resolveKey(options: CohereClientOptions): string | undefined {
-  const fromEnv = process.env.COHERE_API_KEY?.trim();
-  return options.apiKey ?? (fromEnv || undefined);
+  if (options.apiKey?.trim()) return options.apiKey.trim();
+  return getAiPlatformConfig().cohereApiKey;
 }
 
 function base(options: CohereClientOptions): string {
-  return (options.baseUrl ?? process.env.COHERE_BASE_URL ?? 'https://api.cohere.com').replace(
+  return (options.baseUrl ?? getAiPlatformConfig().cohereBaseUrl ?? 'https://api.cohere.com').replace(
     /\/$/,
     '',
   );
@@ -72,10 +75,11 @@ export async function cohereEmbed(input: {
   if (!apiKey) {
     return { ok: false, error: 'COHERE_API_KEY not set', latencyMs: Date.now() - t0 };
   }
+  const platform = getAiPlatformConfig();
   const model =
     input.model ??
     opts.embedModel ??
-    process.env.COHERE_EMBED_MODEL ??
+    platform.cohereEmbedModel ??
     'embed-v4.0';
   const texts = input.texts.map((t) => t.slice(0, 8000)).filter(Boolean).slice(0, 96);
   if (!texts.length) {
@@ -83,7 +87,7 @@ export async function cohereEmbed(input: {
   }
 
   const fetchFn = opts.fetchImpl ?? fetch;
-  const timeoutMs = opts.timeoutMs ?? 45_000;
+  const timeoutMs = opts.timeoutMs ?? Math.min(platform.cohereTimeoutMs, 45_000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -164,13 +168,14 @@ export async function cohereRerank(input: {
     return { ok: false, error: 'no documents to rerank', latencyMs: Date.now() - t0 };
   }
 
+  const platform = getAiPlatformConfig();
   const model =
     input.model ??
     opts.rerankModel ??
-    process.env.COHERE_RERANK_MODEL ??
+    platform.cohereRerankModel ??
     'rerank-v3.5';
   const fetchFn = opts.fetchImpl ?? fetch;
-  const timeoutMs = opts.timeoutMs ?? 45_000;
+  const timeoutMs = opts.timeoutMs ?? Math.min(platform.cohereTimeoutMs, 45_000);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -235,7 +240,7 @@ export async function cohereClassifyZeroShot(input: {
     return { ok: false, error: 'COHERE_API_KEY not set', latencyMs: Date.now() - t0 };
   }
   const model =
-    opts.chatModel ?? process.env.COHERE_CHAT_MODEL ?? 'command-a-03-2025';
+    opts.chatModel ?? getAiPlatformConfig().cohereChatModel ?? 'command-a-03-2025';
   const labels = input.labels.filter(Boolean).slice(0, 20);
   if (!labels.length) {
     return { ok: false, error: 'labels required', latencyMs: Date.now() - t0 };

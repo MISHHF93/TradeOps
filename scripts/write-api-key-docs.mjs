@@ -15,7 +15,15 @@ const { PRODUCTION_CONNECTORS } = require(
 );
 
 const hints = {
+  // Primary runtime (Cohere) — secrets stay blank
+  AI_PROVIDER: 'cohere',
+  COHERE_BASE_URL: 'https://api.cohere.com',
+  COHERE_CHAT_MODEL: 'command-a-03-2025',
+  COHERE_EMBED_MODEL: 'embed-v4.0',
+  COHERE_RERANK_MODEL: 'rerank-v3.5',
+  // Optional adapters
   XAI_BASE_URL: 'https://api.x.ai/v1',
+  XAI_MODEL: 'grok-4.5',
   XAI_CHAT_MODEL: 'grok-4.5',
   TRADEOPS_AI_MODE: 'auto',
   TRADEOPS_AI_DEFAULT_GENERATE: '1',
@@ -29,11 +37,14 @@ function buildPasteEnv() {
   const lines = [];
   lines.push('# =============================================================================');
   lines.push('# TradeOps — VENDOR API KEYS (paste-ready)');
+  lines.push('# Primary AI: COHERE_API_KEY (server-only). Optional: OpenAI/xAI/etc.');
   lines.push('# Paste your secret RIGHT AFTER the = sign. Leave blank if unused.');
-  lines.push('# Example:  XAI_API_KEY=xai-abc123');
+  lines.push('# Example:  COHERE_API_KEY=your-rotated-key');
   lines.push('# Then copy lines into root .env  (or merge this whole file).');
   lines.push('# Restart: pnpm stop && pnpm start');
-  lines.push('# Never commit real secrets. Regenerate: pnpm run env:write-key-docs');
+  lines.push('# Never commit real secrets. Compromised/chat-pasted keys: rotate, do not reuse.');
+  lines.push('# Regenerate: pnpm run env:write-key-docs');
+  lines.push('# Canonical manifest: packages/config/src/environment-manifest.ts');
   lines.push('# =============================================================================');
   lines.push('');
 
@@ -61,10 +72,25 @@ function buildPasteEnv() {
 
   const extras = [
     [
-      '# xAI model / mode settings',
+      '# Primary AI runtime (Cohere) — put real key only in gitignored .env',
       [
+        ['AI_PROVIDER', 'cohere'],
+        ['COHERE_API_KEY', ''],
+        ['COHERE_BASE_URL', 'https://api.cohere.com'],
+        ['COHERE_CHAT_MODEL', 'command-a-03-2025'],
+        ['COHERE_EMBED_MODEL', 'embed-v4.0'],
+        ['COHERE_RERANK_MODEL', 'rerank-v3.5'],
+        ['COHERE_RETRIEVAL_ENABLED', 'true'],
+        ['WEB_SEARCH_ENABLED', 'false'],
+        ['TAVILY_API_KEY', ''],
+      ],
+    ],
+    [
+      '# Optional xAI adapter (not primary)',
+      [
+        ['XAI_API_KEY', ''],
         ['XAI_BASE_URL', 'https://api.x.ai/v1'],
-        ['XAI_CHAT_MODEL', 'grok-4.5'],
+        ['XAI_MODEL', ''],
         ['XAI_EMBED_MODEL', ''],
         ['GROK_API_KEY', ''],
         ['TRADEOPS_AI_MODE', 'auto'],
@@ -128,7 +154,8 @@ function buildMarkdown() {
   lines.push('2. After you get a key from the vendor dashboard, put it **after** `=`:');
   lines.push('');
   lines.push('```env');
-  lines.push('XAI_API_KEY=xai-your-real-key-here');
+  lines.push('AI_PROVIDER=cohere');
+  lines.push('COHERE_API_KEY=your-rotated-cohere-key');
   lines.push('STRIPE_SECRET_KEY=sk_test_your_real_key');
   lines.push('SHOPIFY_ACCESS_TOKEN=shpat_your_real_token');
   lines.push('SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com');
@@ -139,20 +166,25 @@ function buildMarkdown() {
   lines.push('');
   lines.push('```powershell');
   lines.push('pnpm stop');
-  lines.push('pnpm start');
+  lines.push('node scripts/start-api-with-env.mjs');
   lines.push('```');
   lines.push('');
   lines.push('Leave unused vendors blank — TradeOps stays fixture/shadow for those.');
   lines.push('');
+  lines.push('**Never reuse a Cohere key that was pasted into chat.** Rotate it first.');
+  lines.push('');
   lines.push('Regenerate templates: `pnpm run env:write-key-docs`');
+  lines.push('');
+  lines.push('Canonical env inventory: `docs/environment/ENVIRONMENT_INVENTORY.md`');
   lines.push('');
   lines.push('---');
   lines.push('');
   lines.push('## Priority block (start here)');
   lines.push('');
   lines.push('```env');
-  lines.push('# AI — https://console.x.ai');
-  lines.push('XAI_API_KEY=');
+  lines.push('# AI — Cohere code-first runtime — https://dashboard.cohere.com/');
+  lines.push('AI_PROVIDER=cohere');
+  lines.push('COHERE_API_KEY=');
   lines.push('');
   lines.push('# Shopify — https://shopify.dev/docs/api/admin-graphql');
   lines.push('SHOPIFY_SHOP_DOMAIN=');

@@ -1,11 +1,11 @@
 /**
  * TradeOps AI platform configuration.
  *
- * Architecture (retrieval-first split):
- * - TradeOps owns orchestration, Search Manager, Capability Gateway, response envelope.
- * - AI Adapter selects generation runtime (OpenAI primary; xAI/Gemini optional).
- * - Cohere is the enterprise retrieval engine (embed / rerank / classify / RAG) — not the sole runtime.
- * - Internet search stays pluggable (OpenAI web, optional Tavily).
+ * Architecture:
+ * - TradeOps owns the agent (auth, tools, search, validation, envelope).
+ * - Cohere is the production reasoning / embed / rerank provider (AI_PROVIDER=cohere).
+ * - OpenAI / xAI / Gemini remain optional adapters.
+ * - Internet search is TradeOps-owned (WEB_SEARCH_*), never assumed from the LLM.
  */
 
 function truthy(v: string | undefined | null, defaultTrue = false): boolean {
@@ -20,7 +20,7 @@ function num(v: string | undefined, fallback: number): number {
 }
 
 /** Active reasoning runtime behind the AI Adapter. */
-export type AiProviderId = 'openai' | 'xai' | 'gemini';
+export type AiProviderId = 'cohere' | 'openai' | 'xai' | 'gemini';
 
 /** Search backends the Search Manager may route to. */
 export type SearchProviderId =
@@ -116,18 +116,20 @@ function parseProvider(
   raw: string | undefined,
   env: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): AiProviderId {
-  const s = (raw ?? 'openai').trim().toLowerCase();
+  const s = (raw ?? 'cohere').trim().toLowerCase();
+  if (s === 'cohere') return 'cohere';
   if (s === 'xai' || s === 'grok') return 'xai';
   if (s === 'gemini' || s === 'google') return 'gemini';
   if (s === 'openai' || s === 'oai') return 'openai';
-  // auto: pick first configured, prefer OpenAI
+  // auto: prefer Cohere (TradeOps production runtime), then OpenAI, then xAI
   if (s === 'auto') {
+    if ((env.COHERE_API_KEY ?? '').trim()) return 'cohere';
     if ((env.OPENAI_API_KEY ?? '').trim()) return 'openai';
     if ((env.XAI_API_KEY ?? env.GROK_API_KEY ?? '').trim()) return 'xai';
     if ((env.GEMINI_API_KEY ?? env.GOOGLE_AI_API_KEY ?? '').trim()) return 'gemini';
-    return 'openai';
+    return 'cohere';
   }
-  return 'openai';
+  return 'cohere';
 }
 
 function parseSearchPrimary(raw: string | undefined): AiPlatformConfig['searchProviderPrimary'] {
@@ -180,7 +182,8 @@ export function getAiPlatformConfig(
     cohereEmbedModel: (env.COHERE_EMBED_MODEL ?? 'embed-v4.0').trim() || 'embed-v4.0',
     cohereRerankModel: (env.COHERE_RERANK_MODEL ?? 'rerank-v3.5').trim() || 'rerank-v3.5',
     cohereChatModel:
-      (env.COHERE_CHAT_MODEL ?? 'command-a-03-2025').trim() || 'command-a-03-2025',
+      (env.COHERE_CHAT_MODEL ?? env.COHERE_MODEL ?? 'command-a-03-2025').trim() ||
+      'command-a-03-2025',
     cohereConfigured: Boolean(cohereApiKey),
     cohereRetrievalEnabled: truthy(env.COHERE_RETRIEVAL_ENABLED, true) && Boolean(cohereApiKey),
 
@@ -236,6 +239,7 @@ export function isAiRuntimeConfigured(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): boolean {
   const c = getAiPlatformConfig(env);
+  if (c.aiProvider === 'cohere') return c.cohereConfigured;
   if (c.aiProvider === 'openai') return c.openaiConfigured;
   if (c.aiProvider === 'xai') return c.xaiConfigured;
   if (c.aiProvider === 'gemini') return c.geminiConfigured;
@@ -283,13 +287,13 @@ export function aiPlatformPublicStatus(
       mode: c.responseMode,
     },
     architecture: {
-      rule: 'TradeOps owns orchestration. Generation via AI Adapter (OpenAI primary). Cohere is enterprise retrieval (embed/rerank/classify), not the sole runtime.',
+      rule: 'TradeOps owns the agent. Cohere is the production reasoning/embed/rerank provider behind AIProvider. Internet search and connectors stay TradeOps-owned.',
       aiAdapter: true,
-      generationPrimary: 'openai',
+      generationPrimary: 'cohere',
       retrievalPrimary: 'cohere',
-      optionalGenerationRuntimes: ['xai', 'gemini'] as const,
+      optionalGenerationRuntimes: ['openai', 'xai', 'gemini'] as const,
       competingSearchApis: ['serpapi', 'brave', 'bing', 'google_cse'] as const,
-      note: 'Call models only through AI Adapter + Retrieval Engine + Search Manager — never from the frontend.',
+      note: 'Never call Cohere from the browser. Read COHERE_API_KEY only server-side. Never print secrets.',
     },
   };
 }

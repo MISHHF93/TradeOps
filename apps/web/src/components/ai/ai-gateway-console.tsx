@@ -37,7 +37,8 @@ type TradeOpsAIResponse = {
   conversationId: string;
   output: {
     text: string;
-    json: {
+    /** Legacy gateway shape */
+    json?: {
       objective?: string;
       recommendations?: GatewayRecommendation[];
       confidence?: number;
@@ -46,6 +47,12 @@ type TradeOpsAIResponse = {
       capabilitiesInvoked?: string[];
       error?: string;
     };
+    /** Canonical Cohere runtime shape */
+    artifactType?: string;
+    artifact?: {
+      recommendations?: GatewayRecommendation[];
+      [key: string]: unknown;
+    };
   };
   status: string;
   confidence: number;
@@ -53,9 +60,11 @@ type TradeOpsAIResponse = {
   actions: GatewayAction[];
   warnings: string[];
   generatedAt: string;
+  intent?: { informationMode?: string; category?: string };
   meta?: {
     schemaVersion?: string;
     aiProvider?: string;
+    provider?: string;
     model?: string;
     informationNeed?: string;
     searchUsed?: boolean;
@@ -136,11 +145,11 @@ export function AiGatewayConsole({
       setBusy(true);
       setError(null);
       try {
-        const res = await fetch(`${getApiBaseUrl()}/api/v1/ai/gateway/run`, {
+        const res = await fetch(`${getApiBaseUrl()}/api/v1/ai/chat`, {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({ objective: obj, disableSearch }),
+          body: JSON.stringify({ message: obj, disableSearch }),
         });
         const text = await res.text();
         let parsed: unknown = null;
@@ -173,7 +182,12 @@ export function AiGatewayConsole({
   );
 
   const json = response?.output?.json;
-  const recommendations = json?.recommendations ?? [];
+  const artifact = response?.output?.artifact;
+  const recommendations =
+    json?.recommendations ??
+    (Array.isArray(artifact?.recommendations)
+      ? (artifact?.recommendations as GatewayRecommendation[])
+      : []);
 
   return (
     <article className="panel" style={{ marginBottom: 16 }}>
@@ -277,7 +291,16 @@ export function AiGatewayConsole({
               Confidence: <strong>{(response.confidence * 100).toFixed(0)}%</strong>
             </span>
             <span className="meta">
-              Need: <strong>{response.meta?.informationNeed ?? json?.informationNeed ?? '—'}</strong>
+              Need:{' '}
+              <strong>
+                {response.intent?.informationMode ??
+                  response.meta?.informationNeed ??
+                  json?.informationNeed ??
+                  '—'}
+              </strong>
+            </span>
+            <span className="meta">
+              Provider: <strong>{response.meta?.provider ?? response.meta?.aiProvider ?? '—'}</strong>
             </span>
             <span className="meta">id: {response.requestId}</span>
           </div>
@@ -297,6 +320,12 @@ export function AiGatewayConsole({
               {response.output.text}
             </div>
           </section>
+
+          {response.output.artifactType ? (
+            <p className="meta">
+              Artifact: <code>{response.output.artifactType}</code>
+            </p>
+          ) : null}
 
           {recommendations.length > 0 ? (
             <section>

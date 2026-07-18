@@ -1,6 +1,13 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import type { OperationLoopMode } from '@tradeops/ai-runtime';
-import { gatewayCatalogPublic, runAiGateway } from '@tradeops/ai-runtime';
+import {
+  gatewayCatalogPublic,
+  runAiGateway,
+  runCohereAgentLoop,
+  resolveAIProvider,
+  listPromptsPublic,
+  aiProviderPublicStatus,
+} from '@tradeops/ai-runtime';
 import { aiPlatformPublicStatus } from '@tradeops/config';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
 import { requireOrgId } from '../identity/require-tenant';
@@ -49,7 +56,8 @@ export class AiController {
   }
 
   /**
-   * Single entry: objective → Grok + Search Manager + envelope (text + JSON).
+   * Single entry: objective → AI Adapter / Search Manager + envelope (text + JSON).
+   * Prefer POST /ai/chat for the full Cohere two-stage agent runtime.
    */
   @Post('gateway/run')
   @RequirePermissions('ai:write', 'ai:read')
@@ -61,10 +69,32 @@ export class AiController {
       conversationId?: string;
       disableSearch?: boolean;
       operationalContext?: Record<string, unknown>;
+      knowledgeDocuments?: Array<{
+        id: string;
+        title: string;
+        body: string;
+        sourceType?: string;
+        provider?: string;
+        url?: string;
+      }>;
     },
   ) {
     const tenantId = requireOrgId(auth);
     const objective = body.objective?.trim() || 'Summarize current commerce priorities.';
+    // Prefer Cohere agent loop when provider is cohere
+    const provider = resolveAIProvider();
+    if (provider.id === 'cohere' && provider.configured) {
+      return runCohereAgentLoop({
+        message: objective,
+        tenantId,
+        userId: auth.userId,
+        conversationId: body.conversationId,
+        operationalContext: body.operationalContext,
+        knowledgeDocuments: body.knowledgeDocuments,
+        disableSearch: body.disableSearch,
+        permissions: [...(auth.permissions ?? [])],
+      });
+    }
     return runAiGateway({
       tenantId,
       userId: auth.userId,
@@ -72,7 +102,72 @@ export class AiController {
       objective,
       disableSearch: body.disableSearch,
       operationalContext: body.operationalContext,
+      knowledgeDocuments: body.knowledgeDocuments,
     });
+  }
+
+  /**
+   * Canonical Cohere AI chat runtime (professor-mode activation).
+   * Server resolves tenant; client never sends API keys, models, or trusted tenant IDs.
+   */
+  @Post('chat')
+  @RequirePermissions('ai:write', 'ai:read')
+  async chat(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      message?: string;
+      conversationId?: string;
+      workspaceId?: string;
+      requestedArtifactType?: string;
+      disableSearch?: boolean;
+      operationalContext?: Record<string, unknown>;
+      knowledgeDocuments?: Array<{
+        id: string;
+        title: string;
+        body: string;
+        sourceType?: string;
+        provider?: string;
+        url?: string;
+      }>;
+    },
+  ) {
+    const tenantId = requireOrgId(auth);
+    const message = body.message?.trim();
+    if (!message) {
+      return {
+        status: 'failed',
+        output: { text: 'Message is required.', artifactType: 'answer', artifact: {} },
+        warnings: ['message_required'],
+        confidence: 0,
+      };
+    }
+    return runCohereAgentLoop({
+      message,
+      tenantId,
+      userId: auth.userId,
+      conversationId: body.conversationId,
+      workspaceId: body.workspaceId,
+      requestedArtifactType: body.requestedArtifactType,
+      disableSearch: body.disableSearch,
+      operationalContext: body.operationalContext,
+      knowledgeDocuments: body.knowledgeDocuments,
+      permissions: [...(auth.permissions ?? [])],
+    });
+  }
+
+  /** Provider + prompt health (no secrets). */
+  @Get('runtime')
+  @RequirePermissions('ai:read')
+  async runtimeStatus() {
+    const provider = resolveAIProvider();
+    const health = await provider.healthCheck();
+    return {
+      platform: aiPlatformPublicStatus(),
+      provider: aiProviderPublicStatus(),
+      health,
+      prompts: listPromptsPublic(),
+    };
   }
 
   @Post('xai/probe')

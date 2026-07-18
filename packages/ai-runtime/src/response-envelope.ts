@@ -57,7 +57,7 @@ export type TradeOpsAIResponse<T = unknown> = {
   meta?: {
     schemaVersion: string;
     /** Active AI Adapter runtime */
-    aiProvider: 'openai' | 'xai' | 'gemini';
+    aiProvider: 'cohere' | 'openai' | 'xai' | 'gemini';
     model?: string;
     informationNeed?: string;
     searchUsed?: boolean;

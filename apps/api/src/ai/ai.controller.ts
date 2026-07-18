@@ -6,6 +6,7 @@ import {
   runCohereAgentLoop,
   resolveAIProvider,
   listPromptsPublic,
+  listSchemasPublic,
   aiProviderPublicStatus,
 } from '@tradeops/ai-runtime';
 import { aiPlatformPublicStatus } from '@tradeops/config';
@@ -167,6 +168,7 @@ export class AiController {
       provider: aiProviderPublicStatus(),
       health,
       prompts: listPromptsPublic(),
+      schemas: listSchemasPublic(),
     };
   }
 

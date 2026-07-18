@@ -39,5 +39,6 @@ export * from './provider/openai-as-provider';
 export * from './provider/resolve-provider';
 export * from './prompts/registry';
 export * from './schemas/base-response';
+export * from './schemas/registry';
 export * from './runtime/agent-loop';
 export * from './telemetry/redaction';

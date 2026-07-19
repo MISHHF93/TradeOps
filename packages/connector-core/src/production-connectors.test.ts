@@ -8,37 +8,64 @@ import {
   listProductionRuntime,
   resolveCredentialStatus,
 } from './production-connectors';
+import { listLiveFeeds, listPlannedLiveFeeds } from './live-feed-registry';
 
-describe('production connector catalog', () => {
-  it('registers commerce, payments, logistics, marketing, analytics, accounting, AI', () => {
+describe('production connector catalog (approved stack)', () => {
+  it('registers only approved operational providers', () => {
     const list = listProductionConnectors();
     const ids = new Set(list.map((c) => c.id));
     for (const id of [
       'shopify-graphql-admin',
-      'amazon-sp-api',
-      'ebay-sell',
-      'woocommerce-rest',
-      'bigcommerce-rest',
       'stripe-api',
-      'paypal-rest',
       'easypost-api',
-      'shipstation-api',
-      'google-ads',
-      'meta-marketing',
+      'tavily-search',
+      'cohere-ai',
       'google-analytics-4',
-      'quickbooks-online',
-      'xero-api',
-      'openai',
-      'xai',
-      'open-exchange-rates',
-      'avalara',
-      'serpapi',
-      'keepa-api',
+      'posthog-api',
+      'sentry',
+      'opentelemetry-collector',
     ]) {
       assert.ok(ids.has(id), `missing production connector ${id}`);
     }
-    assert.ok(list.length >= 30);
+    // Removed speculative multi-provider AI / marketplaces
+    for (const id of [
+      'openai',
+      'anthropic',
+      'xai',
+      'mistral',
+      'amazon-sp-api',
+      'ebay-sell',
+      'serpapi',
+      'paypal-rest',
+      'shipstation-api',
+      'mixpanel-api',
+    ]) {
+      assert.ok(!ids.has(id), `inactive provider must not be operational: ${id}`);
+    }
     assert.ok(list.every((c) => c.isFixture === false));
+    assert.ok(list.every((c) => c.maturity === 'operational'));
+  });
+
+  it('active live feeds include fixtures + operational only', () => {
+    const feeds = listLiveFeeds();
+    const keys = new Set(feeds.map((f) => f.providerKey));
+    assert.ok(keys.has('shopify-graphql-admin'));
+    assert.ok(keys.has('fixture-supplier'));
+    assert.ok(keys.has('fixture-marketplace'));
+    assert.ok(keys.has('cohere-ai'));
+    assert.ok(keys.has('tavily-search'));
+    assert.ok(!keys.has('openai'));
+    assert.ok(!keys.has('amazon-sp-api'));
+  });
+
+  it('planned feeds never appear in active list', () => {
+    const planned = listPlannedLiveFeeds();
+    assert.ok(planned.some((p) => p.providerKey === 'amazon-sp-api'));
+    assert.ok(planned.every((p) => p.maturity === 'planned'));
+    const activeKeys = new Set(listLiveFeeds().map((f) => f.providerKey));
+    for (const p of planned) {
+      assert.ok(!activeKeys.has(p.providerKey));
+    }
   });
 
   it('never marks liveReady without credentials', () => {
@@ -61,10 +88,13 @@ describe('production connector catalog', () => {
     assert.equal(cred.status, 'connected');
   });
 
-  it('listProductionRuntime includes capability maps', () => {
+  it('listProductionRuntime includes capability maps for active stack', () => {
     const runtime = listProductionRuntime({} as NodeJS.ProcessEnv);
-    assert.ok(runtime.every((r) => r.liveReady === false));
+    assert.ok(runtime.every((r) => r.id !== 'openai'));
     assert.ok(CAPABILITY_PROVIDER_MAP.read_orders?.includes('shopify-graphql-admin'));
     assert.ok(LIVE_HTTP_IMPLEMENTED.has('stripe-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('tavily-search'));
+    assert.ok(!LIVE_HTTP_IMPLEMENTED.has('serpapi'));
+    assert.ok(!LIVE_HTTP_IMPLEMENTED.has('woocommerce-rest'));
   });
 });

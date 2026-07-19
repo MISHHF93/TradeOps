@@ -535,4 +535,93 @@ export function registerBuiltinTools(): void {
       };
     },
   });
+
+  // ─── Canonical research capabilities (Tavily via WebSearchProvider) ───
+
+  registerTool({
+    name: 'researchSearchPublicWeb',
+    description:
+      'Canonical capability research.search_public_web — public internet research via the approved web-search provider (Tavily). Never scrapes vendor SERP APIs directly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        maxResults: { type: 'number' },
+      },
+      required: ['query'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { invokeResearchCapability } = await import('./web-search-provider');
+      const i = input as { query: string; maxResults?: number };
+      return invokeResearchCapability('research.search_public_web', {
+        query: i.query,
+        maxResults: i.maxResults,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'researchExtractUrl',
+    description:
+      'Canonical capability research.extract_url — extract content from a public URL via approved provider.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+      },
+      required: ['url'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { invokeResearchCapability } = await import('./web-search-provider');
+      return invokeResearchCapability('research.extract_url', {
+        url: String((input as { url: string }).url),
+      });
+    },
+  });
+
+  registerTool({
+    name: 'researchSearchOfficialDocumentation',
+    description:
+      'Canonical capability research.search_official_documentation — find official docs via approved web search.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        maxResults: { type: 'number' },
+      },
+      required: ['query'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { invokeResearchCapability } = await import('./web-search-provider');
+      const i = input as { query: string; maxResults?: number };
+      return invokeResearchCapability('research.search_official_documentation', {
+        query: i.query,
+        maxResults: i.maxResults,
+      });
+    },
+  });
 }

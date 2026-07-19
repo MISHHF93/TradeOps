@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { ConfidenceMeter, Money } from '../../../components/commerce/money';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
+import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { terminalGet } from '../../../lib/terminal-api';
 
 type RunPayload = {
@@ -65,34 +67,42 @@ export default async function OpportunitiesPage({
   const recs = run?.recommendations ?? [];
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <p className="pill">Stage view · Evaluate / Qualify</p>
-          <h1 className="workspace-title-active">Opportunities</h1>
-          <p className="lede">
-            Ranked evaluation results feeding Commerce Cases. Research is read-only — approval is
-            only for publish and purchase. Continue on the Process board after ranking.
-          </p>
-        </div>
-        <div className="terminal-toolbar">
+    <TerminalPageFrame
+      pill="Stage view · Evaluate / Qualify"
+      title="Opportunities"
+      lede="Ranked evaluation results feeding Commerce Cases. Research is read-only — approval is only for publish and purchase. Continue on the Process board after ranking."
+      showStageStrip
+      currentStage="evaluate"
+      relatedPrimary="opportunities"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { label: 'Opportunities' },
+      ]}
+      toolbar={
+        <>
           <Link className="btn primary" href="/terminal/process">
             Process board
           </Link>
           <Link className="btn secondary" href="/terminal">
             Discover
           </Link>
-          <Link className="btn ghost" href="/terminal/ai">
+          <Link className="btn ghost" href="/terminal/objectives">
             AI workspace
           </Link>
-        </div>
-      </header>
-
+        </>
+      }
+      error={latestRuns.ok ? null : latestRuns.error}
+    >
       {!run ? (
-        <p className="meta">
-          No objective run yet. Open the AI panel and run{' '}
-          <strong>Find products worth evaluating.</strong>
-        </p>
+        <ProcessEmptyState
+          title="No opportunity run yet"
+          body="Open AI and run “Find products worth evaluating,” or score products from Discover. Ranked results and margins land here."
+          stage="evaluate"
+          primaryHref="/terminal/objectives"
+          primaryLabel="Run AI research"
+          secondaryHref="/terminal"
+          secondaryLabel="Discover"
+        />
       ) : null}
 
       {run ? (
@@ -263,7 +273,6 @@ export default async function OpportunitiesPage({
           </ul>
         </>
       ) : null}
-
-    </section>
+    </TerminalPageFrame>
   );
 }

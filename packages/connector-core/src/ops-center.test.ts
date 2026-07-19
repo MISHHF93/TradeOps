@@ -9,20 +9,24 @@ import { listLiveFeeds } from './live-feed-registry';
 import type { CapabilityAdvertisement } from './business-capabilities';
 
 describe('ops center registry', () => {
-  it('registers major operational domains providers', () => {
+  it('registers approved active stack providers', () => {
     const feeds = listLiveFeeds();
     const keys = new Set(feeds.map((f) => f.providerKey));
     for (const k of [
       'shopify-graphql-admin',
       'stripe-api',
-      'shipstation-api',
-      'google-ads',
+      'easypost-api',
+      'cohere-ai',
+      'tavily-search',
       'sentry',
       'fixture-supplier',
     ]) {
       assert.ok(keys.has(k), `missing ${k}`);
     }
-    assert.ok(feeds.length >= 20);
+    // Speculative providers removed from active feeds
+    assert.ok(!keys.has('openai'));
+    assert.ok(!keys.has('shipstation-api'));
+    assert.ok(feeds.length < 25);
   });
 
   it('builds health center with fixture online and live needs credentials', () => {
@@ -36,7 +40,7 @@ describe('ops center registry', () => {
       },
     ]);
     const center = buildConnectorHealthCenter(records);
-    assert.ok(center.summary.total >= 20);
+    assert.ok(center.summary.total >= 5);
     assert.ok(center.summary.fixtures >= 2);
     assert.ok(center.summary.needsCredentials >= 1);
     assert.ok(center.byDomain.length >= 1);
@@ -58,6 +62,7 @@ describe('ops center registry', () => {
       },
     ];
     const r = resolveCapability(ads, 'discover_products');
-    assert.equal(r.selected?.providerKey, 'fixture-supplier');
+    assert.ok(r.selected);
+    assert.equal(r.selected!.providerKey, 'fixture-supplier');
   });
 });

@@ -1,5 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import type { OperationLoopMode } from '@tradeops/ai-runtime';
+import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import {
+  describeAiProviders,
+  describeWebSearchProviders,
+  diagnoseCohereConfig,
+  isCohereSoleActivePolicy,
+  listArtifactKinds,
+  listPrompts,
+  listSchemas,
+  listToolsPublic,
+  probeCohereDeepHealth,
+  type OperationLoopMode,
+} from '@tradeops/ai-runtime';
 import { CurrentAuth, Public, RequirePermissions } from '../identity/decorators';
 import type { AuthContext } from '../identity/types';
 import { EventFabricService } from '../events/event-fabric.service';
@@ -16,6 +28,81 @@ export class AiController {
   @Get('tools')
   tools() {
     return this.operator.getToolCatalog();
+  }
+
+  /**
+   * Cohere / Phase B health.
+   * `?deep=true` performs a minimal Chat V2 probe (no key returned).
+   */
+  @Public()
+  @Get('health')
+  async aiHealth(@Query('deep') deep?: string) {
+    const shallow = diagnoseCohereConfig();
+    const base = {
+      service: 'tradeops-ai',
+      configured: shallow.configured,
+      authenticated: false,
+      modelAvailable: false,
+      structuredOutputHealthy: false,
+      lastChecked: new Date().toISOString(),
+      errorCode: shallow.errorCode,
+      model: shallow.model,
+      // key never exposed — only presence
+      keyPresent: shallow.configured,
+    };
+    if (deep !== 'true' && deep !== '1') {
+      return base;
+    }
+    const deepResult = await probeCohereDeepHealth();
+    return {
+      service: 'tradeops-ai',
+      configured: deepResult.configured,
+      authenticated: deepResult.authenticated,
+      modelAvailable: deepResult.modelAvailable,
+      structuredOutputHealthy: deepResult.structuredOutputHealthy,
+      lastChecked: deepResult.lastChecked,
+      errorCode: deepResult.errorCode,
+      model: deepResult.model,
+      latencyMs: deepResult.latencyMs,
+      keyPresent: deepResult.configured,
+    };
+  }
+
+  /**
+   * COS AI Runtime catalog — prompts, schemas, artifacts, providers (source-owned).
+   */
+  @Public()
+  @Get('runtime')
+  aiRuntimeCatalog() {
+    return {
+      tools: listToolsPublic(),
+      prompts: listPrompts().map((p) => ({
+        id: p.id,
+        version: p.version,
+        purpose: p.purpose,
+        variables: p.variables,
+      })),
+      schemas: listSchemas().map((s) => ({
+        id: s.id,
+        version: s.version,
+        description: s.description,
+      })),
+      artifacts: listArtifactKinds(),
+      providers: describeAiProviders(),
+      webSearch: describeWebSearchProviders(),
+      policy: {
+        cohereSoleActiveAi: isCohereSoleActivePolicy(),
+        soleWebSearchProvider: 'tavily',
+        noSilentProviderFallback: true,
+        researchCapabilities: [
+          'research.search_public_web',
+          'research.extract_url',
+          'research.search_official_documentation',
+        ],
+      },
+      principle:
+        'One AI Runtime — Cohere is the sole active AI provider (Chat/Embed/Rerank). Public web search is Tavily only. Failures block honestly; never demo-fallback to another model.',
+    };
   }
 
   @Public()
@@ -57,6 +144,7 @@ export class AiController {
       organizationId: auth.activeOrganizationId!,
       userId: auth.userId,
       exampleId,
+      // Live examples default to shadow unless caller opts into non-shadow.
       forceShadow: body?.forceShadow !== false,
       permissions: [...(auth.permissions ?? [])],
     });
@@ -76,7 +164,7 @@ export class AiController {
       commerceCaseId?: string;
       /**
        * When true, use full Objective Resolution Engine (Execution Package).
-       * Default true — every interaction starts with an objective package.
+       * Sidebar should pass false for lower latency + liveProgress.
        */
       navigate?: boolean;
     },
@@ -86,6 +174,7 @@ export class AiController {
         organizationId: auth.activeOrganizationId!,
         userId: auth.userId,
         exampleId: body.exampleId.trim(),
+        // Catalog examples stay shadow by default for safety.
         forceShadow: body.forceShadow !== false,
         permissions: [...(auth.permissions ?? [])],
       });
@@ -94,15 +183,15 @@ export class AiController {
       body.objective?.trim() ||
       'Find products worth evaluating.';
 
-    // Default: Objective Resolution Engine (execution navigator)
-    // Flatten so existing AI console still receives cycle fields + package.
-    if (body.navigate !== false) {
+    // Full navigator only when explicitly requested (navigate: true)
+    if (body.navigate === true) {
       return this.operator.resolveObjective({
         organizationId: auth.activeOrganizationId!,
         userId: auth.userId,
         objective,
         loopMode: body.loopMode,
-        forceShadow: body.forceShadow !== false,
+        // Opt-in only — missing forceShadow must NOT coerce shadow.
+        forceShadow: body.forceShadow === true,
         permissions: [...(auth.permissions ?? [])],
         commerceCaseId: body.commerceCaseId?.trim(),
         runCycle: true,
@@ -142,19 +231,93 @@ export class AiController {
           executionPackage: resolved.executionPackage,
           navigatorSummary: resolved.summary,
           knowledgeBaseDelta: resolved.executionPackage.knowledgeBaseDelta,
+          envelope: cycle?.envelope,
+          liveProgress: cycle?.liveProgress,
         };
       });
     }
 
+    // Default: fast operator cycle (sidebar / AI panel)
     return this.operator.runObjective({
       organizationId: auth.activeOrganizationId!,
       userId: auth.userId,
       objective,
       loopMode: body.loopMode,
-      forceShadow: body.forceShadow !== false,
+      // Opt-in only — sidebar must not force shadow by omission.
+      forceShadow: body.forceShadow === true,
       permissions: [...(auth.permissions ?? [])],
       commerceCaseId: body.commerceCaseId?.trim(),
     });
+  }
+
+  /**
+   * SSE stream of operator progress + final result.
+   * Events: state (progress), result (final JSON), error.
+   */
+  @Post('operator/run/stream')
+  @RequirePermissions('ai:write', 'products:read')
+  async runOperatorStream(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      objective?: string;
+      loopMode?: OperationLoopMode;
+      forceShadow?: boolean;
+      commerceCaseId?: string;
+    },
+    @Res() res: Response,
+  ) {
+    const objective = body.objective?.trim() || 'Find products worth evaluating.';
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    send('state', {
+      state: 'queued',
+      step: 'Operator run queued',
+      at: new Date().toISOString(),
+    });
+
+    try {
+      const result = await this.operator.runObjective({
+        organizationId: auth.activeOrganizationId!,
+        userId: auth.userId,
+        objective,
+        loopMode: body.loopMode,
+        forceShadow: body.forceShadow === true,
+        permissions: [...(auth.permissions ?? [])],
+        commerceCaseId: body.commerceCaseId?.trim(),
+        onProgress: async (ev) => {
+          send('state', ev);
+        },
+      });
+      send('result', result);
+      send('state', {
+        state: 'completed',
+        step: 'Done',
+        at: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code =
+        typeof error === 'object' &&
+        error &&
+        'response' in error &&
+        typeof (error as { response?: { code?: string } }).response?.code === 'string'
+          ? (error as { response: { code: string } }).response.code
+          : undefined;
+      send('error', {
+        message,
+        code: code ?? (message.includes('database') ? 'database_unavailable' : 'operator_failed'),
+      });
+    } finally {
+      res.end();
+    }
   }
 
   /**
@@ -187,7 +350,7 @@ export class AiController {
       userId: auth.userId,
       objective,
       loopMode: body.loopMode,
-      forceShadow: body.forceShadow !== false,
+      forceShadow: body.forceShadow === true,
       permissions: [...(auth.permissions ?? [])],
       commerceCaseId: body.commerceCaseId?.trim(),
       runCycle: body.runCycle !== false,

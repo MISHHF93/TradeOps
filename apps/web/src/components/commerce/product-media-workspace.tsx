@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiBaseUrl } from '../../lib/api';
+import { MediaGallery, type MediaGalleryItem } from './media-gallery';
 
 type Artifact = {
   id: string;
@@ -46,32 +47,43 @@ type ArtifactsResponse = {
   honesty?: { note?: string };
 };
 
+function resolveContentUrl(contentUrl: string): string {
+  if (contentUrl.startsWith('http://') || contentUrl.startsWith('https://')) return contentUrl;
+  const base = getApiBaseUrl().replace(/\/$/, '');
+  return contentUrl.startsWith('/') ? `${base}${contentUrl}` : `${base}/${contentUrl}`;
+}
+
 /**
- * Product Media Workspace — first-class Digital Twin artifacts.
+ * Product Media Workspace — first-class Digital Twin artifacts with modern gallery.
  */
 export function ProductMediaWorkspace({ productId }: { productId: string }) {
   const [data, setData] = useState<ArtifactsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [url, setUrl] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'image' | 'document' | 'other'>('all');
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(
-        `${getApiBaseUrl()}/api/v1/products/${productId}/artifacts`,
-        { credentials: 'include', headers: { Accept: 'application/json' } },
-      );
+      const res = await fetch(`${getApiBaseUrl()}/api/v1/products/${productId}/artifacts`, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
       setData(body as ArtifactsResponse);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load artifacts');
+    } finally {
+      setLoading(false);
     }
   }, [productId]);
 
   useEffect(() => {
+    setLoading(true);
     void load();
   }, [load]);
 
@@ -169,8 +181,9 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
       );
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { message?: string }).message ?? `HTTP ${res.status}`);
-      const proposal = (body as { proposal?: { analysis?: Record<string, unknown>; confidence?: number } })
-        .proposal;
+      const proposal = (
+        body as { proposal?: { analysis?: Record<string, unknown>; confidence?: number } }
+      ).proposal;
       setMsg(
         `AI proposal (review required): ${JSON.stringify(proposal?.analysis ?? {}).slice(0, 180)}… conf ${
           proposal?.confidence ?? '—'
@@ -184,46 +197,87 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
     }
   }
 
+  const artifacts = data?.artifacts ?? [];
+  const filtered = useMemo(() => {
+    if (filter === 'all') return artifacts;
+    if (filter === 'image') return artifacts.filter((a) => a.artifactType === 'image');
+    if (filter === 'document')
+      return artifacts.filter(
+        (a) => a.artifactType === 'document' || a.artifactType === 'model_3d',
+      );
+    return artifacts.filter(
+      (a) => a.artifactType !== 'image' && a.artifactType !== 'document' && a.artifactType !== 'model_3d',
+    );
+  }, [artifacts, filter]);
+
+  const galleryItems: MediaGalleryItem[] = useMemo(
+    () =>
+      filtered
+        .filter((a) => a.contentUrl)
+        .map((a) => ({
+          id: a.id,
+          src: resolveContentUrl(a.contentUrl!),
+          alt: a.altText ?? a.title ?? 'Product artifact',
+          label: `${a.purpose}${a.purpose === 'primary' ? ' ★' : ''}`,
+          badge: a.purpose,
+          kind:
+            a.artifactType === 'image'
+              ? 'image'
+              : a.artifactType === 'video'
+                ? 'video'
+                : a.artifactType === 'document' || a.artifactType === 'model_3d'
+                  ? 'document'
+                  : 'other',
+        })),
+    [filtered],
+  );
+
   const g = data?.channelReadiness?.google;
+  const score = data?.completeness?.score;
 
   return (
-    <article className="panel wide" style={{ marginTop: 16 }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
-          alignItems: 'flex-start',
-        }}
-      >
+    <article className="panel wide media-workspace">
+      <header className="media-workspace__header">
         <div>
-          <h2 style={{ margin: 0 }}>Product media &amp; artifacts</h2>
-          <p className="meta" style={{ margin: '4px 0 0' }}>
-            First-class Digital Twin media — provenance, rights, and channel readiness. Not a
-            decorative gallery.
+          <h2 className="media-workspace__title">Product media &amp; artifacts</h2>
+          <p className="meta media-workspace__lede">
+            Digital twin media with provenance, rights, and channel readiness — loads all
+            discovered assets for this product.
           </p>
         </div>
-        <div className="terminal-toolbar">
+        <div className="terminal-toolbar media-workspace__toolbar">
           <button type="button" className="btn ai" disabled={busy} onClick={() => void bootstrap()}>
-            {busy ? 'Working…' : 'Discover / bootstrap artifacts'}
+            {busy ? 'Working…' : 'Discover / bootstrap'}
           </button>
           <button type="button" className="btn ghost" disabled={busy} onClick={() => void load()}>
             Refresh
           </button>
         </div>
-      </div>
+      </header>
+
+      {loading ? (
+        <div className="media-workspace__skeleton" aria-busy="true">
+          <div className="skeleton-block skeleton-block--lg" />
+          <div className="skeleton-row">
+            <div className="skeleton-block" />
+            <div className="skeleton-block" />
+            <div className="skeleton-block" />
+            <div className="skeleton-block" />
+          </div>
+        </div>
+      ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
       {msg ? <p className="meta text-accent">{msg}</p> : null}
       {data?.honesty?.note ? <p className="meta">{data.honesty.note}</p> : null}
 
       {data ? (
-        <div className="detail-grid" style={{ marginTop: 12 }}>
-          <div className="panel" style={{ padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Completeness</h3>
-            <p>
-              Score: <strong className="text-accent">{data.completeness.score}/100</strong>
+        <div className="media-workspace__stats detail-grid">
+          <div className="panel media-stat-card">
+            <h3>Completeness</h3>
+            <p className="media-stat-card__score">
+              <strong className="text-accent">{score ?? 0}</strong>
+              <span className="meta">/100</span>
             </p>
             <ul className="kv">
               {Object.entries(data.completeness.checks).map(([k, v]) => (
@@ -236,8 +290,8 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
               ))}
             </ul>
           </div>
-          <div className="panel" style={{ padding: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Google Merchant readiness</h3>
+          <div className="panel media-stat-card">
+            <h3>Channel readiness</h3>
             {g ? (
               <ul className="kv">
                 <li>
@@ -261,32 +315,19 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
               </ul>
             ) : null}
             {g?.issues?.length ? (
-              <ul className="meta">
+              <ul className="meta media-stat-card__issues">
                 {g.issues.map((i) => (
                   <li key={i}>{i}</li>
                 ))}
               </ul>
             ) : null}
-            {g?.recommendedCorrections?.length ? (
-              <ul className="meta">
-                {g.recommendedCorrections.map((c) => (
-                  <li key={c}>→ {c}</li>
-                ))}
-              </ul>
-            ) : null}
             <p className="meta">{data.channelReadiness.shopify.note}</p>
             <p className="meta">{data.channelReadiness.ebay.note}</p>
-            {data.channelReadiness.amazon ? (
-              <p className="meta">
-                Amazon: {data.channelReadiness.amazon.publishStatus} · local images{' '}
-                {data.channelReadiness.amazon.localReadyImages ?? 0}
-              </p>
-            ) : null}
           </div>
-          {(data.duplicates?.exact?.length || data.duplicates?.near?.length) ? (
-            <div className="panel" style={{ padding: 12 }}>
-              <h3 style={{ marginTop: 0 }}>Duplicate relationships</h3>
-              <p className="meta">Shown as relationships — not auto-deleted.</p>
+          {data.duplicates?.exact?.length || data.duplicates?.near?.length ? (
+            <div className="panel media-stat-card">
+              <h3>Duplicates</h3>
+              <p className="meta">Relationships only — not auto-deleted.</p>
               <ul className="meta">
                 {(data.duplicates.exact ?? []).map((d) => (
                   <li key={d.checksum}>
@@ -304,14 +345,13 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
         </div>
       ) : null}
 
-      <div className="scanner-filters" style={{ marginTop: 12 }}>
+      <div className="media-workspace__ingest scanner-filters">
         <input
           type="url"
           placeholder="Ingest authorized https image/PDF URL…"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           disabled={busy}
-          style={{ minWidth: 280, flex: 1 }}
         />
         <button
           type="button"
@@ -323,112 +363,103 @@ export function ProductMediaWorkspace({ productId }: { productId: string }) {
         </button>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-          gap: 12,
-          marginTop: 16,
-        }}
-      >
-        {(data?.artifacts ?? []).map((a) => (
-          <div
-            key={a.id}
-            className="panel"
-            style={{ padding: 10, display: 'relative' }}
-            data-selected={a.purpose === 'primary' ? 'true' : undefined}
+      <div className="media-workspace__filters" role="tablist" aria-label="Media type filter">
+        {(
+          [
+            ['all', 'All'],
+            ['image', 'Images'],
+            ['document', 'Docs / 3D'],
+            ['other', 'Other'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={filter === id}
+            className={filter === id ? 'object-workspace-tab is-active' : 'object-workspace-tab'}
+            onClick={() => setFilter(id)}
           >
-            {a.artifactType === 'image' && a.contentUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`${getApiBaseUrl()}${a.contentUrl}`}
-                alt={a.altText ?? a.title ?? 'Product artifact'}
-                style={{
-                  width: '100%',
-                  height: 140,
-                  objectFit: 'contain',
-                  background: 'var(--color-surface-2)',
-                  borderRadius: 8,
-                  border: '1px solid var(--color-border-subtle)',
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  height: 140,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'var(--color-surface-2)',
-                  borderRadius: 8,
-                  border: '1px solid var(--color-border-subtle)',
-                  fontSize: 12,
-                  color: 'var(--color-text-tertiary)',
-                  padding: 8,
-                  textAlign: 'center',
-                }}
-              >
-                {a.artifactType} · {a.purpose}
-              </div>
-            )}
-            <p style={{ margin: '8px 0 2px', fontSize: 12, fontWeight: 600 }}>
-              {a.purpose}
-              {a.purpose === 'primary' ? ' ★' : ''}
-            </p>
-            <p className="meta" style={{ margin: 0, fontSize: 11 }}>
-              {a.title}
-            </p>
-            <p className="meta" style={{ margin: '4px 0 0', fontSize: 10 }}>
-              {a.rightsStatus} · {a.publicationStatus}
-              {a.width && a.height ? ` · ${a.width}×${a.height}` : ''}
-            </p>
-            <p className="meta" style={{ margin: '2px 0 0', fontSize: 10 }}>
-              <span className={a.provenanceLabel?.includes('FIXTURE') ? 'text-warning' : undefined}>
-                {a.provenanceLabel}
-              </span>
-            </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-              {a.artifactType === 'image' ? (
-                <button
-                  type="button"
-                  className="btn ghost"
-                  style={{ minHeight: 26, fontSize: 11 }}
-                  disabled={busy || a.purpose === 'primary'}
-                  onClick={() => void setPrimary(a.id)}
-                >
-                  Set primary
-                </button>
-              ) : null}
-              {a.contentUrl && (a.artifactType === 'document' || a.artifactType === 'model_3d') ? (
-                <a
-                  className="btn ghost"
-                  style={{ minHeight: 26, fontSize: 11, display: 'inline-flex' }}
-                  href={`${getApiBaseUrl()}${a.contentUrl}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open
-                </a>
-              ) : null}
-              <button
-                type="button"
-                className="btn ghost"
-                style={{ minHeight: 26, fontSize: 11 }}
-                disabled={busy}
-                onClick={() => void analyze(a.id)}
-              >
-                Analyze (proposal)
-              </button>
-            </div>
-          </div>
+            {label}
+            {id === 'all' && artifacts.length ? (
+              <span className="object-workspace-tab__count">{artifacts.length}</span>
+            ) : null}
+          </button>
         ))}
       </div>
 
-      {data && data.artifacts.length === 0 ? (
-        <p className="meta" style={{ marginTop: 12 }}>
-          No artifacts yet. Click <strong>Discover / bootstrap artifacts</strong> to attach a
-          primary image, gallery, packaging, spec sheet, and manual stubs from product sources.
-        </p>
+      {!loading ? (
+        <MediaGallery
+          items={galleryItems}
+          title="Gallery"
+          emptyHint={
+            artifacts.length === 0
+              ? 'No artifacts yet. Click Discover / bootstrap to attach media from product sources.'
+              : 'No assets match this filter.'
+          }
+        />
+      ) : null}
+
+      {/* Action cards under gallery for rights / analyze */}
+      {filtered.length > 0 ? (
+        <div className="media-workspace__actions-grid">
+          {filtered.map((a) => (
+            <div
+              key={a.id}
+              className={`media-artifact-card ${a.purpose === 'primary' ? 'is-primary' : ''}`}
+            >
+              <div className="media-artifact-card__meta">
+                <strong>
+                  {a.purpose}
+                  {a.purpose === 'primary' ? ' ★' : ''}
+                </strong>
+                <span className="meta">{a.title || a.artifactType}</span>
+                <span className="meta">
+                  {a.rightsStatus} · {a.publicationStatus}
+                  {a.width && a.height ? ` · ${a.width}×${a.height}` : ''}
+                </span>
+                <span
+                  className={
+                    a.provenanceLabel?.includes('FIXTURE') ? 'meta text-warning' : 'meta'
+                  }
+                >
+                  {a.provenanceLabel}
+                </span>
+              </div>
+              <div className="media-artifact-card__btns">
+                {a.artifactType === 'image' ? (
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={busy || a.purpose === 'primary'}
+                    onClick={() => void setPrimary(a.id)}
+                  >
+                    Set primary
+                  </button>
+                ) : null}
+                {a.contentUrl &&
+                (a.artifactType === 'document' || a.artifactType === 'model_3d') ? (
+                  <a
+                    className="btn ghost"
+                    href={resolveContentUrl(a.contentUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn ghost"
+                  disabled={busy}
+                  onClick={() => void analyze(a.id)}
+                >
+                  Analyze
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : null}
     </article>
   );

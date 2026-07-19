@@ -22,8 +22,15 @@ import { ConnectorOpsService } from './connector-ops.service';
 import { EcosystemService } from './ecosystem.service';
 import { LiveConnectorService } from './live-connector.service';
 import { WorkspaceService } from './workspace.service';
+import { SearchService } from './search.service';
+import { LifecyclePathService } from './lifecycle-path.service';
 import { LIVE_DATA_INVENTORY, simulationBanner } from '@tradeops/commerce-engine';
-import type { BusinessCapability } from '@tradeops/connector-core';
+import {
+  listFabricConnectors,
+  listLiveFeeds,
+  listPlannedLiveFeeds,
+  type BusinessCapability,
+} from '@tradeops/connector-core';
 
 @Controller()
 export class CommerceController {
@@ -36,7 +43,55 @@ export class CommerceController {
     private readonly runtime: CommerceRuntimeService,
     private readonly ops: ConnectorOpsService,
     private readonly liveConnectors: LiveConnectorService,
+    private readonly search: SearchService,
+    private readonly lifecyclePath: LifecyclePathService,
   ) {}
+
+  /**
+   * End-to-end lifecycle path honesty — fixture vs Shopify live blockers.
+   */
+  @Get('commerce/lifecycle/path')
+  @RequirePermissions('products:read')
+  getLifecyclePath(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return this.lifecyclePath.describePath(auth.activeOrganizationId!);
+  }
+
+  /**
+   * Unified Search Layer — internal objects with provenance.
+   * Command bar / AI should prefer this over ad-hoc route heuristics.
+   */
+  @Get('search')
+  @RequirePermissions('products:read', 'org:read')
+  unifiedSearch(@CurrentAuth() auth: AuthContext, @Query('q') q?: string) {
+    this.requireOrg(auth);
+    return this.search.search(auth.activeOrganizationId!, q ?? '');
+  }
+
+  /** Connector Fabric descriptors — fixtures and live share the same contract. */
+  @Get('ops/connectors/fabric')
+  @RequirePermissions('connectors:read')
+  connectorFabric(@CurrentAuth() auth: AuthContext) {
+    this.requireOrg(auth);
+    return {
+      connectors: listFabricConnectors(),
+      activeFeeds: listLiveFeeds().map((f) => ({
+        providerKey: f.providerKey,
+        maturity: f.maturity,
+        isFixture: f.isFixture,
+        displayName: f.displayName,
+      })),
+      planned: listPlannedLiveFeeds().map((f) => ({
+        providerKey: f.providerKey,
+        maturity: f.maturity,
+        displayName: f.displayName,
+        notes: f.notes,
+      })),
+      honesty: {
+        note: 'Active stack only. Planned providers never appear connected. Fixtures share live contracts.',
+      },
+    };
+  }
 
   /** Real-Time Commerce Operations Center — connector health + registry */
   @Get('ops/connectors/health')
@@ -359,6 +414,19 @@ export class CommerceController {
   ) {
     this.requireOrg(auth);
     return this.cases.getCaseByProduct(auth.activeOrganizationId!, productId);
+  }
+
+  /**
+   * Object workspace — OS surface for one Commerce Case (hub for product, listings, AI, graph).
+   */
+  @Get('commerce/cases/:caseId/workspace')
+  @RequirePermissions('products:read')
+  commerceCaseWorkspace(
+    @CurrentAuth() auth: AuthContext,
+    @Param('caseId', ParseUUIDPipe) caseId: string,
+  ) {
+    this.requireOrg(auth);
+    return this.cases.getCaseWorkspace(auth.activeOrganizationId!, caseId);
   }
 
   @Get('commerce/cases/:caseId')

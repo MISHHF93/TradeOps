@@ -33,6 +33,37 @@ export const googleMerchantManifest: ConnectorManifest = {
     'setPrimaryImage',
     'readMediaProcessingStatus',
   ],
+  auth: {
+    mode: 'oauth2',
+    credentialKeys: ['GOOGLE_MERCHANT_ACCESS_TOKEN', 'GOOGLE_MERCHANT_ID'],
+    docsUrl: 'https://developers.google.com/merchant/api',
+    scopes: ['https://www.googleapis.com/auth/content'],
+  },
+  rateLimit: { requestsPerMinute: 60, notes: 'Respect Merchant API quotas; never fabricate success.' },
+  sync: {
+    webhooks: false,
+    polling: true,
+    defaultPollIntervalSeconds: 3600,
+    supportsIncremental: true,
+  },
+  operations: [
+    {
+      operation: 'prepareProductFeed',
+      capability: 'createListing',
+      idempotent: true,
+      approvalRequired: false,
+      produces: 'product_feed',
+    },
+    {
+      operation: 'postProductInput',
+      capability: 'createListing',
+      idempotent: false,
+      approvalRequired: true,
+      produces: 'listing',
+    },
+  ],
+  docsUrl: 'https://developers.google.com/merchant/api',
+  healthCheck: 'credentials',
 };
 
 registerConnectorManifest(googleMerchantManifest);

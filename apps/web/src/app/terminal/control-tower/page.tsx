@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-/** Legacy control tower — Terminal is the process control center. */
+/** Legacy control tower — use Executive workspace home. */
 export default function LegacyControlTowerRedirect() {
-  redirect('/terminal/cockpit');
+  redirect('/terminal/workspace/executive');
 }

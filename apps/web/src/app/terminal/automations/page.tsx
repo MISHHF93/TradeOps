@@ -1,3 +1,5 @@
+import Link from 'next/link';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
 import { WeekendGoogleActions } from '../../../components/weekend-google-actions';
 import { terminalGet } from '../../../lib/terminal-api';
 
@@ -36,19 +38,26 @@ export default async function AutomationsPage() {
   }>('/api/v1/automation/feeds');
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <h1>Automations</h1>
-          <p className="lede">
-            Weekend Google Merchant feed preparation and live-feed registry. Shadow mode is the
-            default — live posts require authorized OAuth credentials and never fabricate success.
-          </p>
-        </div>
-        <WeekendGoogleActions />
-      </header>
-
-      {!status.ok ? <p className="form-error">{status.error}</p> : null}
+    <TerminalPageFrame
+      pill="Platform · automations"
+      title="Automations"
+      lede="Weekend Google Merchant feed preparation and live-feed registry. Shadow is default — live posts require OAuth and never fabricate success."
+      relatedPrimary="workspace"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { href: '/terminal/connectors', label: 'Connectors' },
+        { label: 'Automations' },
+      ]}
+      toolbar={
+        <>
+          <WeekendGoogleActions />
+          <Link className="btn ghost" href="/terminal/connectors">
+            Connectors
+          </Link>
+        </>
+      }
+      error={!status.ok ? status.error : !feeds.ok ? feeds.error : null}
+    >
 
       <div className="wf-path" aria-label="Weekend automation path">
         <span className="wf-node wf-node-trigger">Schedule</span>
@@ -170,6 +179,6 @@ export default async function AutomationsPage() {
           ))}
         </tbody>
       </table>
-    </section>
+    </TerminalPageFrame>
   );
 }

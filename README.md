@@ -8,8 +8,10 @@ TradeOps sits **above** Shopify, BigCommerce, Amazon, eBay, suppliers, logistics
 
 | Doc | |
 |-----|--|
+| [docs/README.md](docs/README.md) | **Documentation index** |
+| [docs/architecture/TRADEOPS_AI_RUNTIME_BLUEPRINT.md](docs/architecture/TRADEOPS_AI_RUNTIME_BLUEPRINT.md) | **Canonical AI + COS architecture** |
 | [docs/TRADEOPS_PRODUCT_POSITIONING.md](docs/TRADEOPS_PRODUCT_POSITIONING.md) | Commercial stance |
-| [docs/TRADEOPS_SIX_PILLARS.md](docs/TRADEOPS_SIX_PILLARS.md) | Six pillars (intelligence → enterprise) |
+| [docs/TRADEOPS_SIX_PILLARS.md](docs/TRADEOPS_SIX_PILLARS.md) | Six pillars |
 
 **Six pillars:** Commerce Intelligence · Commerce Operations · Unified Connector Hub · AI Operator · SaaS Billing · Enterprise Layer
 
@@ -24,20 +26,17 @@ TradeOps sits **above** Shopify, BigCommerce, Amazon, eBay, suppliers, logistics
 **SaaS foundations** ✅ packs, quotas, cockpit, ATP, customers, agency, control tower  
 
 **Local product (default `TRADEOPS_ACCESS_MODE=founder_direct`):**  
-open **http://localhost:3000** → **`/terminal/cockpit`** immediately (no login).
+open **http://localhost:3000** → terminal immediately (no login). Stack: `pnpm stack:up`.
 
 | Component | Status |
 |-----------|--------|
 | Monorepo (pnpm workspaces) | Yes |
-| API (`apps/api` NestJS) | Health + identity + commerce + SaaS + public tools + AI + automation |
-| Worker (`apps/worker` BullMQ) | Platform heartbeat queue (Redis optional) |
-| Web (`apps/web` Next.js) | Founder terminal + public marketing (auth UX when mode=authenticated) |
-| Postgres / PGlite | Identity + full commerce schema + seed |
-| Redis | Optional for first UI; health may be degraded |
-| CI | GitHub Actions |
-| Docs index | [docs/README.md](docs/README.md) · **execution matrix** [docs/TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md) |
-
-Docs index: [docs/README.md](docs/README.md) · Milestones: [docs/architecture/MILESTONES.md](docs/architecture/MILESTONES.md)
+| API (`apps/api` NestJS) | Health + identity + commerce + SaaS + AI + automation |
+| Worker (`apps/worker` BullMQ) | Platform jobs (Redis optional) |
+| Web (`apps/web` Next.js) | Commerce terminal + public marketing |
+| Postgres / PGlite | Identity + commerce schema + seed |
+| Redis | Optional; health may be degraded |
+| Docs | [docs/README.md](docs/README.md) · [MILESTONES](docs/architecture/MILESTONES.md) · archive under `docs/_archive/` |
 
 ---
 

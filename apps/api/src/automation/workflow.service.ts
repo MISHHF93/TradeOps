@@ -1,13 +1,22 @@
 import { Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
 import {
+  createDurableRun,
+  describeDurableTemplate,
   describeTemplate,
+  executeDurableRun,
   listWorkflowTemplates,
   runWorkflowTemplate,
 } from '@tradeops/workflow-engine';
+import { randomUUID } from 'node:crypto';
 import { AuditService } from '../identity/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EventFabricService } from '../events/event-fabric.service';
 import { SaasService } from '../saas/saas.service';
+
+/** Prisma JSON columns — cast structured durable snapshots. */
+function asJson(value: unknown): object {
+  return value as object;
+}
 
 @Injectable()
 export class WorkflowService {
@@ -20,8 +29,11 @@ export class WorkflowService {
 
   listTemplates() {
     return {
-      templates: listWorkflowTemplates().map(describeTemplate),
-      note: 'Templates are versioned. Consequential steps remain approval-controlled or credential-blocked.',
+      templates: listWorkflowTemplates().map((t) => ({
+        ...describeTemplate(t),
+        durable: describeDurableTemplate(t),
+      })),
+      note: 'Templates are versioned, durable, and approval-aware. Consequential steps stay gated.',
     };
   }
 
@@ -31,6 +43,7 @@ export class WorkflowService {
     templateKey: string;
     variables?: Record<string, unknown>;
     dryRun?: boolean;
+    commerceCaseId?: string | null;
   }) {
     // Server-side entitlement gate (never UI-only)
     await this.saas.assertWorkflowRunAllowed(input.organizationId);
@@ -39,39 +52,62 @@ export class WorkflowService {
       where: { organizationId: input.organizationId },
     });
 
-    const result = runWorkflowTemplate(input.templateKey, {
+    // Preflight unknown templates
+    const probe = runWorkflowTemplate(input.templateKey, {
       organizationId: input.organizationId,
       variables: input.variables,
       productCount,
-      dryRun: input.dryRun !== false,
+      dryRun: true,
     });
-
-    if (result.status === 'blocked' && result.message.includes('Unknown')) {
-      throw new NotFoundException(result.message);
+    if (probe.status === 'blocked' && probe.message.includes('Unknown')) {
+      throw new NotFoundException(probe.message);
     }
+
+    const runId = randomUUID();
+    const skeleton = createDurableRun({
+      runId,
+      organizationId: input.organizationId,
+      templateKey: input.templateKey,
+      variables: input.variables,
+      dryRun: input.dryRun !== false,
+      commerceCaseId: input.commerceCaseId ?? null,
+    });
+    if ('error' in skeleton) {
+      throw new NotFoundException(skeleton.error);
+    }
+
+    const durable = executeDurableRun(skeleton, { productCount });
 
     // Persist as operator run for audit continuity until dedicated workflow tables land fully.
     const run = await this.prisma.client.operatorRun.create({
       data: {
+        id: runId,
         organizationId: input.organizationId,
         userId: input.userId ?? null,
         objective: `workflow:${input.templateKey}`,
-        loopMode: result.requiresApproval ? 'shadow' : 'development',
+        loopMode: durable.requiresApproval ? 'shadow' : 'development',
         status:
-          result.status === 'awaiting_approval'
+          durable.status === 'awaiting_approval'
             ? 'awaiting_approval'
-            : result.status === 'blocked'
+            : durable.status === 'blocked'
               ? 'blocked'
-              : 'completed',
-        planJson: {
-          kind: 'workflow_template',
-          templateKey: result.templateKey,
-          version: result.version,
-          stepsCompleted: result.stepsCompleted,
-          stepsSkipped: result.stepsSkipped,
-        },
+              : durable.status === 'failed'
+                ? 'failed'
+                : 'completed',
+        planJson: asJson({
+          kind: 'workflow_template_durable',
+          templateKey: durable.templateKey,
+          version: durable.version,
+          durable,
+          stepsCompleted: durable.steps
+            .filter((s) => s.status === 'completed')
+            .map((s) => s.name),
+          stepsSkipped: durable.steps
+            .filter((s) => s.status === 'skipped' || s.status === 'awaiting_approval')
+            .map((s) => s.name),
+        }),
         toolTraceJson: [],
-        decisionNote: result.message,
+        decisionNote: durable.message,
         completedAt: new Date(),
       },
     });
@@ -81,32 +117,59 @@ export class WorkflowService {
       eventType: 'workflow.template_run',
       providerKey: 'tradeops-workflow',
       externalEventId: run.id,
-      loopMode: result.requiresApproval ? 'shadow' : 'development',
+      loopMode: durable.requiresApproval ? 'shadow' : 'development',
       payload: {
-        templateKey: result.templateKey,
-        status: result.status,
-        message: result.message,
+        templateKey: durable.templateKey,
+        status: durable.status,
+        message: durable.message,
+        commerceCaseId: durable.commerceCaseId,
+        durableSteps: durable.steps.map((s) => ({ name: s.name, status: s.status })),
       },
     });
 
     await this.audit.write({
       action: 'workflow.template_run',
       resourceType: 'workflow',
-      resourceId: result.templateKey,
+      resourceId: durable.templateKey,
       organizationId: input.organizationId,
       actorUserId: input.userId ?? null,
       metadata: {
         runId: run.id,
-        status: result.status,
-        version: result.version,
+        status: durable.status,
+        version: durable.version,
+        durable: true,
       },
     });
 
     // Meter only successful template runs (not unknown-template 404s)
-    if (result.status !== 'blocked' || !result.message.includes('Unknown')) {
+    if (durable.status !== 'blocked' || !durable.message.includes('Unknown')) {
       await this.saas.incrementUsage(input.organizationId, 'workflow_runs', 1);
     }
 
-    return { runId: run.id, ...result };
+    return {
+      runId: run.id,
+      templateKey: durable.templateKey,
+      version: durable.version,
+      status:
+        durable.status === 'awaiting_approval'
+          ? 'awaiting_approval'
+          : durable.status === 'blocked'
+            ? 'blocked'
+            : durable.status === 'completed'
+              ? 'completed'
+              : 'partial',
+      stepsCompleted: durable.steps.filter((s) => s.status === 'completed').map((s) => s.name),
+      stepsSkipped: durable.steps
+        .filter((s) => s.status === 'skipped' || s.status === 'awaiting_approval')
+        .map((s) => s.name),
+      requiresApproval: durable.requiresApproval,
+      message: durable.message,
+      evidence: {
+        organizationId: input.organizationId,
+        dryRun: durable.dryRun,
+        durable,
+      },
+      durable,
+    };
   }
 }

@@ -235,9 +235,9 @@ export const PROCEDURES: Record<string, OperatingProcedure> = {
       },
       {
         id: 'ai_research',
-        label: 'AI research assist',
-        description: 'Read-only ranking and rationale.',
-        href: '/terminal/ai',
+        label: 'Research runs',
+        description: 'Durable objective history (AI rail launches runs).',
+        href: '/terminal/objectives',
         aiTools: ['scoreOpportunity', 'searchConnectedProducts'],
       },
     ],
@@ -348,20 +348,27 @@ export const PROCEDURES: Record<string, OperatingProcedure> = {
         commerceStage: 'reconcile',
         aiTools: ['explainPaymentVariance'],
       },
+      {
+        id: 'disputes',
+        label: 'Disputes',
+        description: 'Chargebacks and evidence deadlines.',
+        href: '/terminal/finance/disputes',
+        commerceStage: 'reconcile',
+      },
     ],
   },
   exec_kpi_review: {
     id: 'exec_kpi_review',
     persona: 'executive',
     label: 'Review KPIs',
-    summary: 'Command center and portfolio performance.',
+    summary: 'Executive home, portfolio, and cash.',
     completionCriteria: 'KPI snapshot reviewed for the period.',
     steps: [
       {
-        id: 'cockpit',
-        label: 'Command center',
-        description: 'Cross-cutting health.',
-        href: '/terminal/cockpit',
+        id: 'home',
+        label: 'Executive home',
+        description: 'Priorities, KPIs, and intelligence briefing.',
+        href: '/terminal/workspace/executive',
       },
       {
         id: 'portfolio',
@@ -381,14 +388,14 @@ export const PROCEDURES: Record<string, OperatingProcedure> = {
     id: 'exec_risk_review',
     persona: 'executive',
     label: 'Review risks',
-    summary: 'Policy, blockers, control tower.',
+    summary: 'Open cases, blockers, and exceptions.',
     completionCriteria: 'Critical blockers acknowledged or assigned.',
     steps: [
       {
-        id: 'tower',
-        label: 'Control tower',
-        description: 'Risk and ops exceptions.',
-        href: '/terminal/control-tower',
+        id: 'cases',
+        label: 'Commerce cases',
+        description: 'Process board exceptions and stage risk.',
+        href: '/terminal/process',
       },
       {
         id: 'tasks',
@@ -498,9 +505,9 @@ export const PROCEDURES: Record<string, OperatingProcedure> = {
       },
       {
         id: 'ai',
-        label: 'AI analysis',
-        href: '/terminal/ai',
-        description: 'Read-only outcome analysis.',
+        label: 'Analysis runs',
+        href: '/terminal/objectives',
+        description: 'Durable objective history (launch from AI rail).',
         aiTools: ['evaluatePredictionOutcome'],
       },
     ],
@@ -655,6 +662,18 @@ export const ROUTE_OWNERSHIP: RouteOwnership[] = [
   { path: '/signup', primaryPersona: 'administrator', kind: 'admin', orphan: true, redirectTo: '/register' },
   { path: '/scanner', primaryPersona: 'researcher', kind: 'procedure_step', redirectTo: '/terminal' },
   { path: '/terminal/pipeline', primaryPersona: 'operator', kind: 'procedure_step', redirectTo: '/terminal/process' },
+  {
+    path: '/terminal/control-tower',
+    primaryPersona: 'executive',
+    kind: 'resource',
+    redirectTo: '/terminal/workspace/executive',
+  },
+  {
+    path: '/terminal/cockpit',
+    primaryPersona: 'executive',
+    kind: 'resource',
+    redirectTo: '/terminal/workspace/executive',
+  },
   // Capital/network — executive admin only, not default ops chrome
   { path: '/capital', primaryPersona: 'executive', kind: 'admin', orphan: true },
   { path: '/network', primaryPersona: 'executive', kind: 'admin', orphan: true },
@@ -680,15 +699,14 @@ export const ROUTE_OWNERSHIP: RouteOwnership[] = [
   { path: '/terminal/portfolio', primaryPersona: 'executive', secondaryPersonas: ['analyst'], kind: 'resource' },
   { path: '/terminal/cashflow', primaryPersona: 'executive', kind: 'resource' },
   { path: '/terminal/customers', primaryPersona: 'analyst', kind: 'resource' },
-  { path: '/terminal/control-tower', primaryPersona: 'executive', kind: 'resource' },
-  { path: '/terminal/cockpit', primaryPersona: 'executive', kind: 'resource', redirectTo: '/terminal/workspace/executive' },
+  // control-tower + cockpit consolidated above with redirectTo
   { path: '/terminal/finance/payments', primaryPersona: 'operator', kind: 'procedure_step' },
   { path: '/terminal/finance/payouts', primaryPersona: 'operator', kind: 'procedure_step' },
   { path: '/terminal/finance/reconciliation', primaryPersona: 'operator', secondaryPersonas: ['executive'], kind: 'procedure_step' },
   { path: '/terminal/finance/disputes', primaryPersona: 'operator', kind: 'procedure_step' },
-  // AI / objectives
-  { path: '/terminal/ai', primaryPersona: 'operator', secondaryPersonas: OPERATING_PERSONAS.slice(), kind: 'resource' },
+  // Objectives history (AI Operator is right rail, not a primary page)
   { path: '/terminal/objectives', primaryPersona: 'executive', secondaryPersonas: OPERATING_PERSONAS.slice(), kind: 'resource' },
+  { path: '/terminal/ai', primaryPersona: 'operator', secondaryPersonas: OPERATING_PERSONAS.slice(), kind: 'resource' },
   { path: '/terminal/live-examples', primaryPersona: 'developer', kind: 'dev_utility' },
   // Connectors / runtime
   { path: '/terminal/connectors', primaryPersona: 'developer', kind: 'procedure_step' },
@@ -752,105 +770,115 @@ export function proceduresForPersona(persona: OperatingPersona): OperatingProced
 }
 
 /**
- * Persona-specific primary destinations (lean — max ~6 + home + AI).
- * Everything else is contextual / AI-searchable, not permanent chrome.
+ * Persona Focus strip — max 5 business destinations.
+ * AI Operator is the persistent right rail (not a primary nav destination).
+ * Objectives = durable run history (long-form results open here).
  */
 const PERSONA_PRIMARY_NAV: Record<
   OperatingPersona,
   Array<{ id: string; href: string; label: string; kind?: NavKind }>
 > = {
   executive: [
-    { id: 'brief', href: '/terminal/workspace/executive', label: 'Executive Brief', kind: 'procedure_hub' },
-    { id: 'objectives', href: '/terminal/objectives', label: 'Objectives', kind: 'resource' },
-    { id: 'decisions', href: '/terminal/approvals', label: 'Decisions', kind: 'procedure_step' },
-    { id: 'revenue', href: '/terminal/portfolio', label: 'Revenue', kind: 'resource' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Advisor', kind: 'resource' },
+    { id: 'home', href: '/terminal/workspace/executive', label: 'Home', kind: 'procedure_hub' },
+    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+    { id: 'decisions', href: '/terminal/approvals', label: 'Approvals', kind: 'procedure_step' },
+    { id: 'portfolio', href: '/terminal/portfolio', label: 'Portfolio', kind: 'resource' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
   operator: [
-    { id: 'home', href: '/terminal/workspace/operator', label: 'Operator home', kind: 'procedure_hub' },
+    { id: 'home', href: '/terminal/workspace/operator', label: 'Home', kind: 'procedure_hub' },
+    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
     { id: 'tasks', href: '/terminal/tasks', label: 'Tasks', kind: 'resource' },
     { id: 'orders', href: '/terminal/orders', label: 'Orders', kind: 'procedure_step' },
-    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
-    { id: 'fulfill', href: '/terminal/fulfillment', label: 'Shipments', kind: 'procedure_step' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Operator', kind: 'resource' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
   researcher: [
-    { id: 'home', href: '/terminal/workspace/researcher', label: 'Research home', kind: 'procedure_hub' },
-    { id: 'discover', href: '/terminal', label: 'Product Discovery', kind: 'procedure_step' },
+    { id: 'home', href: '/terminal/workspace/researcher', label: 'Home', kind: 'procedure_hub' },
+    { id: 'discover', href: '/terminal', label: 'Discover', kind: 'procedure_step' },
     { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities', kind: 'procedure_step' },
     { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Research', kind: 'resource' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
   analyst: [
-    { id: 'home', href: '/terminal/workspace/analyst', label: 'Analyst home', kind: 'procedure_hub' },
+    { id: 'home', href: '/terminal/workspace/analyst', label: 'Home', kind: 'procedure_hub' },
     { id: 'signals', href: '/terminal/signals', label: 'Signals', kind: 'procedure_step' },
     { id: 'portfolio', href: '/terminal/portfolio', label: 'Portfolio', kind: 'resource' },
-    { id: 'customers', href: '/terminal/customers', label: 'Customers', kind: 'resource' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Analyst', kind: 'resource' },
+    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
   developer: [
-    { id: 'home', href: '/terminal/workspace/developer', label: 'Developer home', kind: 'procedure_hub' },
+    { id: 'home', href: '/terminal/workspace/developer', label: 'Home', kind: 'procedure_hub' },
     { id: 'connectors', href: '/terminal/connectors', label: 'Connectors', kind: 'procedure_step' },
-    { id: 'runtime', href: '/terminal/ecosystem', label: 'Runtime', kind: 'resource' },
     { id: 'automations', href: '/terminal/automations', label: 'Automations', kind: 'procedure_step' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Tools', kind: 'resource' },
+    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
   administrator: [
-    { id: 'home', href: '/terminal/workspace/administrator', label: 'Admin home', kind: 'procedure_hub' },
-    { id: 'workspace', href: '/terminal/workspace', label: 'Personas', kind: 'admin' },
+    { id: 'home', href: '/terminal/workspace/administrator', label: 'Home', kind: 'procedure_hub' },
+    { id: 'personas', href: '/terminal/workspace?switch=1', label: 'Personas', kind: 'admin' },
     { id: 'billing', href: '/app/billing', label: 'Billing', kind: 'admin' },
-    { id: 'system', href: '/app', label: 'System', kind: 'admin' },
-    { id: 'ai', href: '/terminal/ai', label: 'AI Admin', kind: 'resource' },
+    { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
   ],
 };
 
-/** Secondary destinations — collapsed under "More", not always competing for attention */
+/**
+ * Collapsed "More" — cross-cutting destinations only.
+ * No procedure hub clones (those live on persona Home).
+ */
 const PERSONA_MORE_NAV: Record<
   OperatingPersona,
   Array<{ id: string; href: string; label: string; kind?: NavKind }>
 > = {
   executive: [
-    { id: 'process', href: '/terminal/process', label: 'Process cases' },
-    { id: 'tasks', href: '/terminal/tasks', label: 'All tasks' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
+    { id: 'tasks', href: '/terminal/tasks', label: 'Tasks' },
     { id: 'cash', href: '/terminal/cashflow', label: 'Cash flow' },
-    { id: 'tower', href: '/terminal/control-tower', label: 'Control tower' },
     { id: 'finance', href: '/terminal/finance/reconciliation', label: 'Channel finance' },
+    { id: 'payments', href: '/terminal/finance/payments', label: 'Payments' },
+    { id: 'discover', href: '/terminal', label: 'Discover' },
+    { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   operator: [
+    { id: 'fulfill', href: '/terminal/fulfillment', label: 'Shipments' },
     { id: 'listings', href: '/terminal/listings', label: 'Listings' },
     { id: 'approvals', href: '/terminal/approvals', label: 'Approvals' },
     { id: 'payments', href: '/terminal/finance/payments', label: 'Payments' },
+    { id: 'payouts', href: '/terminal/finance/payouts', label: 'Payouts' },
+    { id: 'recon', href: '/terminal/finance/reconciliation', label: 'Reconciliation' },
+    { id: 'disputes', href: '/terminal/finance/disputes', label: 'Disputes' },
     { id: 'discover', href: '/terminal', label: 'Discover' },
-    { id: 'objectives', href: '/terminal/objectives', label: 'Objectives' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   researcher: [
     { id: 'watchlist', href: '/terminal/watchlist', label: 'Watchlist' },
     { id: 'tasks', href: '/terminal/tasks', label: 'Tasks' },
-    { id: 'objectives', href: '/terminal/objectives', label: 'Objectives' },
-    { id: 'live-examples', href: '/terminal/live-examples', label: 'Live examples' },
+    { id: 'signals', href: '/terminal/signals', label: 'Signals' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   analyst: [
+    { id: 'customers', href: '/terminal/customers', label: 'Customers' },
     { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities' },
     { id: 'watch', href: '/terminal/watchlist', label: 'Watchlist' },
-    { id: 'process', href: '/terminal/process', label: 'Process / learn' },
-    { id: 'objectives', href: '/terminal/objectives', label: 'Objectives' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   developer: [
-    { id: 'objectives', href: '/terminal/objectives', label: 'Execution history' },
+    { id: 'ecosystem', href: '/terminal/ecosystem', label: 'Runtime / graph' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
     { id: 'examples', href: '/terminal/live-examples', label: 'Live examples' },
-    { id: 'process', href: '/terminal/process', label: 'Process cases' },
-    { id: 'status', href: '/status', label: 'Capability status' },
+    { id: 'status', href: '/status', label: 'System status' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
   ],
   administrator: [
+    { id: 'system', href: '/app', label: 'System' },
     { id: 'agency', href: '/terminal/agency', label: 'Agency clients' },
     { id: 'onboarding', href: '/onboarding', label: 'Onboarding' },
-    { id: 'plans', href: '/platform/plans', label: 'Plans' },
     { id: 'connectors', href: '/terminal/connectors', label: 'Connectors' },
+    { id: 'objectives', href: '/terminal/objectives', label: 'Run history' },
     { id: 'switch', href: '/terminal/workspace?switch=1', label: 'All personas', kind: 'admin' },
   ],
 };
@@ -891,9 +919,6 @@ export function buildPersonaNav(
       navItem.badge = String(options.connectorIssues);
       navItem.status = 'credential_blocked';
     }
-    if (item.id === 'ai') {
-      navItem.status = 'approval_controlled';
-    }
     return navItem;
   });
 
@@ -908,26 +933,19 @@ export function buildPersonaNav(
     }
   }
 
-  const more: WorkspaceNavItem[] = PERSONA_MORE_NAV[persona].map((item) => ({
-    id: item.id,
-    href: item.href,
-    label: item.label,
-    kind: item.kind ?? 'resource',
-    status: 'operational',
-  }));
+  // De-dupe More against Focus hrefs so the same page never appears twice.
+  const primaryHrefs = new Set(primary.map((p) => p.href.split('?')[0]));
+  const more: WorkspaceNavItem[] = PERSONA_MORE_NAV[persona]
+    .filter((item) => !primaryHrefs.has(item.href.split('?')[0]!))
+    .map((item) => ({
+      id: item.id,
+      href: item.href,
+      label: item.label,
+      kind: item.kind ?? 'resource',
+      status: 'operational' as const,
+    }));
 
-  // Add procedure deep-links only under More (not primary chrome)
-  const def = PERSONA_DEFINITIONS[persona];
-  for (const p of proceduresForPersona(persona)) {
-    more.push({
-      id: `proc-${p.id}`,
-      href: `${def.homeHref}?procedure=${p.id}`,
-      label: p.label,
-      kind: 'procedure_hub',
-      procedureId: p.id,
-      status: 'operational',
-    });
-  }
+  // Procedures stay on persona Home pages — not cloned into sidebar chrome.
 
   return [
     {
@@ -988,9 +1006,15 @@ export type WorkspaceResolveInput = {
     caseId: string;
     productId: string;
     productTitle?: string;
+    primaryImageUrl?: string | null;
     currentStage: string;
     stageStatus: string;
     nextActionLabel?: string | null;
+    nextHref?: string | null;
+    opportunityScore?: number | null;
+    expectedProfitMinor?: number | null;
+    currency?: string;
+    blockerMessage?: string | null;
   }>;
   /** Live intelligence inputs (optional — richer when host loads full signal set) */
   intelligence?: {
@@ -1309,7 +1333,8 @@ export function buildWorkspaceSurface(
     {
       id: 'focus',
       title: (intelligence?.focusObjective ?? currentObjective).slice(0, 140),
-      href: '/terminal/ai',
+      // Objectives history — launch/run happens in the persistent AI rail
+      href: '/terminal/objectives',
       status: intelligence?.healthLabel ?? 'active',
       kind: 'system',
     },
@@ -1570,17 +1595,17 @@ export function resolveAiNavigation(
   hits.sort((a, b) => b.score - a.score);
   const top = hits[0];
   if (!top) {
-    const home = persona ? PERSONA_DEFINITIONS[persona].homeHref : '/terminal/ai';
+    const home = persona ? PERSONA_DEFINITIONS[persona].homeHref : '/terminal/workspace';
     return {
       matched: false,
       href: home,
-      label: 'AI / workspace home',
+      label: 'Workspace home',
       confidence: 0.2,
       alternatives: [
-        { href: '/terminal/ai', label: 'Ask AI Operator' },
+        { href: '/terminal/objectives', label: 'Objective history' },
         { href: '/terminal/process', label: 'Process board' },
       ],
-      note: 'No direct route match — open AI with the query as objective',
+      note: 'No direct route match — use the AI Operator rail for free-form objectives',
     };
   }
 

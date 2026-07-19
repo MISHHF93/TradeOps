@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
 import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { terminalGet } from '../../../lib/terminal-api';
 
@@ -60,26 +61,27 @@ export default async function EcosystemPage() {
   ]);
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <p className="pill">Ecosystem · partner value</p>
-          <h1>Partner Success &amp; knowledge graph</h1>
-          <p className="lede">
-            TradeOps sits above the commerce ecosystem. Every connector should create value for
-            merchants, channels, suppliers, processors, and TradeOps — without competing with
-            Shopify, Amazon, or Stripe.
-          </p>
-        </div>
-        <div className="terminal-toolbar">
+    <TerminalPageFrame
+      pill="Platform · ecosystem"
+      title="Partner success & knowledge graph"
+      lede="TradeOps sits above the commerce ecosystem. Connectors create value for merchants, channels, suppliers, and processors — without competing with Shopify, Amazon, or Stripe."
+      relatedPrimary="workspace"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { href: '/terminal/connectors', label: 'Connectors' },
+        { label: 'Ecosystem' },
+      ]}
+      toolbar={
+        <>
           <Link className="btn secondary" href="/terminal/process">
-            Process spine
+            Cases
           </Link>
           <Link className="btn ghost" href="/terminal/connectors">
-            Connector hub
+            Connectors
           </Link>
-        </div>
-      </header>
+        </>
+      }
+    >
 
       {intel.ok && intel.data.emptyStateEducation ? (
         <ProcessEmptyState
@@ -216,6 +218,6 @@ export default async function EcosystemPage() {
           ) : null}
         </article>
       )}
-    </section>
+    </TerminalPageFrame>
   );
 }

@@ -21,6 +21,39 @@ export const fixtureSupplierManifest: ConnectorManifest = {
     'readProductImages',
     'readDocuments',
   ],
+  auth: { mode: 'none', credentialKeys: [] },
+  rateLimit: { requestsPerMinute: 600, burst: 50, notes: 'Fixture parity: reports rate limits like live.' },
+  sync: {
+    webhooks: false,
+    polling: true,
+    defaultPollIntervalSeconds: 0,
+    supportsIncremental: false,
+  },
+  operations: [
+    {
+      operation: 'searchProducts',
+      capability: 'searchProducts',
+      idempotent: true,
+      approvalRequired: false,
+      produces: 'product',
+    },
+    {
+      operation: 'readInventory',
+      capability: 'readInventory',
+      idempotent: true,
+      approvalRequired: false,
+      produces: 'inventory',
+    },
+    {
+      operation: 'quoteShipping',
+      capability: 'quoteShipping',
+      idempotent: true,
+      approvalRequired: false,
+      produces: 'shipping_quote',
+    },
+  ],
+  docsUrl: 'https://localhost/tradeops/fixtures/supplier',
+  healthCheck: 'capability_probe',
 };
 
 registerConnectorManifest(fixtureSupplierManifest);

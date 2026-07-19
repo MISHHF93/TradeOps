@@ -15,7 +15,8 @@ function apply(theme: Theme, density: Density) {
 
 /**
  * Midnight Exchange theme + density control (theme.md §4, §17).
- * Persists locally; dark is default.
+ * Single mount point in terminal: command bar only (not sidebar).
+ * Persists locally; dark + compact are defaults.
  */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>('dark');
@@ -48,23 +49,29 @@ export function ThemeToggle() {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <div className="theme-toggle" role="group" aria-label="Theme">
-        <button type="button" aria-pressed={theme === 'dark'} onClick={() => setT('dark')}>
+    <div className="chrome-prefs" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="theme-toggle" role="group" aria-label="Color theme">
+        <button type="button" aria-pressed={theme === 'dark'} onClick={() => setT('dark')} title="Dark theme">
           Dark
         </button>
-        <button type="button" aria-pressed={theme === 'light'} onClick={() => setT('light')}>
+        <button type="button" aria-pressed={theme === 'light'} onClick={() => setT('light')} title="Light theme">
           Light
         </button>
       </div>
-      <div className="theme-toggle" role="group" aria-label="Density">
-        <button type="button" aria-pressed={density === 'compact'} onClick={() => setD('compact')}>
+      <div className="theme-toggle" role="group" aria-label="UI density">
+        <button
+          type="button"
+          aria-pressed={density === 'compact'}
+          onClick={() => setD('compact')}
+          title="Compact density"
+        >
           Compact
         </button>
         <button
           type="button"
           aria-pressed={density === 'comfortable'}
           onClick={() => setD('comfortable')}
+          title="Comfortable density"
         >
           Comfort
         </button>

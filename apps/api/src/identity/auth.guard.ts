@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -17,6 +18,16 @@ import { SessionService } from './session.service';
 import type { AuthContext } from './types';
 
 type AuthedRequest = Request & { auth?: AuthContext; cookies?: Record<string, string> };
+
+function isDatabaseUnavailableError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    /Can't reach database server/i.test(msg) ||
+    /PrismaClientInitializationError/i.test(msg) ||
+    /P1001|P1017/i.test(msg) ||
+    /ECONNREFUSED/i.test(msg)
+  );
+}
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -40,26 +51,47 @@ export class AuthGuard implements CanActivate {
     const token = request.cookies?.[this.sessions.cookieName];
     const direct = isAuthBypassEnabled();
 
-    // Prefer a real session cookie when present.
-    if (token) {
-      try {
-        await this.attachSessionAuth(request, token);
-        return true;
-      } catch (error) {
-        if (!direct) {
-          if (error instanceof UnauthorizedException) {
-            throw error;
+    try {
+      // Prefer a real session cookie when present.
+      if (token) {
+        try {
+          await this.attachSessionAuth(request, token);
+          return true;
+        } catch (error) {
+          if (isDatabaseUnavailableError(error)) {
+            throw new ServiceUnavailableException({
+              statusCode: 503,
+              code: 'database_unavailable',
+              message:
+                'Database is unreachable (PGlite/Postgres). Run `pnpm start` or `pnpm run db:pglite`, then retry. AI Operator cannot run without the database.',
+            });
           }
-          throw new UnauthorizedException('Authentication required');
+          if (!direct) {
+            if (error instanceof UnauthorizedException) {
+              throw error;
+            }
+            throw new UnauthorizedException('Authentication required');
+          }
+          // Fall through to founder identity when cookie is invalid and direct mode is on.
         }
-        // Fall through to founder identity when cookie is invalid and direct mode is on.
+      } else if (!direct) {
+        throw new UnauthorizedException('Authentication required');
       }
-    } else if (!direct) {
-      throw new UnauthorizedException('Authentication required');
-    }
 
-    request.auth = await this.founderAccess.resolveFounderAuth();
-    return true;
+      request.auth = await this.founderAccess.resolveFounderAuth();
+      return true;
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      if (isDatabaseUnavailableError(error)) {
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          code: 'database_unavailable',
+          message:
+            'Database is unreachable (PGlite/Postgres). Run `pnpm start` or `pnpm run db:pglite`, then retry. AI Operator cannot run without the database.',
+        });
+      }
+      throw error;
+    }
   }
 
   private async attachSessionAuth(request: AuthedRequest, token: string): Promise<void> {

@@ -3,10 +3,11 @@
 ## Docs
 
 - Index: [docs/README.md](docs/README.md)  
-- Keep **operational** docs (FIRST_RUN, LOCAL_SETUP, README quick start) aligned with `package.json` scripts.  
-- Mark vision docs clearly vs REAL implementation ([IMPLEMENTATION_LEDGER](docs/TRADEOPS_IMPLEMENTATION_LEDGER.md)).  
-- Full doc ↔ code matrix: [TRADEOPS_EXECUTION_STATUS.md](docs/TRADEOPS_EXECUTION_STATUS.md).  
-- Access modes: [TRADEOPS_ACCESS_MODES.md](docs/TRADEOPS_ACCESS_MODES.md).
+- Canonical architecture: [docs/architecture/TRADEOPS_AI_RUNTIME_BLUEPRINT.md](docs/architecture/TRADEOPS_AI_RUNTIME_BLUEPRINT.md)  
+- Keep **operational** docs (FIRST_RUN, LOCAL_SETUP, stack scripts) aligned with `package.json`.  
+- Access modes: [docs/TRADEOPS_ACCESS_MODES.md](docs/TRADEOPS_ACCESS_MODES.md).  
+- Do not reintroduce one-off session reports at repo root; use `docs/architecture/` or update the index.  
+- Historical docs: [docs/_archive/](docs/_archive/).
 
 ## Workflow
 
@@ -14,8 +15,8 @@
 2. Keep changes compiling: `pnpm typecheck`, `pnpm test`, `pnpm build`.
 3. Prefer vertical slices over horizontal stubs across unfinished modules.
 4. Document irreversible decisions as ADRs under `docs/architecture/`.
-5. Local run: `pnpm run bootstrap:local` → `npm start` → open **http://localhost:3000**  
-   - Default **`TRADEOPS_ACCESS_MODE=founder_direct`**: lands on `/terminal/cockpit` (no login).  
+5. Local run: `pnpm stack:up` → open **http://localhost:3000**  
+   - Default **`TRADEOPS_ACCESS_MODE=founder_direct`**: terminal without login.  
    - Set `authenticated` to exercise `/login` · `/register`.
 
 ## Package boundaries

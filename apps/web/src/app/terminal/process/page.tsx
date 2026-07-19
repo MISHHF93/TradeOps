@@ -19,6 +19,7 @@ type CaseDto = {
   id: string;
   productId: string;
   productTitle?: string;
+  primaryImageUrl?: string | null;
   currentStage: string;
   stageStatus: string;
   opportunityScore?: number | null;
@@ -209,6 +210,7 @@ export default async function CommerceProcessPage() {
                         id: c.id,
                         productId: c.productId,
                         productTitle: c.productTitle,
+                        primaryImageUrl: c.primaryImageUrl,
                         currentStage: c.currentStage,
                         stageStatus: c.stageStatus,
                         opportunityScore: c.opportunityScore,

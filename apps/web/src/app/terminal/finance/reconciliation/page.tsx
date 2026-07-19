@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { TerminalPageFrame } from '../../../../components/commerce/process-chrome';
+import { ProcessEmptyState } from '../../../../components/feedback/process-empty-state';
 import { FixtureReconcileButton } from '../../../../components/terminal/billing-actions';
 import { formatMoney } from '../../../../lib/money';
 import { terminalGet } from '../../../../lib/terminal-api';
@@ -36,37 +38,41 @@ export default async function FinanceReconciliationPage() {
   const rows = result.ok ? result.data.reconciliations : [];
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <p className="pill">Finance · reconciliation</p>
-          <h1>Payout reconciliation</h1>
-          <p className="lede">
-            Match expected order economics (captures − refunds − fees) to actual payout net. Variance
-            and unmatched amounts surface for investigation. Realized profit uses these figures —
-            never labels revenue as profit.
-          </p>
-        </div>
-        <div className="terminal-toolbar">
+    <TerminalPageFrame
+      pill="Finance · reconciliation"
+      title="Payout reconciliation"
+      lede="Match expected order economics (captures − refunds − fees) to actual payout net. Realized profit uses these figures — never labels revenue as profit."
+      relatedPrimary="finance"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { label: 'Finance' },
+      ]}
+      toolbar={
+        <>
           <FixtureReconcileButton />
+          <Link className="btn ghost" href="/terminal/finance/payments">
+            Payments
+          </Link>
           <Link className="btn ghost" href="/terminal/finance/payouts">
             Payouts
           </Link>
           <Link className="btn ghost" href="/terminal/cashflow">
             Cash flow
           </Link>
-        </div>
-      </header>
-
-      {!result.ok ? <p className="form-error">{result.error}</p> : null}
-
-      {rows.length === 0 ? (
-        <article className="panel">
-          <p>
-            No reconciliation runs yet. Ingest orders/payments, then run fixture reconcile or connect
-            settlement feeds.
-          </p>
-        </article>
+        </>
+      }
+      error={result.ok ? null : result.error}
+    >
+      {rows.length === 0 && result.ok ? (
+        <ProcessEmptyState
+          title="No reconciliation runs yet"
+          body="Ingest orders/payments, then run fixture reconcile or connect settlement feeds."
+          stage="reconcile"
+          primaryHref="/terminal/finance/payments"
+          primaryLabel="Payments"
+          secondaryHref="/terminal/orders"
+          secondaryLabel="Orders"
+        />
       ) : null}
 
       <div className="detail-grid">
@@ -124,6 +130,6 @@ export default async function FinanceReconciliationPage() {
           );
         })}
       </div>
-    </section>
+    </TerminalPageFrame>
   );
 }

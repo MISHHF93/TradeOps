@@ -192,7 +192,7 @@ export function CommerceStatePanel({
             <Link href={rec.href} className="btn secondary">
               Open work surface
             </Link>
-            <Link href={`/terminal/ai?caseId=${state.caseId}`} className="btn ghost">
+            <Link href={`/terminal/objectives?caseId=${state.caseId}`} className="btn ghost">
               AI on this case
             </Link>
           </div>

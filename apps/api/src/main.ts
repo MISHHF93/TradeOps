@@ -17,8 +17,32 @@ async function bootstrap(): Promise<void> {
 
   app.use(cookieParser());
 
+  // Local Windows: users open either localhost or 127.0.0.1 for the web app.
+  // A single WEB_ORIGIN string breaks the other host (CORS + credentialed AI calls).
+  const webPort = (() => {
+    try {
+      return new URL(env.WEB_ORIGIN).port || '3000';
+    } catch {
+      return '3000';
+    }
+  })();
+  const allowedOrigins = new Set(
+    [
+      env.WEB_ORIGIN,
+      `http://localhost:${webPort}`,
+      `http://127.0.0.1:${webPort}`,
+    ].filter(Boolean),
+  );
+
   app.enableCors({
-    origin: env.WEB_ORIGIN,
+    origin: (origin, callback) => {
+      // Non-browser tools (no Origin header) and allowlisted web hosts.
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(null, false);
+    },
     credentials: true,
   });
 

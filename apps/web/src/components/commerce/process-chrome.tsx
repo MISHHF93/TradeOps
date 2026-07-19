@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { processRelatedEntries } from '../../lib/terminal-routes';
 import {
   PROCESS_LABELS,
   PROCESS_STAGES,
@@ -8,6 +9,64 @@ import {
 } from '../../lib/process-ux';
 
 type Crumb = { href?: string; label: string };
+
+/**
+ * Standard terminal page frame — every list/stage page should use this so chrome,
+ * related spine, and error placement feel like one OS (not one-off headers).
+ */
+export function TerminalPageFrame({
+  pill,
+  title,
+  lede,
+  currentStage,
+  showStageStrip = false,
+  breadcrumbs,
+  toolbar,
+  relatedPrimary = 'process',
+  /** Global procedure strip duplicates left nav — off by default. Enable only when contextual. */
+  showRelatedNav = false,
+  error,
+  children,
+}: {
+  pill: string;
+  title: string;
+  lede: string;
+  currentStage?: string | null;
+  showStageStrip?: boolean;
+  breadcrumbs?: Crumb[];
+  toolbar?: ReactNode;
+  relatedPrimary?:
+    | 'process'
+    | 'tasks'
+    | 'discover'
+    | 'approvals'
+    | 'workspace'
+    | 'ai'
+    | 'opportunities'
+    | 'orders'
+    | 'listings'
+    | 'finance';
+  showRelatedNav?: boolean;
+  error?: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <section className="terminal-page">
+      <ProcessPageHeader
+        pill={pill}
+        title={title}
+        lede={lede}
+        currentStage={currentStage}
+        showStageStrip={showStageStrip}
+        breadcrumbs={breadcrumbs}
+        toolbar={toolbar}
+      />
+      {showRelatedNav ? <ProcessRelatedLinks primary={relatedPrimary} /> : null}
+      {error ? <p className="form-error">{error}</p> : null}
+      {children}
+    </section>
+  );
+}
 
 /**
  * Shared process chrome: breadcrumb + stage strip + optional toolbar.
@@ -119,26 +178,37 @@ export function ProcessPageHeader({
   );
 }
 
+/**
+ * Shared procedure spine — paths from terminal-routes registry (no ad-hoc hrefs).
+ */
 export function ProcessRelatedLinks({
   primary = 'process',
 }: {
-  primary?: 'process' | 'tasks' | 'discover' | 'approvals' | 'workspace' | 'ai';
+  primary?:
+    | 'process'
+    | 'tasks'
+    | 'discover'
+    | 'approvals'
+    | 'workspace'
+    | 'ai'
+    | 'opportunities'
+    | 'orders'
+    | 'listings'
+    | 'finance';
 }) {
-  // Lean procedure spine only — not a second feature sidebar
-  const links = [
-    { id: 'workspace' as const, href: '/terminal/workspace', label: 'Workspace' },
-    { id: 'process' as const, href: '/terminal/process', label: PROCESS_LABELS.openProcess },
-    { id: 'tasks' as const, href: '/terminal/tasks', label: PROCESS_LABELS.viewTasks },
-    { id: 'ai' as const, href: '/terminal/ai', label: 'AI' },
-    { id: 'discover' as const, href: '/terminal', label: PROCESS_LABELS.discoverTitle },
-    {
-      id: 'approvals' as const,
-      href: '/terminal/approvals',
-      label: PROCESS_LABELS.viewApprovals,
-    },
-  ];
+  const labelOverride: Partial<Record<string, string>> = {
+    discover: PROCESS_LABELS.discoverTitle,
+    process: PROCESS_LABELS.openProcess,
+    tasks: PROCESS_LABELS.viewTasks,
+    approvals: PROCESS_LABELS.viewApprovals,
+    orders: PROCESS_LABELS.viewOrders,
+  };
+  const links = processRelatedEntries().map((l) => ({
+    ...l,
+    label: labelOverride[l.id] ?? l.label,
+  }));
   return (
-    <nav className="process-related" aria-label="Procedure navigation">
+    <nav className="process-related" aria-label="Commerce procedure navigation">
       {links.map((l) =>
         l.id === primary ? (
           <span key={l.id} className="process-related__active">

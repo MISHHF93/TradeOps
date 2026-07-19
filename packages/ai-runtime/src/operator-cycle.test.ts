@@ -85,6 +85,15 @@ describe('AI operator cycle', () => {
     assert.equal(c.approvalRequired, true);
   });
 
+  it('does not treat negated publish language as PUBLISH_LISTING', () => {
+    const c = classifyObjective(
+      'Rank products by margin; prepare listing draft if qualified; never silent publish.',
+    );
+    assert.notEqual(c.objectiveType, 'PUBLISH_LISTING');
+    assert.equal(c.approvalRequired, false);
+    assert.equal(c.wantsPublish, false);
+  });
+
   it('parses margin and review filters from objective text', () => {
     const f = parseObjective(
       'Find products with predicted margin above 25%, delivery under 12 days, at least 200 reviews, low policy risk',
@@ -129,6 +138,30 @@ describe('AI operator cycle', () => {
     assert.ok(
       result.recommendations.some((r) => r.title.includes('Water Bottle')),
     );
+    // Without Cohere: honest block, never fixed "I evaluated / Strongest opportunity" essay
+    assert.equal(result.briefingSource, 'blocked');
+    assert.doesNotMatch(result.responseSummary, /I evaluated \d+ supplier products/i);
+    assert.doesNotMatch(result.responseSummary, /Strongest opportunity:/i);
+    assert.doesNotMatch(result.responseSummary, /Tool evidence \(deterministic\)/i);
+    assert.match(result.responseSummary, /No fixed narrative was substituted/i);
+  });
+
+  it('does not emit fixed product essay when synthesizeWithLlm is false', async () => {
+    const result = await runOperatorCycle({
+      objective: 'Find products worth evaluating.',
+      loopMode: 'shadow',
+      synthesizeWithLlm: false,
+      products: [waterBottle, weapon],
+      ctx: {
+        organizationId: 'org',
+        loopMode: 'shadow',
+        permissions: ['*'],
+        deps: {},
+      },
+    });
+    assert.equal(result.briefingSource, 'tools_structured');
+    assert.doesNotMatch(result.responseSummary, /I evaluated \d+/i);
+    assert.doesNotMatch(result.responseSummary, /Strongest opportunity:/i);
   });
 
   it('draft listing objective may propose drafts but weapon still blocked', async () => {
@@ -186,7 +219,9 @@ describe('AI operator cycle', () => {
       },
     });
     assert.equal(result.recommendations.length, 0);
-    assert.ok(/could not search|no product/i.test(result.responseSummary));
+    assert.equal(result.briefingSource, 'empty_store');
+    assert.ok(/no products available|no product/i.test(result.responseSummary));
+    assert.doesNotMatch(result.responseSummary, /I evaluated/i);
     assert.equal(result.candidateStats.retrieved, 0);
   });
 });

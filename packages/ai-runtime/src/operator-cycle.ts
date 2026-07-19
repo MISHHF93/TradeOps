@@ -4,6 +4,7 @@ import {
   scoreOpportunity,
 } from '@tradeops/commerce-engine';
 import { decideFromPasses, runAuditorPass, runCriticPass } from './critic-auditor';
+import { generateText } from './provider-abstraction';
 import { invokeTool, listTools } from './tool-registry';
 import type {
   ObjectiveType,
@@ -87,7 +88,19 @@ function pushTimeline(
 export function classifyObjective(objective: string): ObjectiveClassification {
   const text = objective.toLowerCase().trim();
 
+  // Negated / advisory mention of publish must not escalate to PUBLISH_LISTING
+  // e.g. "never silent publish", "do not publish", "publish still requires approval"
+  const publishNegated =
+    /\b(never|not|no|don'?t|do not|without|avoid|forbid(?:den)?|prohibit(?:ed)?)\b[^.]{0,40}\bpublish\b/.test(
+      text,
+    ) ||
+    /\bpublish\b[^.]{0,40}\b(never|not required|requires approval|still requires|not yet|blocked)\b/.test(
+      text,
+    ) ||
+    /\bsilent publish\b/.test(text);
+
   const wantsPublish =
+    !publishNegated &&
     /\b(publish|go live|live list|submit to marketplace|post listing)\b/.test(text);
   const wantsPo =
     /\b(purchase order|buy stock|order from supplier|submit po|procure)\b/.test(text);
@@ -276,8 +289,26 @@ export function buildPlan(
   };
 }
 
+export type OperatorProgressEvent = {
+  state:
+    | 'classifying'
+    | 'retrieving'
+    | 'calling_tools'
+    | 'evaluating'
+    | 'ranking'
+    | 'synthesizing'
+    | 'validating'
+    | 'completed'
+    | 'blocked'
+    | 'failed';
+  step: string;
+  detail?: string;
+  at: string;
+};
+
 /**
  * Full operator cycle against in-memory product set (host loads from DB).
+ * Optional onProgress enables live UI progress (SSE / panel) instead of client fakes.
  */
 export async function runOperatorCycle(input: {
   objective: string;
@@ -285,7 +316,22 @@ export async function runOperatorCycle(input: {
   loopMode: OperationLoopMode;
   ctx: ToolExecutionContext;
   connectorSources?: Array<{ name: string; status: string; detail?: string }>;
+  /** Live progress for sidebar / SSE — not demo timers */
+  onProgress?: (event: OperatorProgressEvent) => void | Promise<void>;
+  /** When true (default), try Cohere Phase B narrative if COHERE_API_KEY is set */
+  synthesizeWithLlm?: boolean;
 }): Promise<OperatorCycleResult> {
+  const emit = async (
+    state: OperatorProgressEvent['state'],
+    step: string,
+    detail?: string,
+  ) => {
+    const at = nowIso();
+    if (input.onProgress) {
+      await input.onProgress({ state, step, detail, at });
+    }
+  };
+
   const classification = classifyObjective(input.objective);
   const filters = classification.filters;
   const plan = buildPlan(input.objective, classification);
@@ -293,13 +339,27 @@ export async function runOperatorCycle(input: {
   const timeline: TimelineStep[] = [];
   const isReadOnly = classification.objectiveType === 'READ_ONLY_ANALYSIS';
 
+  await emit('classifying', 'Objective received', input.objective.slice(0, 200));
   pushTimeline(timeline, 'Objective received', 'done', input.objective.slice(0, 200));
 
+  // Phase A: deterministic tools only (connectors, research, product search, profit, policy, rank)
+  await emit('calling_tools', 'Phase A tool ranking', 'Deterministic tools — no LLM invention');
+  pushTimeline(
+    timeline,
+    'Phase A tool ranking',
+    'active',
+    'Connectors · search · profit · policy · rank (no generative claims)',
+  );
+
   // Tool: connector capabilities
+  await emit('calling_tools', 'Validating connected data sources');
   pushTimeline(timeline, 'Validating connected data sources', 'active');
   try {
     const caps = await invokeTool('listConnectorCapabilities', {}, input.ctx);
     toolTrace.push(caps.trace);
+    // Close the "active" validating step then mark capabilities checked.
+    const last = timeline[timeline.length - 1];
+    if (last?.step === 'Validating connected data sources') last.status = 'done';
     pushTimeline(timeline, 'Connector capabilities checked', 'done');
   } catch (e) {
     toolTrace.push({
@@ -310,6 +370,8 @@ export async function runOperatorCycle(input: {
       durationMs: 0,
       at: nowIso(),
     });
+    const last = timeline[timeline.length - 1];
+    if (last?.step === 'Validating connected data sources') last.status = 'failed';
     pushTimeline(
       timeline,
       'Connector capabilities checked',
@@ -318,7 +380,52 @@ export async function runOperatorCycle(input: {
     );
   }
 
-  // Tool: search products
+  // Optional public-web research (Tavily) — evidence only; never invent store products from SERP.
+  if (isReadOnly) {
+    const researchQuery = input.objective.replace(/\s+/g, ' ').trim().slice(0, 200);
+    await emit('retrieving', 'Public web research (when Tavily configured)', researchQuery);
+    try {
+      const web = await invokeTool(
+        'researchSearchPublicWeb',
+        { query: researchQuery, maxResults: 5 },
+        input.ctx,
+      );
+      toolTrace.push(web.trace);
+      const note =
+        typeof web.result === 'object' &&
+        web.result &&
+        'note' in (web.result as object)
+          ? String((web.result as { note?: string }).note ?? '')
+          : '';
+      const hits =
+        typeof web.result === 'object' &&
+        web.result &&
+        'hits' in (web.result as object) &&
+        Array.isArray((web.result as { hits?: unknown[] }).hits)
+          ? (web.result as { hits: unknown[] }).hits.length
+          : 0;
+      pushTimeline(
+        timeline,
+        'Public web research',
+        web.trace.error ? 'failed' : 'done',
+        web.trace.error
+          ? web.trace.error
+          : hits > 0
+            ? `${hits} hit(s) via approved web-search provider`
+            : note || 'No web hits (or Tavily not configured)',
+      );
+    } catch (e) {
+      pushTimeline(
+        timeline,
+        'Public web research',
+        'done',
+        e instanceof Error ? e.message : 'Research tool unavailable',
+      );
+    }
+  }
+
+  // Tool: search products in organization store (authorized / connected sources)
+  await emit('retrieving', 'Searching authorized product sources');
   pushTimeline(timeline, 'Searching authorized product sources', 'active');
   try {
     const search = await invokeTool(
@@ -333,6 +440,10 @@ export async function runOperatorCycle(input: {
       'count' in (search.result as object)
         ? Number((search.result as { count?: number }).count)
         : input.products.length;
+    const lastSearch = timeline[timeline.length - 1];
+    if (lastSearch?.step === 'Searching authorized product sources') {
+      lastSearch.status = 'done';
+    }
     pushTimeline(
       timeline,
       'Product candidates retrieved',
@@ -340,6 +451,10 @@ export async function runOperatorCycle(input: {
       `${count || input.products.length} candidates from connected sources`,
     );
   } catch {
+    const lastSearch = timeline[timeline.length - 1];
+    if (lastSearch?.step === 'Searching authorized product sources') {
+      lastSearch.status = 'done';
+    }
     pushTimeline(
       timeline,
       'Product candidates retrieved',
@@ -372,6 +487,11 @@ export async function runOperatorCycle(input: {
     .slice(0, 8)
     .map((c) => `${c.product.title.slice(0, 40)}: ${c.failReasons.join('; ')}`);
 
+  await emit(
+    'evaluating',
+    'Costs, risks, and opportunity scores evaluated',
+    `${passed.length} of ${normalized.length} passed filters`,
+  );
   pushTimeline(
     timeline,
     'Costs, risks, and opportunity scores evaluated',
@@ -383,6 +503,11 @@ export async function runOperatorCycle(input: {
     .sort((a, b) => b.rankScore - a.rankScore)
     .slice(0, filters.topN ?? 3);
 
+  await emit(
+    'ranking',
+    'Candidates ranked',
+    `${candidates.length} products exceeded opportunity threshold`,
+  );
   pushTimeline(
     timeline,
     'Candidates ranked',
@@ -671,6 +796,20 @@ export async function runOperatorCycle(input: {
       : `0 products qualified from ${retrieved} candidates`,
   );
 
+  const phaseA = timeline.find((t) => t.step === 'Phase A tool ranking');
+  if (phaseA) {
+    phaseA.status = 'done';
+    phaseA.detail = recommendations.length
+      ? `Phase A complete — ${recommendations.length} ranked from ${retrieved} candidates; ${toolTrace.length} tool call(s)`
+      : `Phase A complete — 0 ranked from ${retrieved} candidates; ${toolTrace.length} tool call(s)`;
+  }
+  pushTimeline(
+    timeline,
+    'Phase A complete',
+    'done',
+    `${toolTrace.length} tool call(s); ${recommendations.length} recommendation draft(s)`,
+  );
+
   const critic = runCriticPass(recommendations, toolTrace);
   const auditor = runAuditorPass(recommendations, toolTrace, {
     requiredPermissions: ['products:read', 'ai:write'],
@@ -706,66 +845,199 @@ export async function runOperatorCycle(input: {
       }
     | undefined;
 
-  let responseSummary: string;
+  // Machine-readable tool facts (for Phase B prompt only — NEVER ship as a fake "AI briefing")
+  const toolFactsLines: string[] = [];
   if (retrieved === 0) {
-    responseSummary = [
-      'I could not search live products because no authorized product-source data is currently available in the organization store.',
-      '',
-      'Available next steps:',
-      '1. Connect a supplier source.',
-      '2. Import an authorized supplier feed.',
-      '3. Configure a marketplace observation connector.',
-    ].join('\n');
-  } else if (finalRecs.length === 0) {
-    responseSummary = [
-      `I evaluated ${retrieved} product candidate(s) from connected sources.`,
-      `${rejectedMissingCost} rejected for missing cost data.`,
-      `${rejectedByFilter} failed evaluation thresholds (${JSON.stringify(filters)}).`,
-      failedReasons.length ? `Examples: ${failedReasons.slice(0, 4).join(' | ')}` : '',
-      '',
-      'No products currently qualify. Adjust margin, cost, or policy filters and rerun.',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    toolFactsLines.push(
+      'candidates=0',
+      'store=empty_or_unauthorized',
+      'next=connect_supplier_or_import',
+    );
   } else {
-    const cur = topCard?.currency ?? 'USD';
-    const profit =
-      topCard?.contributionProfitMinor != null
-        ? `${cur} $${(Number(topCard.contributionProfitMinor) / 100).toFixed(2)}`
-        : 'n/a';
-    const margin =
-      topCard?.expectedMarginBps != null
-        ? `${(Number(topCard.expectedMarginBps) / 100).toFixed(1)}%`
-        : 'n/a';
+    toolFactsLines.push(
+      `candidates_retrieved=${retrieved}`,
+      `rejected_missing_cost=${rejectedMissingCost}`,
+      `rejected_by_filter=${rejectedByFilter}`,
+      `ranked=${finalRecs.length}`,
+    );
+    for (let i = 0; i < Math.min(5, finalRecs.length); i++) {
+      const r = finalRecs[i]!;
+      const card = r.productCard as
+        | {
+            opportunityScore?: number;
+            contributionProfitMinor?: number;
+            expectedMarginBps?: number;
+            currency?: string;
+            policyOutcome?: string;
+          }
+        | undefined;
+      toolFactsLines.push(
+        [
+          `rank${i + 1}`,
+          `title=${r.title}`,
+          `score=${card?.opportunityScore ?? '—'}`,
+          `conf=${(r.confidence * 100).toFixed(0)}%`,
+          `profitMinor=${card?.contributionProfitMinor ?? '—'}`,
+          `marginBps=${card?.expectedMarginBps ?? '—'}`,
+          `policy=${card?.policyOutcome ?? r.policyRiskScore}`,
+          r.evidence &&
+          typeof r.evidence === 'object' &&
+          'isFixtureSource' in (r.evidence as object) &&
+          (r.evidence as { isFixtureSource?: boolean }).isFixtureSource
+            ? 'fixture=1'
+            : 'fixture=0',
+        ].join('|'),
+      );
+    }
+    if (filters.targetMarket) {
+      toolFactsLines.push(`targetMarket=${filters.targetMarket}`);
+    }
+  }
+  const toolFactsBlob = toolFactsLines.join('\n');
+
+  /**
+   * User-facing briefing policy (no fixed prose narratives):
+   * - Cohere Phase B success → ONLY model text (unique per objective/evidence)
+   * - Cohere missing/fail → short honest block; numbers live on recommendation cards
+   * - Empty store / zero ranks → short operational status (not a fake evaluation essay)
+   */
+  let responseSummary: string;
+  let briefingSource: 'cohere' | 'blocked' | 'empty_store' | 'no_qualifiers' | 'tools_structured' =
+    'tools_structured';
+
+  if (retrieved === 0) {
+    briefingSource = 'empty_store';
     responseSummary = [
-      `I evaluated ${retrieved} supplier products from connected sources.`,
-      `${rejectedMissingCost} rejected for missing cost data.`,
-      `${rejectedByFilter} rejected by filters (margin / policy / confidence / cost).`,
-      `${finalRecs.length} product(s) qualified.`,
-      '',
-      top
-        ? [
-            `Strongest opportunity: ${top.title}`,
-            `Opportunity score: ${topCard?.opportunityScore ?? '—'}/100`,
-            `Confidence: ${(top.confidence * 100).toFixed(0)}%`,
-            `Estimated contribution profit: ${profit}`,
-            `Expected margin: ${margin}`,
-            `Delivery estimate: up to ${topCard?.deliveryEstimateDays ?? filters.maxDeliveryDays ?? '—'} days`,
-            `Policy risk: ${topCard?.policyOutcome ?? top.policyRiskScore}`,
-            '',
-            isReadOnly
-              ? 'Recommended next action: Compare suppliers and prepare a listing draft (publish still requires approval).'
-              : note,
-          ].join('\n')
-        : note,
-      filters.targetMarket
-        ? `\nTarget market assumption: ${filters.targetMarket} (geo demand not verified without marketplace observation feed).`
-        : '',
-      isReadOnly ? '\nRead-only analysis — no approval required for research.' : '',
+      'No products available in the organization store for this objective.',
+      'Connect a live catalog (e.g. Shopify) or import an authorized supplier feed, then rerun.',
+      'No fixed product briefing was generated.',
+    ].join(' ');
+  } else if (finalRecs.length === 0) {
+    briefingSource = 'no_qualifiers';
+    responseSummary = [
+      `Tools ran against ${retrieved} candidate(s); none passed filters after cost/policy/margin checks`,
+      `(missing cost: ${rejectedMissingCost}, filtered: ${rejectedByFilter}).`,
+      failedReasons.length ? `Examples: ${failedReasons.slice(0, 3).join(' | ')}.` : '',
+      'No fixed product narrative was substituted — adjust filters or data and rerun.',
     ]
       .filter(Boolean)
+      .join(' ');
+  } else if (input.synthesizeWithLlm === false) {
+    briefingSource = 'tools_structured';
+    responseSummary = [
+      `Generative briefing intentionally disabled for this run.`,
+      `${finalRecs.length} ranked recommendation(s) are in structured cards (not a fixed essay).`,
+      `Top: ${top?.title ?? '—'} (see product cards for scores/margins).`,
+    ].join(' ');
+  } else {
+    // Phase B: Cohere-only generative briefing (never invent products; never dump fixed templates)
+    await emit('synthesizing', 'Synthesizing operator narrative (Cohere when COHERE_API_KEY set)');
+    pushTimeline(timeline, 'Phase B synthesis', 'active', 'Cohere sole generative provider when keyed');
+    const evidenceBrief = finalRecs
+      .slice(0, 5)
+      .map(
+        (r, i) =>
+          `${i + 1}. ${r.title} | conf=${(r.confidence * 100).toFixed(0)}% | score=${(r.productCard as { opportunityScore?: number })?.opportunityScore ?? '—'} | ${r.rationale.slice(0, 180)}`,
+      )
       .join('\n');
+    const synth = await generateText({
+      system: [
+        'You are the TradeOps AI Operator writing a one-off operator briefing.',
+        'Use ONLY the provided tool evidence. Never invent products, prices, fees, or live marketplace claims.',
+        'If any source is fixture-labeled, set fixtureSourcesLabeled true and mention it in narrative once.',
+        'Never reuse a stock template, bullet scorecard, or "I evaluated N products / Strongest opportunity" skeleton.',
+        'You MUST respond with a single JSON object matching the operator_briefing schema (no markdown fences).',
+        'Fields: narrative (2–4 short paragraphs under 220 words), topProductTitle, productCount, confidenceNote, nextAction, fixtureSourcesLabeled.',
+        'Publish/PO still requires human approval when consequential.',
+      ].join(' '),
+      prompt: [
+        `User objective:\n${input.objective}`,
+        `Loop mode: ${input.loopMode}`,
+        `Objective type: ${classification.objectiveType}`,
+        `Tool evidence (ground truth — do not contradict):\n${evidenceBrief}`,
+        `Fact lines:\n${toolFactsBlob}`,
+        `Return JSON only for schema operator_briefing. narrative must be specific to this objective.`,
+      ].join('\n\n'),
+      temperature: 0.45,
+      // Command A+ may spend tokens on thinking; keep budget high enough for JSON narrative.
+      maxTokens: 2500,
+      schemaId: 'operator_briefing',
+    });
+    if (synth.blocked || synth.failed || synth.offline || !synth.text?.trim()) {
+      const why =
+        synth.note ??
+        (!synth.text?.trim()
+          ? 'COHERE_EMPTY_RESPONSE: model returned no text (raise maxTokens or check model)'
+          : 'COHERE_KEY_MISSING or generative call failed');
+      const lastB = [...timeline].reverse().find((t) => t.step === 'Phase B synthesis');
+      if (lastB?.status === 'active') {
+        lastB.status = 'done';
+        lastB.detail = why;
+      } else {
+        pushTimeline(timeline, 'Phase B synthesis', 'done', why);
+      }
+      await emit('validating', 'Synthesis skipped', why);
+      briefingSource = 'blocked';
+      // Honest block only — never substitute a fixed multi-line product essay
+      responseSummary = [
+        `Generative briefing unavailable (${why}).`,
+        `No fixed narrative was substituted.`,
+        `${finalRecs.length} product(s) are ranked in structured recommendation cards with live tool scores — open those cards for numbers and next actions.`,
+        top ? `Highest-ranked title: ${top.title}.` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    } else {
+      // Prefer structured JSON narrative; fall back to raw text if parse fails
+      let narrative = synth.text.trim();
+      try {
+        const cleaned = narrative
+          .replace(/^```json\s*/i, '')
+          .replace(/```$/i, '')
+          .trim();
+        const parsed = JSON.parse(cleaned) as {
+          narrative?: string;
+          topProductTitle?: string;
+          nextAction?: string;
+        };
+        if (parsed.narrative?.trim()) {
+          narrative = [
+            parsed.narrative.trim(),
+            parsed.nextAction ? `Next: ${parsed.nextAction}` : '',
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+        }
+      } catch {
+        /* keep raw text */
+      }
+      responseSummary = narrative;
+      briefingSource = 'cohere';
+      const okDetail = `provider=${synth.provider}${synth.latencyMs != null ? ` ${synth.latencyMs}ms` : ''} schema=operator_briefing`;
+      const lastB = [...timeline].reverse().find((t) => t.step === 'Phase B synthesis');
+      if (lastB?.status === 'active') {
+        lastB.status = 'done';
+        lastB.detail = okDetail;
+      } else {
+        pushTimeline(timeline, 'Phase B synthesis', 'done', okDetail);
+      }
+      await emit('validating', 'Synthesis complete', `provider=${synth.provider}`);
+    }
   }
+
+  // Attach briefing provenance on timeline for honesty / UI
+  pushTimeline(
+    timeline,
+    'Briefing source',
+    'done',
+    `briefingSource=${briefingSource}; fixed_template=false`,
+  );
+
+  await emit(
+    decision === 'block' && finalRecs.length === 0 ? 'blocked' : 'completed',
+    'Operator cycle finished',
+    `${finalRecs.length} recommendation(s)`,
+  );
 
   return {
     plan,
@@ -782,6 +1054,7 @@ export async function runOperatorCycle(input: {
     timeline,
     sources,
     responseSummary,
+    briefingSource,
     candidateStats: {
       retrieved,
       normalized: normalized.length,

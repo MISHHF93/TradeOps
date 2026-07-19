@@ -1,4 +1,6 @@
+import Link from 'next/link';
 import { LiveExamplesClient } from '../../../components/ai/live-examples-client';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
 import { terminalGet } from '../../../lib/terminal-api';
 
 type LiveExamplesResponse = {
@@ -40,19 +42,28 @@ export default async function LiveExamplesPage() {
   const result = await terminalGet<LiveExamplesResponse>('/api/v1/ai/live-examples');
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <h1 className="workspace-title-active">Live Examples</h1>
-          <p className="lede">
-            Preconfigured objectives that run through real OperatorRun services, tools, and
-            persistence — not static mockups. Readiness is computed from connectors and the product
-            store. Fixture sources are labeled explicitly.
-          </p>
-        </div>
-      </header>
-
-      {!result.ok ? <p className="form-error">{result.error}</p> : null}
+    <TerminalPageFrame
+      pill="AI · live examples"
+      title="Live examples"
+      lede="Preconfigured objectives that run through real OperatorRun services — not static mockups. Fixture sources are labeled explicitly."
+      relatedPrimary="ai"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { href: '/terminal/objectives', label: 'AI' },
+        { label: 'Live examples' },
+      ]}
+      toolbar={
+        <>
+          <Link className="btn primary" href="/terminal/objectives">
+            AI workspace
+          </Link>
+          <Link className="btn ghost" href="/terminal/objectives">
+            Run history
+          </Link>
+        </>
+      }
+      error={result.ok ? null : result.error}
+    >
 
       {result.ok ? (
         <>
@@ -93,6 +104,6 @@ export default async function LiveExamplesPage() {
           <LiveExamplesClient examples={result.data.examples} />
         </>
       ) : null}
-    </section>
+    </TerminalPageFrame>
   );
 }

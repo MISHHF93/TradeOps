@@ -19,8 +19,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * Root shell — Midnight Exchange visual system (theme.md).
- * Terminal layout hides public chrome via CSS :has(.terminal-shell).
+ * Root shell — public marketing chrome.
+ * Terminal routes mount `.terminal-app` inside main; CSS hides public topbar/footer
+ * via `.shell:has(.terminal-app)` so the OS shell (command bar + sidebar + AI rail) owns the viewport.
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   const founder = isFounderDirectAccess();
@@ -34,7 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Ga4Analytics />
         <FounderAccessBanner />
         <div className="shell">
-          <header className="topbar">
+          <header className="topbar public-topbar">
             <Link href={founder ? FOUNDER_WORKSPACE_PATH : '/'} className="brand">
               <span className="mark" aria-hidden />
               <div>
@@ -46,13 +47,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 </p>
               </div>
             </Link>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div className="public-topbar__actions">
               <ThemeToggle />
               <PublicSiteNav />
             </div>
           </header>
-          <main>{children}</main>
-          <footer className="site-footer">
+          <main className="public-main">{children}</main>
+          <footer className="site-footer public-footer">
             <div>
               <strong>TradeOps</strong>
               <p className="meta">

@@ -122,9 +122,15 @@ export type ResolvedWorkspace = {
     caseId: string;
     productId: string;
     productTitle?: string;
+    primaryImageUrl?: string | null;
     currentStage: string;
     stageStatus: string;
     nextActionLabel?: string | null;
+    nextHref?: string | null;
+    opportunityScore?: number | null;
+    expectedProfitMinor?: number | null;
+    currency?: string;
+    blockerMessage?: string | null;
   }>;
   aiContextPreamble: string;
   allPersonas: Array<{ id: OperatingPersona; label: string; homeHref: string }>;

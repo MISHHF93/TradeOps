@@ -54,7 +54,10 @@ function catchError(providerKey: string, e: unknown, latencyMs: number): LiveFet
   };
 }
 
-/** Credential presence probe — no network call. */
+/**
+ * Credential presence probe — approved active stack only.
+ * Planned providers return unknown (not ready) without implying support.
+ */
 export function probeCredentials(providerKey: string): {
   ready: boolean;
   missingKeys: string[];
@@ -63,55 +66,29 @@ export function probeCredentials(providerKey: string): {
   const map: Record<string, string[]> = {
     'shopify-graphql-admin': ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN'],
     'stripe-api': ['STRIPE_SECRET_KEY'],
-    'open-exchange-rates': ['OPENEXCHANGERATES_APP_ID'],
-    'woocommerce-rest': [
-      'WOOCOMMERCE_URL',
-      'WOOCOMMERCE_CONSUMER_KEY',
-      'WOOCOMMERCE_CONSUMER_SECRET',
-    ],
     'easypost-api': ['EASYPOST_API_KEY'],
-    serpapi: ['SERPAPI_API_KEY'],
-    'paypal-rest': ['PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET'],
-    'square-api': ['SQUARE_ACCESS_TOKEN'],
-    'shipstation-api': ['SHIPSTATION_API_KEY', 'SHIPSTATION_API_SECRET'],
-    'amazon-sp-api': [
-      'AMAZON_SP_CLIENT_ID',
-      'AMAZON_SP_CLIENT_SECRET',
-      'AMAZON_SP_REFRESH_TOKEN',
-    ],
-    'ebay-sell': ['EBAY_ACCESS_TOKEN'],
-    'bigcommerce-rest': ['BIGCOMMERCE_STORE_HASH', 'BIGCOMMERCE_ACCESS_TOKEN'],
-    'google-ads': ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_REFRESH_TOKEN'],
-    'meta-marketing': ['META_ACCESS_TOKEN', 'META_AD_ACCOUNT_ID'],
-    'tiktok-ads': ['TIKTOK_ACCESS_TOKEN', 'TIKTOK_ADVERTISER_ID'],
-    'google-analytics-4': ['GA4_PROPERTY_ID', 'GOOGLE_APPLICATION_CREDENTIALS'],
-    'posthog-api': ['POSTHOG_API_KEY', 'POSTHOG_HOST'],
-    'mixpanel-api': ['MIXPANEL_PROJECT_TOKEN', 'MIXPANEL_API_SECRET'],
-    'quickbooks-online': ['QUICKBOOKS_ACCESS_TOKEN', 'QUICKBOOKS_REALM_ID'],
-    'xero-api': ['XERO_ACCESS_TOKEN', 'XERO_TENANT_ID'],
-    'google-merchant': ['GOOGLE_MERCHANT_ACCESS_TOKEN', 'GOOGLE_MERCHANT_ID'],
-    'keepa-api': ['KEEPA_API_KEY'],
-    avalara: ['AVALARA_ACCOUNT_ID', 'AVALARA_LICENSE_KEY'],
-    taxjar: ['TAXJAR_API_KEY'],
-    openai: ['OPENAI_API_KEY'],
-    anthropic: ['ANTHROPIC_API_KEY'],
-    'google-gemini': ['GOOGLE_AI_API_KEY'],
-    xai: ['XAI_API_KEY'],
-    mistral: ['MISTRAL_API_KEY'],
-    'ups-api': ['UPS_CLIENT_ID', 'UPS_CLIENT_SECRET'],
-    'fedex-api': ['FEDEX_CLIENT_ID', 'FEDEX_CLIENT_SECRET'],
-    'dhl-api': ['DHL_API_KEY'],
-    'usps-api': ['USPS_CLIENT_ID', 'USPS_CLIENT_SECRET'],
-    'canada-post-api': ['CANADA_POST_USERNAME', 'CANADA_POST_PASSWORD'],
-    'alibaba-open': ['ALIBABA_APP_KEY', 'ALIBABA_APP_SECRET'],
-    'aliexpress-dropshipping': ['ALIEXPRESS_APP_KEY', 'ALIEXPRESS_APP_SECRET'],
-    'inventory-source': ['INVENTORY_SOURCE_API_KEY'],
+    'tavily-search': ['TAVILY_API_KEY'],
+    'cohere-ai': ['COHERE_API_KEY'],
+    'google-analytics-4': ['GA4_PROPERTY_ID'],
+    'posthog-api': ['POSTHOG_API_KEY'],
+    sentry: ['SENTRY_DSN'],
   };
+  // Cohere alias
+  if (providerKey === 'cohere-ai' && !env('COHERE_API_KEY') && env('CO_API_KEY')) {
+    return { ready: true, missingKeys: [], providerKey };
+  }
   const keys = map[providerKey] ?? [];
+  if (keys.length === 0) {
+    return {
+      ready: false,
+      missingKeys: ['PROVIDER_NOT_IN_ACTIVE_STACK'],
+      providerKey,
+    };
+  }
   const missingKeys = keys.filter((k) => !env(k));
   return {
-    ready: keys.length > 0 && missingKeys.length === 0,
-    missingKeys: keys.length === 0 ? ['UNKNOWN_PROVIDER'] : missingKeys,
+    ready: missingKeys.length === 0,
+    missingKeys,
     providerKey,
   };
 }
@@ -530,47 +507,46 @@ export async function easyPostFetchTrackers(): Promise<
 }
 
 /**
- * SerpAPI — Google Shopping search (product intelligence).
+ * Tavily — sole public web-search provider (canonical research.* capabilities).
  */
-export async function serpApiShoppingSearch(
+export async function tavilyWebSearch(
   query: string,
 ): Promise<
   LiveFetchResult<
     Array<{
       title: string;
-      price: string | null;
-      source: string | null;
-      link: string | null;
+      url: string;
+      snippet: string;
     }>
   >
 > {
-  const providerKey = 'serpapi';
-  const key = env('SERPAPI_API_KEY');
-  if (!key) return missing(providerKey, ['SERPAPI_API_KEY']);
+  const providerKey = 'tavily-search';
+  const key = env('TAVILY_API_KEY');
+  if (!key) return missing(providerKey, ['TAVILY_API_KEY']);
   const t0 = Date.now();
   try {
-    const url = new URL('https://serpapi.com/search.json');
-    url.searchParams.set('engine', 'google_shopping');
-    url.searchParams.set('q', query);
-    url.searchParams.set('api_key', key);
-    const res = await fetch(url.toString());
+    const res = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: key,
+        query,
+        max_results: 10,
+        include_answer: false,
+        search_depth: 'basic',
+      }),
+    });
     const latencyMs = Date.now() - t0;
     if (!res.ok) return httpError(providerKey, res.status, latencyMs);
     const json = (await res.json()) as {
-      shopping_results?: Array<{
-        title?: string;
-        price?: string;
-        source?: string;
-        link?: string;
-      }>;
+      results?: Array<{ title?: string; url?: string; content?: string }>;
     };
     return {
       ok: true,
-      data: (json.shopping_results ?? []).slice(0, 25).map((r) => ({
-        title: r.title ?? 'unknown',
-        price: r.price ?? null,
-        source: r.source ?? null,
-        link: r.link ?? null,
+      data: (json.results ?? []).map((r) => ({
+        title: r.title ?? 'untitled',
+        url: r.url ?? '',
+        snippet: r.content ?? '',
       })),
       providerKey,
       isLive: true,
@@ -580,6 +556,19 @@ export async function serpApiShoppingSearch(
   } catch (e) {
     return catchError(providerKey, e, Date.now() - t0);
   }
+}
+
+/** @deprecated Removed from active stack — use tavilyWebSearch */
+export async function serpApiShoppingSearch(
+  _query: string,
+): Promise<LiveFetchResult<never>> {
+  return {
+    ok: false,
+    error: 'serpapi_removed: use tavily-search (research.search_public_web)',
+    providerKey: 'serpapi',
+    isLive: true,
+    fetchedAt: new Date().toISOString(),
+  };
 }
 
 /**
@@ -636,18 +625,14 @@ export async function liveSyncProvider(
         latencyMs: payouts.latencyMs,
       };
     }
-    case 'open-exchange-rates':
-      return fetchFxRates();
-    case 'woocommerce-rest':
-      return wooCommerceFetchProducts();
     case 'easypost-api':
       return easyPostFetchTrackers();
-    case 'serpapi':
-      return serpApiShoppingSearch(options?.query ?? 'wireless earbuds');
+    case 'tavily-search':
+      return tavilyWebSearch(options?.query ?? 'commerce market research');
     default:
       return {
         ok: false,
-        error: `adapter_stub: ${providerKey} credentials present but full HTTP adapter not yet wired — registry-ready only`,
+        error: `provider_not_in_active_stack: ${providerKey} is planned/disabled or not implemented. Active live HTTP: shopify, stripe, easypost, tavily.`,
         providerKey,
         isLive: true,
         fetchedAt: new Date().toISOString(),

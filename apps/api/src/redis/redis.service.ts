@@ -38,20 +38,35 @@ export class RedisService implements OnModuleDestroy {
 
   async checkHealth(): Promise<RedisHealthResult> {
     const started = performance.now();
+    const timeoutMs = 1500;
     try {
-      await this.connect();
-      const pong = await this.client.ping();
-      if (pong !== 'PONG') {
-        return {
-          status: 'down',
-          latencyMs: Math.round(performance.now() - started),
-          message: `Unexpected PING response: ${pong}`,
-        };
-      }
-      return {
-        status: 'up',
-        latencyMs: Math.round(performance.now() - started),
-      };
+      const result = await Promise.race([
+        (async (): Promise<RedisHealthResult> => {
+          await this.connect();
+          const pong = await this.client.ping();
+          if (pong !== 'PONG') {
+            return {
+              status: 'down',
+              latencyMs: Math.round(performance.now() - started),
+              message: `Unexpected PING response: ${pong}`,
+            };
+          }
+          return {
+            status: 'up',
+            latencyMs: Math.round(performance.now() - started),
+          };
+        })(),
+        new Promise<RedisHealthResult>((resolve) => {
+          setTimeout(() => {
+            resolve({
+              status: 'down',
+              latencyMs: timeoutMs,
+              message: `Redis health timed out after ${timeoutMs}ms (optional for AI operator)`,
+            });
+          }, timeoutMs);
+        }),
+      ]);
+      return result;
     } catch (error) {
       // Reset for a clean next health attempt
       try {

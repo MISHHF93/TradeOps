@@ -3,34 +3,44 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FOUNDER_WORKSPACE_PATH } from '../../lib/access-mode';
+import { getApiBaseUrl } from '../../lib/api';
+import { commandPaletteEntries } from '../../lib/terminal-routes';
 
-type Cmd = { id: string; label: string; href: string; group: string; kbd?: string };
+type Cmd = {
+  id: string;
+  label: string;
+  href: string;
+  group: string;
+  kbd?: string;
+  imageUrl?: string | null;
+  summary?: string;
+};
 
+/**
+ * ⌘K directory — driven by terminal-routes registry (no legacy / duplicate paths).
+ */
 const COMMANDS: Cmd[] = [
-  { id: 'term', label: 'Open Terminal / command center', href: FOUNDER_WORKSPACE_PATH, group: 'Operate', kbd: 'G T' },
-  { id: 'scan', label: 'Market scanner', href: '/terminal', group: 'Operate', kbd: 'G S' },
-  { id: 'opp', label: 'Opportunities (AI results)', href: '/terminal/opportunities', group: 'Operate' },
-  { id: 'live', label: 'Live examples', href: '/terminal/live-examples', group: 'Operate' },
-  { id: 'obj', label: 'Objective history', href: '/terminal/objectives', group: 'Operate' },
-  { id: 'watch', label: 'Watchlist', href: '/terminal/watchlist', group: 'Operate' },
-  { id: 'orders', label: 'Orders', href: '/terminal/orders', group: 'Operate' },
-  { id: 'ai', label: 'AI Operator workspace', href: '/terminal/ai', group: 'Automate', kbd: 'G A' },
-  { id: 'wf', label: 'Workflows', href: '/terminal/automations', group: 'Automate' },
-  { id: 'appr', label: 'Approvals', href: '/terminal/approvals', group: 'Automate' },
-  { id: 'conn', label: 'Connectors', href: '/terminal/connectors', group: 'Network' },
-  { id: 'cust', label: 'Customers', href: '/terminal/customers', group: 'Network' },
-  { id: 'port', label: 'Portfolio', href: '/terminal/portfolio', group: 'Intelligence' },
-  { id: 'cash', label: 'Cash flow', href: '/terminal/cashflow', group: 'Intelligence' },
-  { id: 'tower', label: 'Control tower', href: '/terminal/control-tower', group: 'Intelligence' },
+  { id: 'ws-switch', label: 'Switch persona', href: '/terminal/workspace?switch=1', group: 'Workspace', kbd: 'G W' },
+  { id: 'ws-r', label: 'Researcher home', href: '/terminal/workspace/researcher', group: 'Workspace' },
+  { id: 'ws-o', label: 'Operator home', href: '/terminal/workspace/operator', group: 'Workspace' },
+  { id: 'ws-e', label: 'Executive home', href: '/terminal/workspace/executive', group: 'Workspace' },
+  { id: 'ws-a', label: 'Analyst home', href: '/terminal/workspace/analyst', group: 'Workspace' },
+  { id: 'ws-d', label: 'Developer home', href: '/terminal/workspace/developer', group: 'Workspace' },
+  { id: 'ws-adm', label: 'Administrator home', href: '/terminal/workspace/administrator', group: 'Workspace' },
+  ...commandPaletteEntries().map((e) => ({
+    ...e,
+    kbd: e.id === 'discover' ? 'G D' : e.id === 'process' ? 'G C' : e.id === 'ai' ? 'G A' : undefined,
+  })),
+  // Outside terminal (not in registry, still jump targets)
+  { id: 'billing', label: 'SaaS billing', href: '/app/billing', group: 'Govern' },
   { id: 'sys', label: 'System / settings', href: '/app', group: 'Govern' },
   { id: 'status', label: 'Capability honesty board', href: '/status', group: 'Govern' },
+  { id: 'onboard', label: 'Onboarding', href: '/onboarding', group: 'Govern' },
 ];
 
 /**
- * Command palette — AI gateway / visual centerpiece (§12).
- * Dark surface · accent cursor · accent match · accent selection.
- * Open: Ctrl/Cmd+K or custom trigger.
+ * Command palette — jump to any terminal destination.
+ * Open: Ctrl/Cmd+K.
  */
 export function CommandPalette({
   open,
@@ -42,21 +52,69 @@ export function CommandPalette({
   const router = useRouter();
   const [q, setQ] = useState('');
   const [active, setActive] = useState(0);
+  const [liveHits, setLiveHits] = useState<Cmd[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    const query = q.trim();
+    if (query.length < 2) {
+      setLiveHits([]);
+      return;
+    }
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `${getApiBaseUrl()}/api/v1/search?q=${encodeURIComponent(query)}`,
+          { credentials: 'include', headers: { Accept: 'application/json' } },
+        );
+        if (!res.ok) {
+          setLiveHits([]);
+          return;
+        }
+        const body = (await res.json()) as {
+          hits?: Array<{
+            id: string;
+            objectType: string;
+            title: string;
+            summary: string;
+            href: string;
+            evidence?: { imageUrl?: string };
+          }>;
+        };
+        setLiveHits(
+          (body.hits ?? []).slice(0, 6).map((h) => ({
+            id: `hit-${h.objectType}-${h.id}`,
+            label: h.title,
+            href: h.href,
+            group: 'Live results',
+            summary: h.summary,
+            imageUrl: h.evidence?.imageUrl ?? null,
+          })),
+        );
+      } catch {
+        setLiveHits([]);
+      }
+    }, 160);
+    return () => window.clearTimeout(t);
+  }, [q, open]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    if (!query) return COMMANDS;
-    return COMMANDS.filter(
-      (c) =>
-        c.label.toLowerCase().includes(query) ||
-        c.group.toLowerCase().includes(query) ||
-        c.href.includes(query),
-    );
-  }, [q]);
+    const cmds = !query
+      ? COMMANDS
+      : COMMANDS.filter(
+          (c) =>
+            c.label.toLowerCase().includes(query) ||
+            c.group.toLowerCase().includes(query) ||
+            c.href.includes(query),
+        );
+    // Live object hits first when searching
+    return query.length >= 2 ? [...liveHits, ...cmds] : cmds;
+  }, [q, liveHits]);
 
   useEffect(() => {
     setActive(0);
-  }, [q, open]);
+  }, [q, open, liveHits]);
 
   const go = useCallback(
     (href: string) => {
@@ -105,7 +163,7 @@ export function CommandPalette({
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Jump to a command, workspace, or AI surface…"
+            placeholder="Jump to workspace, cases, finance, AI…"
             aria-label="Command search"
           />
           <kbd className="kbd-hint">ESC</kbd>
@@ -116,6 +174,33 @@ export function CommandPalette({
           ) : (
             filtered.map((c, i) => {
               const isActive = i === active;
+              if (c.group === 'Live results') {
+                return (
+                  <li
+                    key={c.id}
+                    role="option"
+                    aria-selected={isActive}
+                    className={`cmd-palette-item cmd-palette-item--hit ${isActive ? 'is-active' : ''}`}
+                    onMouseEnter={() => setActive(i)}
+                    onClick={() => go(c.href)}
+                  >
+                    <span className="cmd-search-hit__thumb">
+                      {c.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.imageUrl} alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="cmd-search-hit__letter">
+                          {(c.label || '?').slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                    </span>
+                    <span className="cmd-palette-item__body">
+                      <span className="cmd-palette-item__label">{c.label}</span>
+                      <span className="meta">{c.summary ?? c.group}</span>
+                    </span>
+                  </li>
+                );
+              }
               const matchIdx = q.trim()
                 ? c.label.toLowerCase().indexOf(q.trim().toLowerCase())
                 : -1;
@@ -151,7 +236,7 @@ export function CommandPalette({
         <div className="cmd-palette-footer meta">
           <span>↑↓ navigate</span>
           <span>↵ open</span>
-          <Link href="/terminal/ai" onClick={onClose}>
+          <Link href="/terminal/objectives" onClick={onClose}>
             AI workspace
           </Link>
         </div>

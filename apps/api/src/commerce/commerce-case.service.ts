@@ -6,6 +6,7 @@ import {
 import {
   STAGE_DEFINITIONS,
   buildCaseAiContext,
+  buildCaseObjectWorkspace,
   buildStateEngineAiPreamble,
   canTransition,
   computeNextAction,
@@ -21,9 +22,11 @@ import {
   type CommerceStageStatus,
   type CommerceTransformation,
   type CommerceStateVector,
+  type ObjectWorkspaceView,
 } from '@tradeops/commerce-engine';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../identity/audit.service';
+import { EventFabricService } from '../events/event-fabric.service';
 
 type StageHistoryEntry = {
   stage: string;
@@ -35,12 +38,14 @@ type StageHistoryEntry = {
 
 /**
  * CommerceCase spine — one product opportunity through the operating procedure.
+ * Object workspace is the OS surface; stage list pages are filters over this spine.
  */
 @Injectable()
 export class CommerceCaseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly events: EventFabricService,
   ) {}
 
   /** Ensure every product has a case and stages reflect live records. */
@@ -268,6 +273,7 @@ export class CommerceCaseService {
             sourcePlatform: true,
             currency: true,
             dataConfidence: true,
+            primaryImageUrl: true,
           },
         },
       },
@@ -474,7 +480,217 @@ export class CommerceCaseService {
       metadata: { from, to },
     });
 
+    // Event fabric — durable state transition for replay / AI / monitoring
+    await this.events.publishDomain({
+      organizationId,
+      eventType: 'CommerceCaseAdvanced',
+      entityId: updated.id,
+      entityType: 'commerce_case',
+      providerKey: 'tradeops-commerce',
+      dataMode: 'fixture',
+      externalEventId: `${updated.id}:${from}:${to}:${Date.now()}`,
+      loopMode: 'development',
+      payload: {
+        caseId: updated.id,
+        productId: updated.productId,
+        from,
+        to,
+        actorUserId: userId ?? null,
+        nextActionCode: next.code,
+        nextActionLabel: next.label,
+      },
+    });
+
     return this.toDto(updated);
+  }
+
+  /**
+   * Full object workspace for a Commerce Case — single OS surface for the opportunity.
+   */
+  async getCaseWorkspace(
+    organizationId: string,
+    caseId: string,
+  ): Promise<ObjectWorkspaceView> {
+    const detail = await this.getCase(organizationId, caseId);
+    const c = detail.case;
+    const productId = c.productId;
+
+    const [orders, payments, fulfillments, approvals, signals, aiRuns, connectors] =
+      await Promise.all([
+        this.prisma.client.customerOrder.findMany({
+          where: {
+            organizationId,
+            lines: { some: { productId } },
+          },
+          take: 20,
+          select: { id: true, status: true, externalId: true },
+        }),
+        this.prisma.client.commercePayment
+          .findMany({
+            where: { organizationId },
+            take: 20,
+            select: { id: true, status: true, customerOrderId: true },
+          })
+          .catch(() => [] as Array<{ id: string; status: string; customerOrderId: string | null }>),
+        this.prisma.client.fulfillment.findMany({
+          where: { organizationId },
+          take: 20,
+          select: { id: true, status: true, customerOrderId: true },
+        }),
+        this.prisma.client.approval.findMany({
+          where: {
+            organizationId,
+            OR: [
+              { listingId: { in: detail.listings.map((l: { id: string }) => l.id) } },
+              { status: 'pending' },
+            ],
+          },
+          take: 15,
+          select: { id: true, status: true, kind: true, listingId: true },
+        }),
+        this.prisma.client.commerceSignal.findMany({
+          where: { organizationId, productId },
+          take: 15,
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, signal: true, rationale: true },
+        }),
+        this.prisma.client.operatorRun.findMany({
+          where: { organizationId },
+          take: 10,
+          orderBy: { startedAt: 'desc' },
+          select: { id: true, objective: true, status: true },
+        }),
+        this.prisma.client.connectorInstallation.findMany({
+          where: { organizationId },
+          take: 40,
+          select: { providerKey: true, isFixture: true },
+        }),
+      ]);
+
+    const orderIds = new Set(orders.map((o) => o.id));
+    const relatedPayments = payments.filter(
+      (p) => p.customerOrderId && orderIds.has(p.customerOrderId),
+    );
+    const relatedShipments = fulfillments.filter((f) => orderIds.has(f.customerOrderId));
+
+    const product = await this.prisma.client.product.findFirst({
+      where: { id: productId, organizationId },
+      select: {
+        inventoryQuantity: true,
+        supplierCostMinor: true,
+        shippingCostMinor: true,
+        targetPriceMinor: true,
+      },
+    });
+
+    const listingIds = new Set(detail.listings.map((l: { id: string }) => l.id));
+    const caseApprovals = approvals.filter(
+      (a) => !a.listingId || listingIds.has(a.listingId) || a.status === 'pending',
+    );
+
+    const sourcePlatform = detail.product.sourcePlatform;
+    const relevantConnectors = connectors.filter(
+      (c) =>
+        c.providerKey === sourcePlatform ||
+        c.providerKey.startsWith('fixture') ||
+        sourcePlatform?.includes(c.providerKey),
+    );
+
+    return buildCaseObjectWorkspace({
+      caseId: c.id,
+      productId,
+      productTitle: detail.product.title,
+      productCategory: detail.product.category,
+      sourcePlatform,
+      currentStage: c.currentStage,
+      stageStatus: c.stageStatus,
+      nextActionCode: c.nextActionCode,
+      nextActionLabel: c.nextActionLabel,
+      nextHref: detail.nextHref,
+      blockerCode: c.blockerCode,
+      blockerMessage: c.blockerMessage,
+      opportunityScore: c.opportunityScore,
+      expectedProfitMinor: c.expectedProfitMinor,
+      currency: detail.product.currency,
+      confidence: c.confidence ?? detail.product.dataConfidence,
+      opportunity: detail.opportunity
+        ? {
+            id: (detail.opportunity as { id?: string }).id,
+            score: Number((detail.opportunity as { score: number }).score),
+            explanation: (detail.opportunity as { explanation?: string }).explanation,
+            currentSignal: (detail.opportunity as { currentSignal?: string }).currentSignal,
+          }
+        : null,
+      policy: detail.policy
+        ? {
+            outcome: String((detail.policy as { outcome: string }).outcome),
+            reasons: (detail.policy as { reasonsJson?: string[] }).reasonsJson,
+          }
+        : null,
+      listings: detail.listings.map((l: { id: string; status: string; priceMinor?: number }) => ({
+        id: l.id,
+        status: l.status,
+        priceMinor: l.priceMinor,
+      })),
+      offers: detail.offers.map(
+        (o: {
+          id?: string;
+          supplier?: { id?: string; name: string };
+          costMinor: number;
+          shippingCostMinor: number;
+        }) => ({
+          id: o.id,
+          supplierId: o.supplier?.id,
+          supplierName: o.supplier?.name ?? 'Supplier',
+          costMinor: o.costMinor,
+          shippingCostMinor: o.shippingCostMinor,
+        }),
+      ),
+      artifacts: detail.artifacts,
+      orders: orders.map((o) => ({
+        id: o.id,
+        status: o.status,
+        externalId: o.externalId,
+      })),
+      payments: relatedPayments.map((p) => ({ id: p.id, status: p.status })),
+      shipments: relatedShipments.map((s) => ({ id: s.id, status: s.status })),
+      approvals: caseApprovals.map((a) => ({
+        id: a.id,
+        status: a.status,
+        kind: a.kind,
+      })),
+      signals: signals.map((s) => ({
+        id: s.id,
+        signal: s.signal,
+        rationale: s.rationale ?? undefined,
+      })),
+      history: detail.history,
+      connectors: (relevantConnectors.length ? relevantConnectors : connectors.slice(0, 6)).map(
+        (c) => ({
+          key: c.providerKey,
+          isFixture: c.isFixture || c.providerKey.startsWith('fixture'),
+        }),
+      ),
+      aiRuns: aiRuns
+        .filter(
+          (r) =>
+            r.objective.toLowerCase().includes(detail.product.title.slice(0, 20).toLowerCase()) ||
+            r.objective.includes(productId) ||
+            r.objective.includes(caseId),
+        )
+        .slice(0, 5)
+        .map((r) => ({ id: r.id, objective: r.objective, status: r.status })),
+      inventory: {
+        quantity: product?.inventoryQuantity ?? null,
+      },
+      economics: product
+        ? {
+            supplierCostMinor: product.supplierCostMinor,
+            shippingCostMinor: product.shippingCostMinor,
+            targetPriceMinor: product.targetPriceMinor,
+          }
+        : undefined,
+    });
   }
 
   async terminalSummary(organizationId: string) {
@@ -741,6 +957,7 @@ export class CommerceCaseService {
     return {
       caseId: c.id,
       productId: c.productId,
+      productTitle: detail.product.title,
       currentStage: c.currentStage,
       stageStatus: c.stageStatus,
       nextActionLabel: c.nextActionLabel,
@@ -805,6 +1022,7 @@ export class CommerceCaseService {
       sourcePlatform: string;
       currency: string;
       dataConfidence: number;
+      primaryImageUrl?: string | null;
     };
     metadataJson?: unknown;
   }) {
@@ -813,6 +1031,7 @@ export class CommerceCaseService {
       id: c.id,
       productId: c.productId,
       productTitle: c.product?.title,
+      primaryImageUrl: c.product?.primaryImageUrl ?? null,
       category: c.product?.category,
       sourcePlatform: c.product?.sourcePlatform,
       currency: c.product?.currency,

@@ -22,6 +22,39 @@ export const fixtureMarketplaceManifest: ConnectorManifest = {
     'setPrimaryImage',
     'readProductImages',
   ],
+  auth: { mode: 'none', credentialKeys: [] },
+  rateLimit: { requestsPerMinute: 600, burst: 50, notes: 'Fixture parity with live marketplace contracts.' },
+  sync: {
+    webhooks: true,
+    polling: true,
+    defaultPollIntervalSeconds: 0,
+    supportsIncremental: true,
+  },
+  operations: [
+    {
+      operation: 'createListingDraft',
+      capability: 'createListing',
+      idempotent: false,
+      approvalRequired: false,
+      produces: 'listing',
+    },
+    {
+      operation: 'publishListing',
+      capability: 'createListing',
+      idempotent: false,
+      approvalRequired: true,
+      produces: 'listing',
+    },
+    {
+      operation: 'listOpenOrders',
+      capability: 'readOrders',
+      idempotent: true,
+      approvalRequired: false,
+      produces: 'order',
+    },
+  ],
+  docsUrl: 'https://localhost/tradeops/fixtures/marketplace',
+  healthCheck: 'capability_probe',
 };
 
 registerConnectorManifest(fixtureMarketplaceManifest);

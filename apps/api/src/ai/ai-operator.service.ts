@@ -6,7 +6,14 @@ import {
   getLiveExample,
   listLiveExamples,
   listToolsPublic,
+  bootstrapCohereProvider,
+  bootstrapWebSearchProvider,
+  describeAiProviders,
+  diagnoseCohereConfig,
+  resolveProviderFromEnv,
   registerBuiltinTools,
+  renderPrompt,
+  detectOperatorLiveCredentials,
   resolveLoopMode,
   runOperatorCycle,
   summarizeExecutionPackage,
@@ -17,7 +24,13 @@ import {
   type OperationLoopMode,
   type OperatorProduct,
 } from '@tradeops/ai-runtime';
+import { loadEnv } from '@tradeops/config';
+import {
+  evaluatePredictions,
+  realizedContributionProfitMinor,
+} from '@tradeops/commerce-engine';
 import { LIVE_HTTP_IMPLEMENTED, listLiveFeeds } from '@tradeops/connector-core';
+import { dataModeFromPlatform, newRequestIds, wrapEnvelope } from '@tradeops/contracts';
 import { BillingService } from '../billing/billing.service';
 import { CommercePaymentService } from '../billing/commerce-payment.service';
 import { CommerceService } from '../commerce/commerce.service';
@@ -56,12 +69,34 @@ export class AiOperatorService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+    // Ensure root/.env + apps/api .env* are applied before Cohere adapter reads keys
+    // (main.ts also calls loadEnv; this is idempotent and re-mirrors COHERE_* into process.env).
+    loadEnv();
     registerBuiltinTools();
+    // Cohere is the sole generative provider for operator Phase B. XAI is not bootstrapped.
+    bootstrapCohereProvider(process.env);
+    bootstrapWebSearchProvider();
+    const active = resolveProviderFromEnv(process.env);
+    const cohereDiag = diagnoseCohereConfig(process.env);
+    const providers = describeAiProviders()
+      .filter((p) => p.id !== 'none')
+      .map((p) => `${p.id}${p.configured ? (p.active ? ':active' : ':ready') : ':missing'}${p.role.includes('ignored') ? ':ignored' : ''}`)
+      .join(', ');
     this.logger.log(
       `AI operator tools registered: ${listToolsPublic().length}. Loop modes: ${describeLoopModes()
         .map((m) => m.mode)
-        .join(', ')}`,
+        .join(', ')}. Generative (Cohere-only): ${active} (${providers}). Web search: Tavily-only.`,
     );
+    // Startup diagnostics — codes only, never log key material
+    if (!cohereDiag.configured) {
+      this.logger.warn(
+        `Phase B diagnostics: code=COHERE_KEY_MISSING model=${cohereDiag.model} — tools still run; generative briefing blocked honestly.`,
+      );
+    } else {
+      this.logger.log(
+        `Phase B diagnostics: code=COHERE_OK_CONFIGURED model=${cohereDiag.model} keyLength=${cohereDiag.keyLength} (key not logged). Deep probe: GET /api/v1/ai/health?deep=true`,
+      );
+    }
   }
 
   getToolCatalog() {
@@ -123,18 +158,11 @@ export class AiOperatorService implements OnModuleInit {
     });
 
     const hasLiveHttpReady = [...LIVE_HTTP_IMPLEMENTED].filter((id) => {
-      // Credential presence from env (same rule as live-http package)
       const envMap: Record<string, string[]> = {
         'shopify-graphql-admin': ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN'],
         'stripe-api': ['STRIPE_SECRET_KEY'],
-        'open-exchange-rates': ['OPENEXCHANGERATES_APP_ID'],
-        'woocommerce-rest': [
-          'WOOCOMMERCE_URL',
-          'WOOCOMMERCE_CONSUMER_KEY',
-          'WOOCOMMERCE_CONSUMER_SECRET',
-        ],
         'easypost-api': ['EASYPOST_API_KEY'],
-        serpapi: ['SERPAPI_API_KEY'],
+        'tavily-search': ['TAVILY_API_KEY'],
       };
       const keys = envMap[id] ?? [];
       return keys.length > 0 && keys.every((k) => Boolean(process.env[k]?.trim()));
@@ -231,7 +259,7 @@ export class AiOperatorService implements OnModuleInit {
         userId: input.userId,
         objective: input.objective,
         loopMode: input.loopMode,
-        forceShadow: input.forceShadow !== false,
+        forceShadow: input.forceShadow === true,
         permissions: input.permissions,
         commerceCaseId: input.commerceCaseId,
       });
@@ -451,6 +479,7 @@ export class AiOperatorService implements OnModuleInit {
       organizationId: input.organizationId,
       userId: input.userId,
       objective: example.objective,
+      // Live examples: default shadow when caller did not opt out (controller sets true by default).
       forceShadow: input.forceShadow !== false,
       permissions: input.permissions,
       liveExampleId: example.id,
@@ -948,21 +977,36 @@ export class AiOperatorService implements OnModuleInit {
     liveExampleId?: string;
     /** Bind operator to a commerce case — stage-aware recommendations only */
     commerceCaseId?: string;
+    /** Live progress for SSE / sidebar */
+    onProgress?: (event: {
+      state: string;
+      step: string;
+      detail?: string;
+      at: string;
+    }) => void | Promise<void>;
   }) {
-    const hasLiveGoogle = Boolean(
-      process.env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim() &&
-        process.env.GOOGLE_MERCHANT_ID?.trim(),
-    );
-    const loopMode =
+    // Readiness: any real vendor/AI/search credential counts (not Google-only).
+    const hasLiveCredentials = detectOperatorLiveCredentials(process.env);
+    const controlledLiveEnabled =
+      process.env.TRADEOPS_CONTROLLED_LIVE === '1' ||
+      process.env.TRADEOPS_CONTROLLED_LIVE === 'true';
+    const forceFixture =
+      process.env.TRADEOPS_FORCE_FIXTURE === '1' ||
+      process.env.TRADEOPS_FORCE_FIXTURE === 'true';
+
+    // forceShadow is opt-in only. Missing/false → resolveLoopMode (usually development).
+    const effectiveMode: OperationLoopMode =
       input.loopMode ??
       resolveLoopMode({
-        forceShadow: input.forceShadow ?? true,
-        hasLiveCredentials: hasLiveGoogle,
+        forceShadow: input.forceShadow === true,
+        forceFixture,
+        hasLiveCredentials,
+        controlledLiveEnabled,
       });
 
-    // Default shadow for operator until controlled live is explicit
-    const effectiveMode: OperationLoopMode =
-      input.loopMode ?? (input.forceShadow === false && hasLiveGoogle ? 'development' : 'shadow');
+    // Trusted server-generated correlation (never client-supplied tenant/auth).
+    const { requestId, traceId } = newRequestIds();
+    const correlationId = requestId;
 
     // Server-side entitlement enforcement (never UI-only)
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
@@ -1016,7 +1060,17 @@ export class AiOperatorService implements OnModuleInit {
         stageStatus: ctx.stageStatus,
         contextPreamble: ctx.contextPreamble,
       };
-      objective = `${ctx.contextPreamble}\n\nOperator objective:\n${input.objective}`;
+      // Prompt registry owns case framing (source-controlled, versioned)
+      const framed = renderPrompt('operator.case_context', {
+        caseId: ctx.caseId,
+        productTitle: ctx.productTitle,
+        stage: ctx.currentStage,
+        stageStatus: ctx.stageStatus,
+        nextAction: String(ctx.nextActionLabel ?? ''),
+        preamble: ctx.contextPreamble,
+      });
+      const caseBlock = framed.ok ? framed.text : ctx.contextPreamble;
+      objective = `${caseBlock}\n\nOperator objective:\n${input.objective}`;
     }
     if (runtimePreamble) {
       objective = `${runtimePreamble}\n\n${objective}`;
@@ -1037,10 +1091,53 @@ export class AiOperatorService implements OnModuleInit {
             : {}),
           allowedAiTools,
           workspaceBound: Boolean(workspacePreamble),
+          phases: { A: 'pending', B: 'pending' },
+          forceShadow: input.forceShadow === true,
+          requestId,
+          traceId,
+          correlationId,
+          readiness: {
+            hasLiveCredentials,
+            controlledLiveEnabled,
+            forceFixture,
+            cohere: Boolean(
+              process.env.COHERE_API_KEY?.trim() || process.env.CO_API_KEY?.trim(),
+            ),
+            xai: Boolean(process.env.XAI_API_KEY?.trim()),
+            generativeProvider: resolveProviderFromEnv(),
+            tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
+          },
         }),
         toolTraceJson: [],
       },
     });
+
+    await this.events
+      .publishDomain({
+        organizationId: input.organizationId,
+        eventType: 'AIObjectiveStarted',
+        entityId: run.id,
+        entityType: 'operator_run',
+        // Start event: product dataMode is decided after load. Mode-level only here.
+        dataMode:
+          effectiveMode === 'fixture'
+            ? 'fixture'
+            : effectiveMode === 'controlled_live' || effectiveMode === 'automated_live'
+              ? 'live'
+              : 'simulation',
+        loopMode: effectiveMode,
+        correlationId,
+        traceId,
+        payload: {
+          objective: input.objective.slice(0, 500),
+          loopMode: effectiveMode,
+          forceShadow: input.forceShadow === true,
+          requestId,
+          correlationId,
+          traceId,
+        },
+      })
+      .catch(() => undefined);
 
     try {
       let products = await this.loadOperatorProducts(input.organizationId);
@@ -1068,11 +1165,124 @@ export class AiOperatorService implements OnModuleInit {
         },
       ];
 
+      // Data Loop Router rationale — only select sources justified by objective + readiness.
+      const tavilyConfigured = Boolean(process.env.TAVILY_API_KEY?.trim());
+      const cohereConfigured = Boolean(
+        process.env.COHERE_API_KEY?.trim() || process.env.CO_API_KEY?.trim(),
+      );
+      const shopifyConfigured = Boolean(
+        process.env.SHOPIFY_ACCESS_TOKEN?.trim() && process.env.SHOPIFY_SHOP_DOMAIN?.trim(),
+      );
+      const dataSourcePlan = {
+        selected: [
+          {
+            source: 'product_store',
+            reason: 'Primary ranking evidence: org-scoped canonical products already in DB',
+            productCount: products.length,
+          },
+          {
+            source: 'connector_installations',
+            reason: 'Capability / health context for tools (not silent fixture swap)',
+            count: connectors.length,
+          },
+          ...(tavilyConfigured
+            ? [
+                {
+                  source: 'tavily',
+                  reason: 'Optional public web research for read-only objectives (evidence only)',
+                },
+              ]
+            : []),
+          ...(cohereConfigured
+            ? [
+                {
+                  source: 'cohere',
+                  reason: 'Phase B synthesis over tool evidence when configured',
+                },
+              ]
+            : []),
+        ],
+        notSelected: [
+          ...(!shopifyConfigured
+            ? [
+                {
+                  source: 'shopify',
+                  reason: 'No live Shopify credentials — not auto-substituted with fixtures',
+                },
+              ]
+            : [
+                {
+                  source: 'shopify_catalog_sync',
+                  reason:
+                    'Live catalog sync is a separate ops path; operator ranks current store snapshot',
+                },
+              ]),
+          ...(!tavilyConfigured
+            ? [
+                {
+                  source: 'tavily',
+                  reason: 'TAVILY_API_KEY missing — research tool blocks honestly, no demo hits',
+                },
+              ]
+            : []),
+          ...(!cohereConfigured && !process.env.XAI_API_KEY?.trim()
+            ? [
+                {
+                  source: 'generative',
+                  reason:
+                    'No COHERE_API_KEY or XAI_API_KEY — Phase B uses deterministic tool summary only',
+                },
+              ]
+            : !cohereConfigured && process.env.XAI_API_KEY?.trim()
+              ? [
+                  {
+                    source: 'xai',
+                    reason: 'XAI_API_KEY present — Phase B narrative via xAI (Cohere preferred if keyed)',
+                  },
+                ]
+              : [
+                  {
+                    source: 'cohere',
+                    reason: 'Phase B synthesis over tool evidence (Cohere)',
+                  },
+                ]),
+          {
+            source: 'stripe_easypost_ga4',
+            reason: 'Not required for product evaluation objectives',
+          },
+        ],
+        policy: {
+          neverSilentFixtureFallback: true,
+          liveFailureModes: ['partial', 'blocked', 'failed'],
+        },
+      };
+
+      const progressBuf: Array<{
+        state: string;
+        step: string;
+        detail?: string;
+        at: string;
+      }> = [];
+      // Always buffer progress for response + planJson, and fan-out to SSE when provided.
+      const onProgress = async (ev: {
+        state: string;
+        step: string;
+        detail?: string;
+        at: string;
+      }) => {
+        progressBuf.push(ev);
+        if (input.onProgress) {
+          await input.onProgress(ev);
+        }
+      };
+
       const cycle = await runOperatorCycle({
         objective: input.objective,
         products,
         loopMode: effectiveMode,
         connectorSources,
+        onProgress,
+        synthesizeWithLlm: true,
         ctx: {
           organizationId: input.organizationId,
           userId: input.userId,
@@ -1125,14 +1335,13 @@ export class AiOperatorService implements OnModuleInit {
               productId: string;
               userId?: string | null;
             }) => {
-              // Draft only — no publish approval here
-              return {
-                status: 'draft_only',
+              // Real listing draft (draft status only — never publish without approval).
+              return this.createListingDraftOnly({
                 organizationId,
                 productId,
-                userId: userId ?? null,
-                note: 'Draft action only. No external marketplace publish. Publish requires separate approval.',
-              };
+                userId,
+                correlationId,
+              });
             },
             evaluateOutcomes: async ({ organizationId }: { organizationId: string }) => {
               const outcomes = await this.prisma.client.predictionOutcome.findMany({
@@ -1244,6 +1453,16 @@ export class AiOperatorService implements OnModuleInit {
         });
         recRows.push(row);
 
+        // Close evaluate → portfolio loop: upsert Opportunity scores from tool ranking.
+        if (rec.productId) {
+          await this.upsertOpportunityFromRecommendation({
+            organizationId: input.organizationId,
+            productId: rec.productId,
+            rec,
+            runId: run.id,
+          });
+        }
+
         // Shadow ledger for what AI would do on consequential actions only
         if (
           effectiveMode === 'shadow' &&
@@ -1278,7 +1497,77 @@ export class AiOperatorService implements OnModuleInit {
             note: `AI operator publish: ${rec.title}`,
           });
         }
+
+        if (rec.productId) {
+          const isFx = products.some(
+            (p) => p.productId === rec.productId && p.sourcePlatform.startsWith('fixture'),
+          );
+          await this.events
+            .publishDomain({
+              organizationId: input.organizationId,
+              eventType: 'ProductEvaluated',
+              entityId: rec.productId,
+              entityType: 'product',
+              dataMode: isFx ? 'fixture' : 'simulation',
+              loopMode: effectiveMode,
+              correlationId,
+              traceId,
+              isFixture: isFx,
+              payload: {
+                runId: run.id,
+                rank: rec.rank,
+                title: rec.title,
+                confidence: rec.confidence,
+                requestId,
+              },
+            })
+            .catch(() => undefined);
+        }
       }
+
+      // Close evaluate → process board: materialize/update CommerceCase spine from records.
+      let casesSynced = 0;
+      try {
+        const sync = await this.commerceCases.syncOrganization(input.organizationId);
+        casesSynced =
+          typeof sync === 'object' && sync && 'upserted' in sync
+            ? Number((sync as { upserted?: number }).upserted ?? 0)
+            : 0;
+      } catch (caseErr) {
+        this.logger.warn(
+          `CommerceCase sync after operator run failed: ${
+            caseErr instanceof Error ? caseErr.message : String(caseErr)
+          }`,
+        );
+      }
+
+      // Entity resolution / dedupe (existing harmonization — not a parallel system).
+      let harmonization: { linked?: number; candidates?: number; note?: string } | null = null;
+      try {
+        const h = await this.harmonization.resolveOrganizationProducts(input.organizationId);
+        harmonization = {
+          linked: Number(h.autoLinked ?? 0),
+          candidates: Number(h.matchCount ?? 0),
+          note: `Identity resolution: ${h.productCount} products, ${h.autoLinked} auto-linked, ${h.proposedOnly} proposed-only`,
+        };
+      } catch (harmErr) {
+        this.logger.warn(
+          `Harmonization after operator run: ${
+            harmErr instanceof Error ? harmErr.message : String(harmErr)
+          }`,
+        );
+        harmonization = {
+          note: 'Harmonization skipped or failed — products remain usable for ranking',
+        };
+      }
+
+      // Learning loop: write PredictionOutcome when fulfilled order actuals exist; always report.
+      const learning = await this.recordLearningFromRecommendations({
+        organizationId: input.organizationId,
+        runId: run.id,
+        recommendations: cycle.recommendations,
+        correlationId,
+      });
 
       // Execution Navigator package (objective → verified outcome)
       let executionPackage: ObjectiveExecutionPackage | null = null;
@@ -1299,12 +1588,18 @@ export class AiOperatorService implements OnModuleInit {
         );
       }
 
-      // Persist timeline + response as plan envelope (ObjectiveExecution equivalent)
+      const fixturePresent = products.some((p) => p.sourcePlatform.startsWith('fixture'));
+      const dataMode = fixturePresent
+        ? dataModeFromPlatform('fixture-supplier', effectiveMode)
+        : dataModeFromPlatform('live', effectiveMode);
+
+      // Persist full A→Z plan envelope (keep readiness from create; add cycle outputs)
       const planEnvelope = {
         ...cycle.plan,
         timeline: cycle.timeline,
         sources: cycle.sources,
         responseSummary: cycle.responseSummary,
+        briefingSource: cycle.briefingSource ?? null,
         candidateStats: cycle.candidateStats,
         filtersApplied: cycle.filtersApplied,
         objectiveType: cycle.objectiveType,
@@ -1317,6 +1612,38 @@ export class AiOperatorService implements OnModuleInit {
         navigatorSummary: executionPackage
           ? summarizeExecutionPackage(executionPackage)
           : undefined,
+        // Loop metadata (not overwritten silently)
+        forceShadow: input.forceShadow === true,
+        loopMode: effectiveMode,
+        dataMode,
+        liveProgress: progressBuf,
+        requestId,
+        traceId,
+        correlationId,
+        dataSourcePlan,
+        casesSynced,
+        harmonization,
+        learning,
+        readiness: {
+          hasLiveCredentials,
+          controlledLiveEnabled,
+          forceFixture,
+          cohere: Boolean(
+            process.env.COHERE_API_KEY?.trim() || process.env.CO_API_KEY?.trim(),
+          ),
+          tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
+        },
+        dataLoop: {
+          A_classify: cycle.objectiveType,
+          B_retrieve: cycle.candidateStats?.retrieved ?? 0,
+          C_tools: cycle.toolTrace?.length ?? 0,
+          D_rank: cycle.recommendations?.length ?? 0,
+          E_persist: true,
+          F_cases: casesSynced,
+          G_harmonize: Boolean(harmonization),
+          H_learning: learning.outcomesWritten,
+          I_synthesize: Boolean(cycle.responseSummary),
+        },
       };
 
       const runStatus =
@@ -1342,13 +1669,18 @@ export class AiOperatorService implements OnModuleInit {
         },
       });
 
-      await this.events.ingest({
+      await this.events.publishDomain({
         organizationId: input.organizationId,
-        eventType: 'ai.operator_run.completed',
+        eventType: 'AIObjectiveCompleted',
+        entityId: run.id,
+        entityType: 'operator_run',
         providerKey: 'tradeops-ai',
         externalEventId: run.id,
         loopMode: effectiveMode,
-        isFixture: products.some((p) => p.sourcePlatform.startsWith('fixture')),
+        isFixture: fixturePresent,
+        dataMode,
+        correlationId,
+        traceId,
         payload: {
           objective: input.objective,
           decision: cycle.decision,
@@ -1356,6 +1688,13 @@ export class AiOperatorService implements OnModuleInit {
           recommendationCount: cycle.recommendations.length,
           loopMode: effectiveMode,
           responseSummary: cycle.responseSummary,
+          phaseA: 'tools_executed',
+          phaseB: 'synthesis_complete',
+          casesSynced,
+          requestId,
+          correlationId,
+          traceId,
+          dataSourcePlan,
         },
       });
 
@@ -1372,14 +1711,28 @@ export class AiOperatorService implements OnModuleInit {
           recommendationCount: cycle.recommendations.length,
           criticSeverity: cycle.critic.severity,
           approvalRequired: cycle.approvalRequired,
+          requestId,
+          correlationId,
+          traceId,
+          casesSynced,
         },
       });
 
       // Meter only successful evaluations (platform failures are not billed)
       await this.saas.incrementUsage(input.organizationId, 'ai_evaluations', 1);
 
-      return {
+      const runtimeState =
+        runStatus === 'awaiting_approval'
+          ? ('awaiting_approval' as const)
+          : runStatus === 'blocked'
+            ? ('blocked' as const)
+            : ('completed' as const);
+
+      const body = {
         runId: run.id,
+        requestId,
+        traceId,
+        correlationId,
         status: runStatus,
         loopMode: effectiveMode,
         objectiveType: cycle.objectiveType,
@@ -1388,6 +1741,7 @@ export class AiOperatorService implements OnModuleInit {
         decision: cycle.decision,
         decisionNote: cycle.decisionNote,
         responseSummary: cycle.responseSummary,
+        briefingSource: cycle.briefingSource ?? null,
         plan: cycle.plan,
         timeline: cycle.timeline,
         sources: cycle.sources,
@@ -1398,20 +1752,97 @@ export class AiOperatorService implements OnModuleInit {
         toolTrace: cycle.toolTrace,
         recommendations: cycle.recommendations,
         storedRecommendationIds: recRows.map((r) => r.id),
+        casesSynced,
+        dataSourcePlan,
+        harmonization,
+        learning,
+        /** Ranked opportunities board (primary results surface) */
         resultsPath: `/terminal/opportunities?runId=${run.id}`,
+        /** Full execution record (timeline, package, tools) */
+        objectivePath: `/terminal/objectives/${run.id}`,
+        /** Process board after case sync */
+        processPath: '/terminal/process',
         executionPackage: executionPackage ?? undefined,
         navigatorSummary: executionPackage
           ? summarizeExecutionPackage(executionPackage)
           : undefined,
+        phases: {
+          A: 'classify_plan_tools_evidence',
+          B: 'synthesize_validate_response',
+          C: 'commerce_case_sync',
+          D: 'harmonize_and_learn',
+        },
+        dataLoop: planEnvelope.dataLoop,
         honesty: {
-          fixtureProductsPresent: products.some((p) => p.sourcePlatform.startsWith('fixture')),
-          liveCredentialsPresent: hasLiveGoogle,
-          shadowByDefault: effectiveMode === 'shadow',
+          fixtureProductsPresent: fixturePresent,
+          liveCredentialsPresent: hasLiveCredentials,
+          forceShadow: input.forceShadow === true,
+          loopMode: effectiveMode,
+          shadowByDefault: false,
+          dataMode,
           note:
             cycle.objectiveType === 'READ_ONLY_ANALYSIS'
-              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval. Full Execution Package attached for objective navigation.'
-              : 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval. Execution Package tracks plan → verification.',
+              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval. Commerce cases synced for process board. Full Execution Package attached.'
+              : effectiveMode === 'shadow'
+                ? 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval. Execution Package tracks plan → verification.'
+                : `Loop mode ${effectiveMode}: tool path is live against org store; fixture products remain labeled. Consequential publish still requires approval.`,
         },
+      };
+
+      // Canonical envelope: text + data + evidence + actions + dataMode (never demo invent)
+      const envelope = wrapEnvelope({
+        tenantId: input.organizationId,
+        data: body,
+        state: runtimeState,
+        dataMode,
+        text: cycle.responseSummary,
+        requestId,
+        traceId,
+        correlationId,
+        confidence:
+          cycle.recommendations[0]?.confidence != null
+            ? cycle.recommendations[0]!.confidence
+            : undefined,
+        evidence: products.slice(0, 5).map((p) => ({
+          source: p.sourcePlatform,
+          providerKey: p.sourcePlatform,
+          dataMode: dataModeFromPlatform(p.sourcePlatform, effectiveMode),
+          collectedAt: p.dataFreshnessAt,
+          confidence: p.dataConfidence,
+          evidenceId: p.productId,
+          title: p.title,
+        })),
+        actions: [
+          {
+            id: 'view_results',
+            label: 'View ranked results',
+            href: `/terminal/opportunities?runId=${run.id}`,
+          },
+          {
+            id: 'process_board',
+            label: 'Open process board',
+            href: '/terminal/process',
+          },
+          ...(cycle.approvalRequired
+            ? [
+                {
+                  id: 'approvals',
+                  label: 'Open approvals',
+                  href: '/terminal/approvals',
+                  requiresApproval: true,
+                },
+              ]
+            : []),
+        ],
+        warnings: fixturePresent
+          ? ['Fixture-labeled products present — not live marketplace data']
+          : [],
+      });
+
+      return {
+        ...body,
+        envelope,
+        liveProgress: progressBuf,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1423,6 +1854,16 @@ export class AiOperatorService implements OnModuleInit {
           completedAt: new Date(),
         },
       });
+      await this.events
+        .publishDomain({
+          organizationId: input.organizationId,
+          eventType: 'ToolExecutionFailed',
+          entityId: run.id,
+          entityType: 'operator_run',
+          dataMode: 'blocked',
+          payload: { message: message.slice(0, 300) },
+        })
+        .catch(() => undefined);
       throw error;
     }
   }
@@ -1453,6 +1894,121 @@ export class AiOperatorService implements OnModuleInit {
 
   async runHarmonization(organizationId: string) {
     return this.harmonization.resolveOrganizationProducts(organizationId);
+  }
+
+  /**
+   * Persist ranked operator scores onto Opportunity rows so Discover / portfolio
+   * reflect the same A→Z evaluation as the sidebar (not a disconnected score path).
+   */
+  private async upsertOpportunityFromRecommendation(input: {
+    organizationId: string;
+    productId: string;
+    runId: string;
+    rec: {
+      title: string;
+      rationale: string;
+      confidence: number;
+      policyRiskScore: number;
+      productCard?: Record<string, unknown>;
+      calculation?: Record<string, unknown> | null;
+      evidence?: Record<string, unknown> | null;
+    };
+  }): Promise<void> {
+    const card = (input.rec.productCard ?? {}) as Record<string, unknown>;
+    const calc = (input.rec.calculation ?? {}) as Record<string, unknown>;
+    const score = Math.round(
+      Number(card.opportunityScore ?? input.rec.confidence * 100) || 0,
+    );
+    const expectedProfitMinor = Math.round(
+      Number(calc.contributionProfitMinor ?? card.contributionProfitMinor ?? 0) || 0,
+    );
+    const expectedMarginBps = Math.round(
+      Number(calc.netMarginBps ?? card.expectedMarginBps ?? 0) || 0,
+    );
+    const policyRiskScore = Math.round(
+      Number(card.policyRiskScore ?? input.rec.policyRiskScore ?? 0) || 0,
+    );
+    const demandScore = Math.round(Number(card.demandScore ?? 50) || 50);
+    const reviewHealth = Math.round(Number(card.reviewHealth ?? 50) || 50);
+    const supplierReliability = Math.round(Number(card.supplierReliability ?? 70) || 70);
+    const forecastConfidence = Math.min(
+      1,
+      Math.max(0, Number(card.forecastConfidence ?? input.rec.confidence) || 0.5),
+    );
+
+    // Map rough score → CommerceSignalType for portfolio continuity
+    const currentSignal =
+      policyRiskScore >= 80
+        ? ('BLOCKED' as const)
+        : score >= 70
+          ? ('BUY' as const)
+          : score >= 50
+            ? ('HOLD' as const)
+            : ('REDUCE' as const);
+
+    try {
+      await this.prisma.client.opportunity.upsert({
+        where: {
+          organizationId_productId: {
+            organizationId: input.organizationId,
+            productId: input.productId,
+          },
+        },
+        create: {
+          organizationId: input.organizationId,
+          productId: input.productId,
+          score,
+          formulaVersion: 'operator-cycle-v1',
+          componentsJson: asJson({
+            source: 'ai_operator',
+            runId: input.runId,
+            card,
+            calculation: calc,
+          }),
+          explanation: input.rec.rationale.slice(0, 2000),
+          expectedProfitMinor,
+          expectedMarginBps,
+          demandScore,
+          trendScore: 55,
+          competitionScore: Math.round(Number(card.competitionScore ?? 45) || 45),
+          supplierReliability,
+          shippingReliability: 65,
+          reviewHealth,
+          returnRiskScore: Math.round(Number(card.returnRiskScore ?? 20) || 20),
+          policyRiskScore,
+          forecastConfidence,
+          currentSignal,
+          scoredAt: new Date(),
+        },
+        update: {
+          score,
+          formulaVersion: 'operator-cycle-v1',
+          componentsJson: asJson({
+            source: 'ai_operator',
+            runId: input.runId,
+            card,
+            calculation: calc,
+          }),
+          explanation: input.rec.rationale.slice(0, 2000),
+          expectedProfitMinor,
+          expectedMarginBps,
+          demandScore,
+          competitionScore: Math.round(Number(card.competitionScore ?? 45) || 45),
+          supplierReliability,
+          reviewHealth,
+          policyRiskScore,
+          forecastConfidence,
+          currentSignal,
+          scoredAt: new Date(),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Opportunity upsert failed for product ${input.productId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async loadOperatorProducts(organizationId: string): Promise<OperatorProduct[]> {
@@ -1493,6 +2049,251 @@ export class AiOperatorService implements OnModuleInit {
         currentSignal: opp?.currentSignal,
       };
     });
+  }
+
+  /**
+   * Outcome measurement → learning update.
+   * Writes PredictionOutcome only when fulfilled-order actuals exist for a product.
+   * Never invents actuals; reports pending when sales history is missing.
+   */
+  private async recordLearningFromRecommendations(input: {
+    organizationId: string;
+    runId: string;
+    correlationId: string;
+    recommendations: Array<{
+      productId?: string;
+      title: string;
+      confidence: number;
+      productCard?: Record<string, unknown>;
+      calculation?: Record<string, unknown> | null;
+    }>;
+  }): Promise<{
+    outcomesWritten: number;
+    pendingActuals: number;
+    evaluation: ReturnType<typeof evaluatePredictions>;
+    note: string;
+  }> {
+    let outcomesWritten = 0;
+    let pendingActuals = 0;
+    const samples: Array<{
+      predictedUnits: number;
+      actualUnits: number;
+      predictedProfitMinor: number;
+      actualProfitMinor: number;
+      signalCorrect?: boolean;
+    }> = [];
+
+    for (const rec of input.recommendations) {
+      if (!rec.productId) continue;
+      const card = (rec.productCard ?? {}) as Record<string, unknown>;
+      const calc = (rec.calculation ?? {}) as Record<string, unknown>;
+      const predictedProfitMinor = Math.round(
+        Number(calc.contributionProfitMinor ?? card.contributionProfitMinor ?? 0) || 0,
+      );
+      // Baseline unit forecast: conservative 1-unit trial until sales history exists
+      const predictedUnits = 1;
+
+      const product = await this.prisma.client.product.findFirst({
+        where: { id: rec.productId, organizationId: input.organizationId },
+      });
+      if (!product) {
+        pendingActuals += 1;
+        continue;
+      }
+
+      const lines = await this.prisma.client.customerOrderLine.findMany({
+        where: {
+          productId: rec.productId,
+          order: {
+            organizationId: input.organizationId,
+            status: { in: ['paid', 'fulfilled'] },
+          },
+        },
+        include: { order: true },
+        take: 50,
+      });
+
+      if (lines.length === 0) {
+        pendingActuals += 1;
+        continue;
+      }
+
+      let actualUnits = 0;
+      let actualProfitMinor = 0;
+      for (const line of lines) {
+        actualUnits += line.quantity;
+        const unitPrice = line.unitPriceMinor ?? product.targetPriceMinor;
+        actualProfitMinor += realizedContributionProfitMinor({
+          unitPriceMinor: unitPrice,
+          quantity: line.quantity,
+          marketplaceFeeMinorPerUnit: product.marketplaceFeeMinor,
+          paymentFeeMinorPerUnit: product.paymentFeeMinor,
+          supplierCostMinorPerUnit: product.supplierCostMinor,
+          shippingCostMinorPerUnit: product.shippingCostMinor,
+          adAllocationMinorPerUnit: product.adAllocationMinor,
+          returnReserveMinorPerUnit: product.returnReserveMinor,
+        });
+      }
+
+      const unitAbsoluteError = Math.abs(actualUnits - predictedUnits);
+      const profitAbsoluteError = Math.abs(actualProfitMinor - predictedProfitMinor);
+      const signalAtPrediction =
+        predictedProfitMinor > 0 ? 'BUY' : predictedProfitMinor < 0 ? 'AVOID' : 'HOLD';
+      const signalCorrect =
+        (predictedProfitMinor >= 0 && actualProfitMinor >= 0) ||
+        (predictedProfitMinor < 0 && actualProfitMinor < 0);
+
+      await this.prisma.client.predictionOutcome.create({
+        data: {
+          organizationId: input.organizationId,
+          productId: rec.productId,
+          modelVersion: 'operator-cycle-v1',
+          source: 'ai_operator',
+          predictedUnits,
+          actualUnits,
+          predictedProfitMinor,
+          actualProfitMinor,
+          signalAtPrediction,
+          signalCorrect,
+          unitAbsoluteError,
+          profitAbsoluteError,
+          notes: `run=${input.runId} correlation=${input.correlationId}`.slice(0, 500),
+          evaluatedAt: new Date(),
+        },
+      });
+      outcomesWritten += 1;
+      samples.push({
+        predictedUnits,
+        actualUnits,
+        predictedProfitMinor,
+        actualProfitMinor,
+        signalCorrect,
+      });
+
+      await this.events
+        .publishDomain({
+          organizationId: input.organizationId,
+          eventType: 'PredictionEvaluated',
+          entityId: rec.productId,
+          entityType: 'product',
+          dataMode: product.sourcePlatform.startsWith('fixture') ? 'fixture' : 'simulation',
+          correlationId: input.correlationId,
+          payload: {
+            runId: input.runId,
+            predictedProfitMinor,
+            actualProfitMinor,
+            actualUnits,
+          },
+        })
+        .catch(() => undefined);
+    }
+
+    // Also fold historical outcomes for org-level learning report
+    const prior = await this.prisma.client.predictionOutcome.findMany({
+      where: { organizationId: input.organizationId },
+      orderBy: { evaluatedAt: 'desc' },
+      take: 50,
+    });
+    const histSamples = prior.map((o) => ({
+      predictedUnits: o.predictedUnits,
+      actualUnits: o.actualUnits,
+      predictedProfitMinor: o.predictedProfitMinor,
+      actualProfitMinor: o.actualProfitMinor,
+      signalCorrect: o.signalCorrect ?? undefined,
+    }));
+    const evaluation = evaluatePredictions(
+      histSamples.length > 0 ? histSamples : samples,
+      'operator-cycle-v1',
+    );
+
+    return {
+      outcomesWritten,
+      pendingActuals,
+      evaluation,
+      note:
+        outcomesWritten > 0
+          ? `Wrote ${outcomesWritten} prediction outcome(s) from fulfilled order lines; ${pendingActuals} pending actuals.`
+          : `No fulfilled order actuals for ranked products (${pendingActuals} pending). Forecasts remain in OperatorRecommendation/Opportunity until sales complete.`,
+    };
+  }
+
+  /** Create or reuse a draft listing — never auto-publish. */
+  private async createListingDraftOnly(input: {
+    organizationId: string;
+    productId: string;
+    userId?: string | null;
+    correlationId?: string;
+  }) {
+    const channel = await this.prisma.client.salesChannel.findFirst({
+      where: { organizationId: input.organizationId },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!channel) {
+      return {
+        status: 'blocked' as const,
+        organizationId: input.organizationId,
+        productId: input.productId,
+        note: 'No sales channel configured — cannot create listing draft.',
+        correlationId: input.correlationId,
+      };
+    }
+    const product = await this.prisma.client.product.findFirst({
+      where: { id: input.productId, organizationId: input.organizationId },
+    });
+    if (!product) {
+      return {
+        status: 'blocked' as const,
+        organizationId: input.organizationId,
+        productId: input.productId,
+        note: 'Product not found in tenant scope.',
+        correlationId: input.correlationId,
+      };
+    }
+    let listing = await this.prisma.client.listing.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        productId: product.id,
+        salesChannelId: channel.id,
+        status: { in: ['draft', 'pending_approval'] },
+      },
+    });
+    if (!listing) {
+      listing = await this.prisma.client.listing.create({
+        data: {
+          organizationId: input.organizationId,
+          productId: product.id,
+          salesChannelId: channel.id,
+          status: 'draft',
+          priceMinor: product.targetPriceMinor,
+          currency: product.currency,
+          sku: product.externalId,
+        },
+      });
+      await this.events
+        .publishDomain({
+          organizationId: input.organizationId,
+          eventType: 'ListingPrepared',
+          entityId: listing.id,
+          entityType: 'listing',
+          dataMode: product.sourcePlatform.startsWith('fixture') ? 'fixture' : 'simulation',
+          correlationId: input.correlationId,
+          payload: {
+            productId: product.id,
+            status: 'draft',
+            channel: channel.providerKey,
+          },
+        })
+        .catch(() => undefined);
+    }
+    return {
+      status: 'draft' as const,
+      listingId: listing.id,
+      organizationId: input.organizationId,
+      productId: product.id,
+      userId: input.userId ?? null,
+      note: 'Listing draft created (not published). Publish requires separate approval.',
+      correlationId: input.correlationId,
+    };
   }
 
   private async queueListingApproval(input: {

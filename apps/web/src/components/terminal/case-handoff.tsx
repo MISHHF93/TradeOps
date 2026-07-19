@@ -75,11 +75,12 @@ export function CaseHandoff({ productId }: { productId: string }) {
 
   const c = data.case;
   const next = NEXT_STAGE[c.currentStage];
+  /** Case object workspace is the primary OS surface */
   const journey = `/terminal/process/${c.id}`;
 
   return (
     <article className="panel wide" style={{ marginTop: 16 }}>
-      <h2 style={{ marginTop: 0 }}>Process handoff</h2>
+      <h2 style={{ marginTop: 0 }}>Commerce Case (system of record)</h2>
       <p className="meta" style={{ margin: '0 0 8px' }}>
         Stage <strong>{c.currentStage}</strong> · {c.stageStatus}
         {c.blockerMessage ? ` · blocker: ${c.blockerMessage}` : ''}
@@ -88,10 +89,10 @@ export function CaseHandoff({ productId }: { productId: string }) {
         Next action: <strong>{c.nextActionLabel ?? '—'}</strong>
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        <Link className="btn secondary" href={journey}>
-          Open journey
+        <Link className="btn primary" href={journey}>
+          Open case workspace
         </Link>
-        <Link className="btn ghost" href={`/terminal/ai?caseId=${encodeURIComponent(c.id)}`}>
+        <Link className="btn ghost" href={`/terminal/objectives?caseId=${encodeURIComponent(c.id)}`}>
           AI on this case
         </Link>
         {c.nextHref ? (

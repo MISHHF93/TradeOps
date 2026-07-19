@@ -1,14 +1,20 @@
 import Link from 'next/link';
+import { AskAiButton } from '../../../../components/ai/ask-ai-button';
 import {
   CommerceStatePanel,
   type CommerceStateClient,
 } from '../../../../components/commerce/commerce-state-panel';
+import {
+  ObjectWorkspace,
+  type ObjectWorkspaceDto,
+} from '../../../../components/commerce/object-workspace';
+import { AutoBootstrapMedia } from '../../../../components/commerce/auto-bootstrap-media';
+import { ProductMediaWorkspace } from '../../../../components/commerce/product-media-workspace';
 import { ProcessPageHeader } from '../../../../components/commerce/process-chrome';
 import {
   ProcessAdvanceButton,
   ProcessSyncButton,
 } from '../../../../components/terminal/process-actions';
-import { formatMoney } from '../../../../lib/money';
 import {
   PROCESS_LABELS,
   relatedStageHref,
@@ -17,7 +23,10 @@ import {
 } from '../../../../lib/process-ux';
 import { terminalGet } from '../../../../lib/terminal-api';
 
-type Props = { params: Promise<{ caseId: string }> };
+type Props = {
+  params: Promise<{ caseId: string }>;
+  searchParams: Promise<{ section?: string }>;
+};
 
 const STAGE_ORDER = [
   'discover',
@@ -39,280 +48,151 @@ function nextStageOf(current: string): string | null {
   return STAGE_ORDER[i + 1]!;
 }
 
-export default async function ProductJourneyPage({ params }: Props) {
+/**
+ * Commerce Case object workspace — primary OS surface for one opportunity.
+ * Loads case facets, state engine, product media twin, and contextual AI.
+ */
+export default async function CaseObjectWorkspacePage({ params, searchParams }: Props) {
   const { caseId } = await params;
-  const result = await terminalGet<{
+  const { section } = await searchParams;
+
+  const workspaceRes = await terminalGet<ObjectWorkspaceDto>(
+    `/api/v1/commerce/cases/${caseId}/workspace`,
+  );
+  const detailRes = await terminalGet<{
     case: {
       id: string;
       productId: string;
       currentStage: string;
       stageStatus: string;
-      opportunityScore?: number | null;
-      confidence?: number | null;
-      expectedProfitMinor?: number | null;
-      realizedProfitMinor?: number | null;
       nextActionLabel?: string | null;
       nextHref?: string;
-      blockerMessage?: string | null;
       productHref: string;
     };
-    product: {
-      id: string;
-      title: string;
-      category: string;
-      sourcePlatform: string;
-      currency: string;
-      dataConfidence: number;
-      supplierCostMinor: number;
-      shippingCostMinor: number;
-      targetPriceMinor: number;
-    };
-    opportunity?: {
-      score: number;
-      explanation: string;
-      currentSignal: string;
-      expectedProfitMinor: number;
-      expectedMarginBps: number;
-    } | null;
-    listings: Array<{ id: string; status: string; priceMinor: number }>;
-    offers: Array<{ supplier: { name: string }; costMinor: number; shippingCostMinor: number }>;
-    policy?: { outcome: string; reasonsJson?: string[] } | null;
-    artifacts: Array<{ id: string; artifactType: string; purpose: string; rightsStatus: string }>;
-    lifecycle: Array<{
-      id: string;
-      title: string;
-      description: string;
-      handoffLabel: string;
-      state: string;
-    }>;
-    history: Array<{ stage: string; status: string; at: string; note?: string }>;
     handoffLabel: string;
-    nextHref: string;
   }>(`/api/v1/commerce/cases/${caseId}`);
 
-  if (!result.ok) {
+  if (!workspaceRes.ok) {
     return (
-      <section>
-        <p className="form-error">{result.error}</p>
+      <section className="terminal-page">
+        <p className="form-error">{workspaceRes.error}</p>
         <Link href="/terminal/process">← Commerce Process</Link>
       </section>
     );
   }
 
-  const d = result.data;
-  const c = d.case;
-  const p = d.product;
-  const nextStage = nextStageOf(c.currentStage);
-  const opp = d.opportunity;
+  const ws = workspaceRes.data;
+  const c = detailRes.ok ? detailRes.data.case : null;
+  const nextStage = c ? nextStageOf(c.currentStage) : null;
+  const handoff = detailRes.ok ? detailRes.data.handoffLabel : 'Advance';
 
   const stateRes = await terminalGet<CommerceStateClient>(
     `/api/v1/commerce/cases/${caseId}/state`,
   );
 
+  // Enrich workspace with product media for hero when product twin available
+  let heroMedia: ObjectWorkspaceDto['heroMedia'];
+  if (c?.productId) {
+    const productRes = await terminalGet<{
+      primaryImageUrl?: string | null;
+      galleryImageUrlsJson?: string[];
+      mediaJson?: Array<{ url?: string; purpose?: string }>;
+    }>(`/api/v1/products/${c.productId}`);
+    if (productRes.ok) {
+      const pr = productRes.data;
+      heroMedia = [];
+      if (pr.primaryImageUrl) {
+        heroMedia.push({
+          id: 'primary',
+          url: pr.primaryImageUrl,
+          label: 'Primary',
+          purpose: 'primary',
+        });
+      }
+      for (const [i, u] of (pr.galleryImageUrlsJson ?? []).entries()) {
+        heroMedia.push({ id: `gallery-${i}`, url: u, label: 'Gallery', purpose: 'gallery' });
+      }
+      for (const [i, m] of (pr.mediaJson ?? []).entries()) {
+        if (m.url) {
+          heroMedia.push({
+            id: `media-${i}`,
+            url: m.url,
+            label: m.purpose ?? 'Media',
+            purpose: m.purpose,
+          });
+        }
+      }
+    }
+  }
+
+  const workspace: ObjectWorkspaceDto = {
+    ...ws,
+    heroMedia,
+    productId: c?.productId,
+  };
+
+  const aiObjective =
+    ws.aiContext?.suggestedObjective ??
+    ws.nextAction?.label ??
+    `Resolve commerce case ${ws.title}`;
+
   return (
-    <section>
+    <section className="terminal-page case-workspace-page">
       <ProcessPageHeader
-        pill={`${PROCESS_LABELS.casePill} · ${stageTitle(c.currentStage)} · ${stageStatusLabel(c.stageStatus)}`}
-        title={p.title}
-        lede={`${p.category} · ${p.sourcePlatform} · conf ${(p.dataConfidence * 100).toFixed(0)}%${
-          p.sourcePlatform.startsWith('fixture') ? ' · TEST FIXTURE' : ''
+        pill={`Commerce Case · ${ws.stage ? stageTitle(ws.stage) : '—'} · ${
+          ws.stageStatus ? stageStatusLabel(ws.stageStatus) : '—'
         }`}
-        currentStage={c.currentStage}
+        title={ws.title}
+        lede={ws.subtitle}
+        currentStage={ws.stage}
         breadcrumbs={[
           { href: '/terminal/process', label: PROCESS_LABELS.boardTitle },
-          { href: relatedStageHref(c.currentStage), label: stageTitle(c.currentStage) },
-          { label: p.title },
+          {
+            href: ws.stage ? relatedStageHref(ws.stage) : '/terminal/process',
+            label: ws.stage ? stageTitle(ws.stage) : 'Case',
+          },
+          { label: ws.title },
         ]}
         toolbar={
           <>
             <ProcessSyncButton />
-            <Link className="btn secondary" href={c.productHref}>
-              {PROCESS_LABELS.productTwin}
-            </Link>
-            <Link
-              className="btn ghost"
-              href={`/terminal/ai?caseId=${encodeURIComponent(c.id)}`}
-            >
-              {PROCESS_LABELS.aiOnCase}
-            </Link>
-            {c.nextHref ? (
-              <Link className="btn primary" href={c.nextHref}>
-                {c.nextActionLabel ?? PROCESS_LABELS.nextStep}
+            <AskAiButton
+              objective={aiObjective}
+              commerceCaseId={caseId}
+              label={PROCESS_LABELS.aiOnCase ?? 'Ask AI'}
+            />
+            {c ? (
+              <Link className="btn secondary" href={c.productHref}>
+                {PROCESS_LABELS.productTwin}
               </Link>
+            ) : null}
+            {ws.nextAction?.href ? (
+              <Link className="btn primary" href={ws.nextAction.href}>
+                {ws.nextAction.label ?? PROCESS_LABELS.nextStep}
+              </Link>
+            ) : null}
+            {c && nextStage ? (
+              <ProcessAdvanceButton
+                caseId={c.id}
+                toStage={nextStage}
+                label={handoff || `Advance to ${stageTitle(nextStage)}`}
+              />
             ) : null}
           </>
         }
       />
 
-      {c.blockerMessage ? <p className="form-error">{c.blockerMessage}</p> : null}
-
       {stateRes.ok ? <CommerceStatePanel state={stateRes.data} /> : null}
 
-      <div className="detail-grid">
-        <article className="panel">
-          <h2>Economics</h2>
-          <ul className="kv">
-            <li>
-              <span>Score</span>
-              <strong>{c.opportunityScore ?? '—'}</strong>
-            </li>
-            <li>
-              <span>Expected profit</span>
-              <strong>
-                {c.expectedProfitMinor != null
-                  ? formatMoney(c.expectedProfitMinor, p.currency)
-                  : '—'}
-              </strong>
-            </li>
-            <li>
-              <span>Realized profit</span>
-              <strong>
-                {c.realizedProfitMinor != null
-                  ? formatMoney(c.realizedProfitMinor, p.currency)
-                  : '—'}
-              </strong>
-            </li>
-            <li>
-              <span>Target price</span>
-              <strong>{formatMoney(p.targetPriceMinor, p.currency)}</strong>
-            </li>
-            <li>
-              <span>Supplier + ship</span>
-              <strong>
-                {formatMoney(p.supplierCostMinor + p.shippingCostMinor, p.currency)}
-              </strong>
-            </li>
-          </ul>
-          {opp ? (
-            <p className="meta">
-              Signal {opp.currentSignal} · {opp.explanation}
-            </p>
-          ) : (
-            <p className="meta">No opportunity score yet — run evaluation from the product twin.</p>
-          )}
-        </article>
+      {c?.productId ? <AutoBootstrapMedia productId={c.productId} /> : null}
 
-        <article className="panel">
-          <h2>Current work · {c.currentStage}</h2>
-          <p>
-            Status: <strong>{c.stageStatus}</strong>
-          </p>
-          <p className="meta">
-            {PROCESS_LABELS.nextStep}: {c.nextActionLabel ?? '—'}
-          </p>
-          {d.policy ? (
-            <p className="meta">
-              Policy: {d.policy.outcome}
-              {(d.policy.reasonsJson ?? []).length
-                ? ` — ${(d.policy.reasonsJson ?? []).slice(0, 2).join('; ')}`
-                : ''}
-            </p>
-          ) : null}
-          <p className="meta">
-            Listings: {d.listings.length ? d.listings.map((l) => l.status).join(', ') : 'none'}
-          </p>
-          <p className="meta">
-            Offers: {d.offers.length ? d.offers.map((o) => o.supplier.name).join(', ') : 'none'}
-          </p>
-          <p className="meta">
-            Artifacts: {d.artifacts.length} (media rights on twin)
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-            {c.currentStage === 'discover' || c.currentStage === 'evaluate' ? (
-              <Link className="btn secondary" href={c.productHref}>
-                {PROCESS_LABELS.productTwin}
-              </Link>
-            ) : null}
-            {c.currentStage === 'prepare' ? (
-              <Link className="btn secondary" href={c.productHref}>
-                Prepare listing / media
-              </Link>
-            ) : null}
-            {c.currentStage === 'approve' ? (
-              <Link className="btn secondary" href="/terminal/approvals">
-                {PROCESS_LABELS.viewApprovals}
-              </Link>
-            ) : null}
-            {c.currentStage === 'sell' ||
-            c.currentStage === 'source' ||
-            c.currentStage === 'fulfill' ? (
-              <Link className="btn secondary" href="/terminal/orders">
-                {PROCESS_LABELS.viewOrders}
-              </Link>
-            ) : null}
-            {nextStage ? (
-              <ProcessAdvanceButton
-                caseId={c.id}
-                toStage={nextStage}
-                label={d.handoffLabel || `Advance to ${stageTitle(nextStage)}`}
-              />
-            ) : null}
-          </div>
-        </article>
+      <ObjectWorkspace workspace={workspace} section={section} />
 
-        <article className="panel wide">
-          <h2>Procedure stages</h2>
-          <ol
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-              gap: 8,
-              listStyle: 'none',
-              padding: 0,
-              margin: 0,
-            }}
-          >
-            {d.lifecycle.map((s) => (
-              <li
-                key={s.id}
-                className="panel"
-                style={{
-                  padding: 8,
-                  margin: 0,
-                  opacity: s.state === 'future' ? 0.55 : 1,
-                  borderColor:
-                    s.state === 'completed' || s.id === c.currentStage
-                      ? 'var(--color-accent, #25c7e8)'
-                      : undefined,
-                }}
-              >
-                <strong style={{ fontSize: 12 }}>{s.title}</strong>
-                <p className="meta" style={{ margin: '4px 0 0', fontSize: 10 }}>
-                  {s.state}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </article>
-
-        <article className="panel wide">
-          <h2>Stage history</h2>
-          {d.history.length === 0 ? (
-            <p className="meta">No history yet — sync cases from records.</p>
-          ) : (
-            <table className="compact">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Stage</th>
-                  <th>Status</th>
-                  <th>Note</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...d.history].reverse().slice(0, 20).map((h, i) => (
-                  <tr key={`${h.at}-${i}`}>
-                    <td>{new Date(h.at).toLocaleString()}</td>
-                    <td>{stageTitle(h.stage)}</td>
-                    <td>{stageStatusLabel(h.status)}</td>
-                    <td>{h.note ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </article>
-      </div>
+      {c?.productId ? (
+        <div className="case-workspace-media">
+          <ProductMediaWorkspace productId={c.productId} />
+        </div>
+      ) : null}
     </section>
   );
 }

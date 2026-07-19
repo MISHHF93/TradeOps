@@ -69,6 +69,15 @@ export default async function ConnectorsOpsPage() {
   const installs = await terminalGet<
     Array<{ providerKey: string; status: string; isFixture: boolean }>
   >('/api/v1/connectors');
+  const fabric = await terminalGet<{
+    planned?: Array<{
+      providerKey: string;
+      displayName: string;
+      maturity: string;
+      notes?: string;
+    }>;
+    honesty?: { note?: string };
+  }>('/api/v1/ops/connectors/fabric');
 
   if (!health.ok) {
     return (
@@ -81,6 +90,7 @@ export default async function ConnectorsOpsPage() {
 
   const h = health.data;
   const s = h.summary;
+  const planned = fabric.ok ? fabric.data.planned ?? [] : [];
 
   return (
     <section>
@@ -202,6 +212,23 @@ export default async function ConnectorsOpsPage() {
           </p>
         </article>
       ))}
+
+      {planned.length > 0 ? (
+        <article className="panel wide" style={{ marginBottom: 16 }}>
+          <h2 style={{ marginTop: 0 }}>Planned integrations</h2>
+          <p className="meta">
+            Roadmap only — not operational, not connected, no credential forms, no live metrics.
+          </p>
+          <ul className="meta">
+            {planned.map((p) => (
+              <li key={p.providerKey}>
+                <strong>{p.displayName}</strong> ({p.providerKey}) · {p.maturity}
+                {p.notes ? ` — ${p.notes}` : ''}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ) : null}
 
       {h.eventBus ? (
         <article className="panel wide" style={{ marginBottom: 16 }}>

@@ -1,10 +1,23 @@
 import Link from 'next/link';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
+import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { terminalGet } from '../../../lib/terminal-api';
 
 /**
- * Durable objective / OperatorRun history — survives refresh.
+ * Durable objective / OperatorRun history.
+ * Launch new runs from the right AI Operator rail — this page is history + open full result only.
  */
-export default async function ObjectivesPage() {
+export default async function ObjectivesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ caseId?: string; objective?: string }>;
+}) {
+  const sp = await searchParams;
+  const presetNote =
+    sp.objective?.trim() || sp.caseId?.trim()
+      ? 'Use the AI Operator rail on the right to run the prefilled objective; completed runs appear below.'
+      : null;
+
   const runs = await terminalGet<
     Array<{
       id: string;
@@ -18,50 +31,68 @@ export default async function ObjectivesPage() {
     }>
   >('/api/v1/ai/runs?take=30');
 
+  const rows = runs.ok ? runs.data : [];
+
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <h1 className="workspace-title-active">Objectives</h1>
-          <p className="lede">
-            Durable Execution Navigator records (OperatorRun). Each objective resolves to a
-            structured package: evidence, ranked options, plan, risks, and verification — not a
-            chat transcript.
-          </p>
-        </div>
-        <div className="terminal-toolbar">
-          <Link className="btn secondary" href="/terminal/live-examples">
+    <TerminalPageFrame
+      pill="Objectives · execution history"
+      title="Objectives"
+      lede="Durable OperatorRun records. Launch objectives from the AI Operator rail; open a row for the full briefing, evidence, and plan."
+      showRelatedNav={false}
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { label: 'Objectives' },
+      ]}
+      toolbar={
+        <>
+          <Link className="btn ghost" href="/terminal/live-examples">
             Live examples
           </Link>
-          <Link className="btn ghost" href="/terminal/ai">
-            AI workspace
+          <Link className="btn ghost" href="/terminal/process">
+            Cases
           </Link>
-        </div>
-      </header>
+        </>
+      }
+      error={runs.ok ? null : runs.error}
+    >
+      {presetNote ? (
+        <p className="meta" style={{ marginBottom: 12 }}>
+          {presetNote}
+          {sp.objective?.trim() ? (
+            <>
+              {' '}
+              Prefill: <strong>{sp.objective.trim().slice(0, 120)}</strong>
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
-      {!runs.ok ? <p className="form-error">{runs.error}</p> : null}
+      {rows.length === 0 && runs.ok ? (
+        <ProcessEmptyState
+          title="No runs yet"
+          body="Use the AI Operator panel on the right to state an objective. History appears here for audit and full-result review."
+          primaryHref="/terminal/process"
+          primaryLabel="Open cases"
+          secondaryHref="/terminal/live-examples"
+          secondaryLabel="Live examples"
+        />
+      ) : null}
 
-      <div className="table-wrap">
-        <table className="scanner-table" aria-label="Objective executions">
-          <thead>
-            <tr>
-              <th>Started</th>
-              <th>Status</th>
-              <th>Decision</th>
-              <th>Objective</th>
-              <th>Recs</th>
-              <th>Open</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(runs.ok ? runs.data : []).length === 0 ? (
+      {rows.length > 0 ? (
+        <div className="table-wrap">
+          <table className="scanner-table" aria-label="Objective executions">
+            <thead>
               <tr>
-                <td colSpan={6} className="empty">
-                  No objectives yet. Run a live example or open the AI panel.
-                </td>
+                <th>Started</th>
+                <th>Status</th>
+                <th>Decision</th>
+                <th>Objective</th>
+                <th>Recs</th>
+                <th>Open</th>
               </tr>
-            ) : (
-              (runs.ok ? runs.data : []).map((r) => (
+            </thead>
+            <tbody>
+              {rows.map((r) => (
                 <tr key={r.id}>
                   <td>{new Date(r.startedAt).toLocaleString()}</td>
                   <td>
@@ -75,15 +106,15 @@ export default async function ObjectivesPage() {
                   <td>{r.recommendations?.length ?? 0}</td>
                   <td>
                     <Link className="btn ghost" href={`/terminal/objectives/${r.id}`}>
-                      Open
+                      Full result
                     </Link>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </TerminalPageFrame>
   );
 }

@@ -1,15 +1,22 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { AiContextPanel } from '../ai/ai-context-panel';
 import { TerminalSidebar } from '../navigation/terminal-sidebar';
 import { CommandBar } from './command-bar';
+import {
+  AiOperatorProvider,
+  useAiOperator,
+} from '../../lib/ai-operator-context';
 import type { ResolvedWorkspace } from '../../lib/workspace';
 
 /**
- * Commerce OS shell: command bar · persona sidebar · workspace · AI panel
+ * Commerce OS shell:
+ *   Command bar · Persona sidebar · Main workspace · AI Operator rail
+ *
+ * AI is a persistent contextual capability — not a competing center page.
  */
-export function TerminalShell({
+function TerminalShellInner({
   children,
   founderDirect,
   orgName,
@@ -36,15 +43,17 @@ export function TerminalShell({
   logoutSlot?: ReactNode;
   workspace?: ResolvedWorkspace | null;
 }) {
-  const [aiOpen, setAiOpen] = useState(true);
+  const { open, setOpen, railMode, setRailMode } = useAiOperator();
 
   return (
-    <div className={`terminal-app ${aiOpen ? 'ai-open' : 'ai-closed'}`}>
+    <div
+      className={`terminal-app ${open ? 'ai-open' : 'ai-closed'} ai-rail-${railMode}`}
+      data-ai-rail={railMode}
+    >
       <CommandBar
         envLabel={process.env.NODE_ENV === 'production' ? 'prod' : 'local'}
         accessMode={accessMode}
         connectorSummary={connectorSummary}
-        orgName={orgName}
         founderSlot={founderSlot}
       />
       <div className="terminal-body">
@@ -63,11 +72,34 @@ export function TerminalShell({
           {children}
         </main>
         <AiContextPanel
-          open={aiOpen}
-          onToggle={() => setAiOpen((v) => !v)}
+          open={open}
+          onToggle={() => setOpen(!open)}
+          railMode={railMode}
+          onRailModeChange={setRailMode}
           workspace={workspace}
         />
       </div>
     </div>
+  );
+}
+
+export function TerminalShell(props: {
+  children: ReactNode;
+  founderDirect: boolean;
+  orgName: string;
+  email: string;
+  role: string;
+  segment?: string;
+  planTier?: string;
+  accessMode: string;
+  connectorSummary?: string;
+  founderSlot?: ReactNode;
+  logoutSlot?: ReactNode;
+  workspace?: ResolvedWorkspace | null;
+}) {
+  return (
+    <AiOperatorProvider>
+      <TerminalShellInner {...props} />
+    </AiOperatorProvider>
   );
 }

@@ -140,6 +140,16 @@ export type OperatorCycleResult = {
   timeline: TimelineStep[];
   sources: Array<{ name: string; status: string; detail?: string }>;
   responseSummary: string;
+  /**
+   * How the user-facing briefing was produced.
+   * cohere = Phase B model text only; blocked = honest failure (no fixed essay).
+   */
+  briefingSource?:
+    | 'cohere'
+    | 'blocked'
+    | 'empty_store'
+    | 'no_qualifiers'
+    | 'tools_structured';
   candidateStats: {
     retrieved: number;
     normalized: number;

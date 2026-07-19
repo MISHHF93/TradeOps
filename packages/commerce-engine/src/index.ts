@@ -20,3 +20,7 @@ export * from './data-provenance';
 export * from './production-isolation';
 export * from './intelligence-engine';
 export * from './workspace';
+export * from './business-objects';
+export * from './knowledge-graph';
+export * from './search-orchestration';
+export * from './object-workspace';

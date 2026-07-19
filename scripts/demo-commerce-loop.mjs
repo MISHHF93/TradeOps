@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Drive the full local commerce vertical slice against a running API.
- * Requires: AUTH_BYPASS + seed data (or prior import).
+ * Fixture/demo commerce vertical slice (paper path).
+ * For production-compatible operator + process path use instead:
+ *   pnpm production:loop
+ *   node scripts/production-commerce-loop.mjs
  *
  *   node scripts/demo-commerce-loop.mjs
  *   API_PUBLIC_URL=http://127.0.0.1:4000 node scripts/demo-commerce-loop.mjs

@@ -5,28 +5,28 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { FOUNDER_WORKSPACE_PATH } from '../../lib/access-mode';
 import { getApiBaseUrl } from '../../lib/api';
+import { CommandSearchResults } from './command-search-results';
 import { CommandPaletteHost } from './command-palette';
 import { ThemeToggle } from './theme-toggle';
 
 /**
  * Global Command Bar — accent on search focus / command gateway only.
- * Panels stay neutral.
+ * Live Search Manager typeahead with media previews.
  */
 export function CommandBar({
   envLabel = 'local',
   accessMode = 'founder_direct',
   connectorSummary,
-  orgName,
   founderSlot,
 }: {
   envLabel?: string;
   accessMode?: string;
   connectorSummary?: string;
-  orgName?: string;
   founderSlot?: ReactNode;
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
 
   async function onSearch(e: FormEvent) {
     e.preventDefault();
@@ -35,6 +35,26 @@ export function CommandBar({
     if (query.startsWith('/')) {
       router.push(query);
       return;
+    }
+    // Unified Search Layer — prefer object hits with provenance
+    try {
+      const searchRes = await fetch(
+        `${getApiBaseUrl()}/api/v1/search?q=${encodeURIComponent(query)}`,
+        { credentials: 'include', headers: { Accept: 'application/json' } },
+      );
+      if (searchRes.ok) {
+        const body = (await searchRes.json()) as {
+          hits?: Array<{ href?: string; objectType?: string; score?: number }>;
+        };
+        const top = body.hits?.[0];
+        if (top?.href && (top.score ?? 0) >= 0.35) {
+          setSearchFocused(false);
+          router.push(top.href);
+          return;
+        }
+      }
+    } catch {
+      /* fall through */
     }
     // AI-first navigation: server intent catalog when available
     try {
@@ -50,7 +70,7 @@ export function CommandBar({
         };
         if (body.href) {
           if (!body.matched && body.href.includes('/ai')) {
-            router.push(`/terminal/ai?objective=${encodeURIComponent(query)}`);
+            router.push(`/terminal/objectives?objective=${encodeURIComponent(query)}`);
             return;
           }
           router.push(body.href);
@@ -87,7 +107,7 @@ export function CommandBar({
       return;
     }
     if (lower.includes('ai') || lower.includes('operator')) {
-      router.push('/terminal/ai');
+      router.push('/terminal/objectives');
       return;
     }
     if (lower.includes('cash') || lower.includes('portfolio') || lower.includes('revenue')) {
@@ -116,26 +136,50 @@ export function CommandBar({
         <span className="command-bar-title">TradeOps</span>
       </Link>
 
-      <form className="command-bar-search" onSubmit={onSearch} role="search">
-        <label className="sr-only" htmlFor="global-search">
-          Global search
-        </label>
-        <input
-          id="global-search"
-          className={q.trim() ? 'filter-active' : undefined}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search or jump…"
-          autoComplete="off"
-          aria-describedby="search-kbd-hint"
-        />
-        <kbd id="search-kbd-hint" className="kbd-hint" title="Open full command palette">
-          ⌘K
-        </kbd>
-        <button type="submit" className="btn secondary" style={{ minHeight: 30, padding: '4px 10px' }}>
-          Go
-        </button>
-      </form>
+      <div className="command-bar-search-wrap">
+        <form className="command-bar-search" onSubmit={onSearch} role="search">
+          <label className="sr-only" htmlFor="global-search">
+            Global search
+          </label>
+          <input
+            id="global-search"
+            className={q.trim() ? 'filter-active' : undefined}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => {
+              // delay so click on hit registers
+              window.setTimeout(() => setSearchFocused(false), 180);
+            }}
+            placeholder="Search products, cases, media…"
+            autoComplete="off"
+            aria-describedby="search-kbd-hint"
+            aria-expanded={searchFocused && q.trim().length >= 2}
+            aria-controls="command-search-results"
+          />
+          <kbd id="search-kbd-hint" className="kbd-hint" title="Open full command palette">
+            ⌘K
+          </kbd>
+          <button
+            type="submit"
+            className="btn secondary"
+            style={{ minHeight: 32, padding: '4px 12px', borderRadius: 999 }}
+          >
+            Go
+          </button>
+        </form>
+        {searchFocused ? (
+          <div id="command-search-results">
+            <CommandSearchResults
+              query={q}
+              onNavigate={() => {
+                setSearchFocused(false);
+                setQ('');
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
 
       <div className="command-bar-actions">
         <CommandPaletteHost />
@@ -152,11 +196,6 @@ export function CommandBar({
           >
             <span className="conn-dot" aria-hidden />
             <span>{connectorSummary}</span>
-          </span>
-        ) : null}
-        {orgName ? (
-          <span className="meta" style={{ margin: 0, fontSize: '0.7rem', maxWidth: 120 }} title={orgName}>
-            {orgName}
           </span>
         ) : null}
         <ThemeToggle />

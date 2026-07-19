@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
 import { ProcessEmptyState } from '../../../components/feedback/process-empty-state';
 import { CompleteFulfillmentButton } from '../../../components/order-actions';
 import { formatMoney } from '../../../lib/money';
@@ -23,26 +24,30 @@ export default async function OrdersPage() {
   const rows = result.ok ? result.data : [];
 
   return (
-    <section>
-      <header className="terminal-header">
-        <div>
-          <p className="pill">Stage view · Sell → Source</p>
-          <h1>Orders</h1>
-          <p className="lede">
-            Customer sales orders (not supplier POs). Draft POs need approval. After delivery, advance
-            the Commerce Case to Reconcile on the Process board.
-          </p>
-        </div>
-        <div className="terminal-toolbar">
+    <TerminalPageFrame
+      pill="Stage view · Sell → Source"
+      title="Orders"
+      lede="Customer sales orders (not supplier POs). Draft POs need approval. After delivery, advance the Commerce Case to Reconcile on the Process board."
+      showStageStrip
+      currentStage="sell"
+      relatedPrimary="orders"
+      breadcrumbs={[
+        { href: '/terminal/workspace', label: 'Workspace' },
+        { href: '/terminal/process', label: 'Process' },
+        { label: 'Orders' },
+      ]}
+      toolbar={
+        <>
           <Link className="btn secondary" href="/terminal/fulfillment">
             Fulfillment
           </Link>
           <Link className="btn primary" href="/terminal/process">
             Process board
           </Link>
-        </div>
-      </header>
-      {!result.ok ? <p className="form-error">{result.error}</p> : null}
+        </>
+      }
+      error={result.ok ? null : result.error}
+    >
       {rows.length === 0 ? (
         <ProcessEmptyState
           title="No customer orders yet"
@@ -53,7 +58,8 @@ export default async function OrdersPage() {
           secondaryHref="/terminal/process"
           secondaryLabel="Process board"
         />
-      ) : null}
+      ) : (
+      <div className="table-wrap">
       <table className="scanner-table">
         <thead>
           <tr>
@@ -108,6 +114,8 @@ export default async function OrdersPage() {
           ))}
         </tbody>
       </table>
-    </section>
+      </div>
+      )}
+    </TerminalPageFrame>
   );
 }

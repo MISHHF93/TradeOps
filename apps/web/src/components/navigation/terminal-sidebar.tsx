@@ -4,18 +4,30 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import type { ResolvedWorkspace, WorkspaceNavGroup } from '../../lib/workspace';
-import { ThemeToggle } from '../layout/theme-toggle';
 
-/** Fallback when workspace API unavailable — minimal spine only */
+/** Fallback when workspace API unavailable — same spine as commerce-engine Focus */
+/** Offline fallback — BO spine only; AI is the right rail, not Focus. */
 const FALLBACK_NAV: WorkspaceNavGroup[] = [
   {
     id: 'focus',
     label: 'Focus',
     items: [
-      { id: 'home', href: '/terminal/workspace', label: 'Workspace', kind: 'procedure_hub' },
-      { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'resource' },
+      { id: 'home', href: '/terminal/workspace', label: 'Home', kind: 'procedure_hub' },
+      { id: 'discover', href: '/terminal', label: 'Discover', kind: 'procedure_step' },
+      { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
+      { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities', kind: 'procedure_step' },
       { id: 'tasks', href: '/terminal/tasks', label: 'Tasks', kind: 'resource' },
-      { id: 'ai', href: '/terminal/ai', label: 'AI', kind: 'resource' },
+    ],
+  },
+  {
+    id: 'more',
+    label: 'More',
+    items: [
+      { id: 'orders', href: '/terminal/orders', label: 'Orders', kind: 'procedure_step' },
+      { id: 'approvals', href: '/terminal/approvals', label: 'Approvals', kind: 'resource' },
+      { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
+      { id: 'connectors', href: '/terminal/connectors', label: 'Connectors', kind: 'resource' },
+      { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
     ],
   },
 ];
@@ -46,7 +58,6 @@ export function TerminalSidebar({
     () => (workspace?.nav?.length ? workspace.nav : FALLBACK_NAV),
     [workspace],
   );
-  // Collapse "More" by default — reduce cognitive load
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ more: true });
 
   function toggle(id: string) {
@@ -60,26 +71,17 @@ export function TerminalSidebar({
         <span>{workspace?.personaLabel ?? 'Commerce OS'}</span>
       </div>
 
-      <p className="meta" style={{ margin: '0 0 6px', fontSize: '0.68rem', lineHeight: 1.3 }}>
+      <p className="nav-principle">
         {workspace?.operatingPrinciple ?? 'One User · One Workspace · One Objective · One AI'}
       </p>
-      <p className="meta" style={{ margin: '0 0 8px', fontSize: '0.7rem' }}>
+      <p className="nav-meta-line">
         {workspace?.personaLabel ?? segment ?? '—'} · {planTier ?? '—'} · {role}
       </p>
 
       {workspace?.surface?.healthLabel || workspace?.recommendedNextAction ? (
-        <div
-          style={{
-            marginBottom: 10,
-            padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid var(--border, #333)',
-            fontSize: '0.8rem',
-            lineHeight: 1.35,
-          }}
-        >
+        <div className="nav-insight">
           {workspace.surface?.healthLabel ? (
-            <span className="meta" style={{ display: 'block', margin: '0 0 4px' }}>
+            <span className="meta" style={{ display: 'block', margin: 0 }}>
               Health <strong>{workspace.surface.healthLabel}</strong>
               {typeof workspace.surface.attentionScore === 'number'
                 ? ` · ${workspace.surface.attentionScore}/100`
@@ -87,7 +89,7 @@ export function TerminalSidebar({
             </span>
           ) : null}
           {workspace.recommendedNextAction ? (
-            <Link href={workspace.recommendedNextAction.href} className="nav-link" style={{ display: 'block' }}>
+            <Link href={workspace.recommendedNextAction.href}>
               <span className="meta" style={{ display: 'block', margin: 0 }}>
                 Next action
               </span>
@@ -99,9 +101,9 @@ export function TerminalSidebar({
           ) : null}
           {workspace.surface?.focusObjective ? (
             <Link
-              href={`/terminal/ai?objective=${encodeURIComponent(workspace.surface.focusObjective)}`}
+              href={`/terminal/objectives?objective=${encodeURIComponent(workspace.surface.focusObjective)}`}
               className="meta"
-              style={{ display: 'block', marginTop: 6 }}
+              style={{ display: 'block', marginTop: 2 }}
             >
               Run focus objective →
             </Link>
@@ -140,14 +142,10 @@ export function TerminalSidebar({
                           data-status={item.status}
                           data-kind={item.kind}
                         >
-                          {item.label}
+                          <span>{item.label}</span>
                           {item.badge ? (
-                            <span
-                              className="meta"
-                              style={{ marginLeft: 6, opacity: 0.85 }}
-                              aria-label={`${item.badge} pending`}
-                            >
-                              ({item.badge})
+                            <span className="nav-badge" aria-label={`${item.badge} pending`}>
+                              {item.badge}
                             </span>
                           ) : null}
                         </Link>
@@ -162,14 +160,10 @@ export function TerminalSidebar({
       </nav>
 
       <div className="terminal-nav-footer">
-        <p className="meta" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-          Need something else? Ask AI or open More.
-        </p>
-        <ThemeToggle />
-        <p className="meta" style={{ fontSize: '0.75rem', margin: '8px 0 0' }}>
+        <p className="meta" style={{ fontSize: '0.75rem', margin: 0, fontWeight: 600 }}>
           {orgName}
         </p>
-        <p className="meta" style={{ fontSize: '0.7rem' }}>
+        <p className="meta" style={{ fontSize: '0.7rem', margin: 0 }}>
           {email}
         </p>
         {showLogout ? logoutSlot : null}

@@ -129,10 +129,59 @@ export function resolveLoopMode(input?: {
   controlledLiveEnabled?: boolean;
 }): OperationLoopMode {
   if (input?.forceFixture) return 'fixture';
+  // Opt-in only: forceShadow must be explicitly true (callers must not coerce missing → true).
   if (input?.forceShadow) return 'shadow';
   if (input?.controlledLiveEnabled && input.hasLiveCredentials) return 'controlled_live';
+  // development = real DB/tool path (not fixture theater). Fixture *products* still label fixture.
   if (input?.hasLiveCredentials) return 'development';
   return 'development';
+}
+
+/**
+ * Env-based readiness hints for operator loopMode (not product dataMode).
+ * Any real vendor/AI/search key counts — not Google Merchant only.
+ */
+export function detectLiveCredentialHints(
+  env: NodeJS.ProcessEnv = process.env,
+): {
+  hasLiveCredentials: boolean;
+  hints: string[];
+} {
+  const checks: Array<[string, string | undefined]> = [
+    ['COHERE_API_KEY', env.COHERE_API_KEY?.trim() || env.CO_API_KEY?.trim()],
+    ['TAVILY_API_KEY', env.TAVILY_API_KEY?.trim()],
+    ['SHOPIFY_ACCESS_TOKEN', env.SHOPIFY_ACCESS_TOKEN?.trim()],
+    ['SHOPIFY_SHOP_DOMAIN', env.SHOPIFY_SHOP_DOMAIN?.trim()],
+    ['STRIPE_SECRET_KEY', env.STRIPE_SECRET_KEY?.trim()],
+    ['EASYPOST_API_KEY', env.EASYPOST_API_KEY?.trim()],
+    ['GOOGLE_MERCHANT_ACCESS_TOKEN', env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim()],
+    ['GOOGLE_MERCHANT_ID', env.GOOGLE_MERCHANT_ID?.trim()],
+    ['XAI_API_KEY', env.XAI_API_KEY?.trim()],
+  ];
+  const hints = checks.filter(([, v]) => Boolean(v)).map(([k]) => k);
+  // Google needs both token + id to count as merchant-ready; others count individually.
+  const hasGoogle =
+    Boolean(env.GOOGLE_MERCHANT_ACCESS_TOKEN?.trim()) &&
+    Boolean(env.GOOGLE_MERCHANT_ID?.trim());
+  const hasOther = checks.some(
+    ([k, v]) =>
+      Boolean(v) && k !== 'GOOGLE_MERCHANT_ACCESS_TOKEN' && k !== 'GOOGLE_MERCHANT_ID',
+  );
+  return {
+    hasLiveCredentials: hasOther || hasGoogle,
+    hints: hasGoogle
+      ? hints.includes('GOOGLE_MERCHANT_ID')
+        ? hints
+        : [...hints, 'GOOGLE_MERCHANT_ID']
+      : hints.filter((h) => h !== 'GOOGLE_MERCHANT_ACCESS_TOKEN' && h !== 'GOOGLE_MERCHANT_ID'),
+  };
+}
+
+/** Alias used by API host */
+export function detectOperatorLiveCredentials(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return detectLiveCredentialHints(env).hasLiveCredentials;
 }
 
 export function describeLoopModes(): Array<{ mode: OperationLoopMode; meaning: string }> {

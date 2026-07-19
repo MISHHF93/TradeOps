@@ -9,6 +9,7 @@ import { formatBps, formatMoney } from '../../lib/money';
 import type { ScannerRow } from '../../lib/terminal-api';
 
 type SortKey = keyof ScannerRow | 'stale';
+type ViewMode = 'table' | 'cards';
 
 function isStale(iso: string, maxAgeHours = 24): boolean {
   const ageMs = Date.now() - new Date(iso).getTime();
@@ -26,6 +27,7 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [view, setView] = useState<ViewMode>('table');
 
   const filtered = useMemo(() => {
     let list = rows;
@@ -103,7 +105,7 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
   );
 
   return (
-    <div>
+    <div className="scanner-root">
       <div className="scanner-filters" role="search" aria-label="Scanner filters">
         <input
           type="search"
@@ -126,6 +128,24 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
             </button>
           ))}
         </div>
+        <div className="scanner-view-toggle" role="group" aria-label="View mode">
+          <button
+            type="button"
+            className={`object-workspace-tab ${view === 'table' ? 'is-active' : ''}`}
+            aria-pressed={view === 'table'}
+            onClick={() => setView('table')}
+          >
+            Table
+          </button>
+          <button
+            type="button"
+            className={`object-workspace-tab ${view === 'cards' ? 'is-active' : ''}`}
+            aria-pressed={view === 'cards'}
+            onClick={() => setView('cards')}
+          >
+            Cards
+          </button>
+        </div>
         <span className="meta" aria-live="polite">
           {filtered.length} / {rows.length} rows
           {selectedId ? ' · selected' : ''}
@@ -137,7 +157,97 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
         </span>
       </div>
 
-      <div className="table-wrap">
+      {view === 'cards' ? (
+        <div className="scanner-card-grid" role="list">
+          {filtered.length === 0 ? (
+            <p className="meta">No rows match filters. Import fixture supplier if empty.</p>
+          ) : (
+            filtered.map((r) => {
+              const stale = isStale(r.lastDataUpdate);
+              const selected = selectedId === r.productId;
+              const comparing = compareIds.includes(r.productId);
+              return (
+                <article
+                  key={r.productId}
+                  role="listitem"
+                  className={[
+                    'scanner-card',
+                    stale ? 'is-stale' : '',
+                    selected ? 'is-selected' : '',
+                    comparing ? 'is-compare' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={(e) => selectRow(r.productId, e)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      selectRow(r.productId, e);
+                    }
+                  }}
+                  tabIndex={0}
+                >
+                  <Link
+                    href={`/terminal/products/${r.productId}`}
+                    className="scanner-card__media"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {r.primaryImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={r.primaryImageUrl}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span className="scanner-card__placeholder">
+                        {(r.product || '?').slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                    {r.mediaCount ? (
+                      <span className="scanner-card__media-count">{r.mediaCount} media</span>
+                    ) : null}
+                  </Link>
+                  <div className="scanner-card__body">
+                    <div className="scanner-card__top">
+                      <SignalBadge
+                        signal={r.currentSignal}
+                        href={`/terminal/products/${r.productId}`}
+                      />
+                      <strong className="scanner-card__score">{r.score}</strong>
+                    </div>
+                    <Link
+                      href={`/terminal/products/${r.productId}`}
+                      className="scanner-card__title"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {r.product}
+                    </Link>
+                    <p className="meta scanner-card__meta">
+                      {r.brand ? `${r.brand} · ` : ''}
+                      {r.category}
+                      {typeof r.rating === 'number' && r.rating > 0
+                        ? ` · ★ ${r.rating.toFixed(1)}`
+                        : ''}
+                    </p>
+                    <p className="scanner-card__econ">
+                      <Money minor={r.expectedNetProfitMinor} currency={r.currency} signed />
+                      <span className="meta"> · {formatBps(r.expectedMarginBps)} margin</span>
+                    </p>
+                    <p className="meta">
+                      {r.supplier} · {r.sourcePlatform}
+                      {stale ? ' · STALE' : ''}
+                    </p>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      ) : null}
+
+      <div className="table-wrap" hidden={view === 'cards'}>
         <table className="scanner-table" aria-label="Market scanner opportunities">
           <thead>
             <tr>
@@ -210,51 +320,34 @@ export function ScannerTable({ rows }: { rows: ScannerRow[] }) {
                     </td>
                     <td>{r.score}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 280 }}>
+                      <div className="scanner-product-cell">
                         {r.primaryImageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
+                            className="scanner-product-cell__thumb"
                             src={r.primaryImageUrl}
                             alt=""
                             width={40}
                             height={40}
-                            style={{
-                              width: 40,
-                              height: 40,
-                              objectFit: 'cover',
-                              borderRadius: 6,
-                              background: 'var(--surface-2, #111)',
-                              flexShrink: 0,
-                            }}
                             loading="lazy"
                             referrerPolicy="no-referrer"
                           />
                         ) : (
-                          <span
-                            aria-hidden
-                            style={{
-                              width: 40,
-                              height: 40,
-                              borderRadius: 6,
-                              background: 'var(--surface-2, #1a1f2a)',
-                              flexShrink: 0,
-                              display: 'inline-block',
-                            }}
-                          />
+                          <span className="scanner-product-cell__thumb scanner-product-cell__thumb--empty" aria-hidden>
+                            {(r.product || '?').slice(0, 1).toUpperCase()}
+                          </span>
                         )}
-                        <div style={{ minWidth: 0 }}>
+                        <div className="scanner-product-cell__text">
                           <Link href={`/terminal/products/${r.productId}`}>{r.product}</Link>
-                          {r.brand ? (
-                            <div className="meta" style={{ margin: 0 }}>
-                              {r.brand}
-                            </div>
-                          ) : null}
+                          {r.brand ? <div className="meta">{r.brand}</div> : null}
                           {typeof r.rating === 'number' && r.rating > 0 ? (
-                            <div className="meta" style={{ margin: 0 }}>
+                            <div className="meta">
                               ★ {r.rating.toFixed(1)}
                               {r.reviewCount != null ? ` · ${r.reviewCount} reviews` : ''}
                               {r.mediaCount ? ` · ${r.mediaCount} media` : ''}
                             </div>
+                          ) : r.mediaCount ? (
+                            <div className="meta">{r.mediaCount} media</div>
                           ) : null}
                         </div>
                       </div>

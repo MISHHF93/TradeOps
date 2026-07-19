@@ -56,7 +56,7 @@ export default async function WorkspaceIndexPage({ searchParams }: Props) {
             <Link className="btn primary" href={ws.homeHref}>
               Open {ws.personaLabel} home
             </Link>
-            <Link className="btn secondary" href="/terminal/ai">
+            <Link className="btn secondary" href="/terminal/objectives">
               Ask AI
             </Link>
             {ws.recommendedNextAction ? (

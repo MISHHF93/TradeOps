@@ -55,6 +55,40 @@ export type ConnectorStatus =
   | 'unhealthy'
   | 'disabled';
 
+/**
+ * Full connector fabric registration.
+ * Fixtures and live providers share this contract — platform code must not branch on vendor SDKs.
+ */
+export type ConnectorAuthRequirement = {
+  mode: 'none' | 'api_key' | 'oauth2' | 'basic' | 'approval_required' | 'sandbox_only';
+  /** Env keys or vault refs required before status can be `connected` */
+  credentialKeys: string[];
+  docsUrl?: string;
+  scopes?: string[];
+};
+
+export type ConnectorRateLimitPolicy = {
+  requestsPerMinute?: number;
+  burst?: number;
+  notes?: string;
+};
+
+export type ConnectorSyncSupport = {
+  webhooks: boolean;
+  polling: boolean;
+  defaultPollIntervalSeconds?: number;
+  supportsIncremental?: boolean;
+};
+
+export type ConnectorOperationContract = {
+  operation: string;
+  capability: ConnectorCapability | string;
+  idempotent: boolean;
+  approvalRequired: boolean;
+  /** Normalized entity produced (product, order, listing, …) */
+  produces?: string;
+};
+
 export type ConnectorManifest = {
   id: string;
   displayName: string;
@@ -63,6 +97,15 @@ export type ConnectorManifest = {
   isFixture: boolean;
   version: string;
   capabilities: ConnectorCapability[];
+  /** Optional fabric metadata — fixtures should populate for parity with live. */
+  auth?: ConnectorAuthRequirement;
+  rateLimit?: ConnectorRateLimitPolicy;
+  sync?: ConnectorSyncSupport;
+  operations?: ConnectorOperationContract[];
+  /** Official docs */
+  docsUrl?: string;
+  /** Health probe hint for ops center */
+  healthCheck?: 'credentials' | 'http_ping' | 'capability_probe' | 'none';
 };
 
 /**

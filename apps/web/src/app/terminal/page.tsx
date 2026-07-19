@@ -11,9 +11,10 @@ import { terminalGet, type ScannerRow } from '../../lib/terminal-api';
 export default async function ScannerPage() {
   const result = await terminalGet<ScannerRow[]>('/api/v1/terminal/scanner');
   const rows = result.ok ? result.data : [];
+  const withMedia = rows.filter((r) => r.primaryImageUrl).length;
 
   return (
-    <section>
+    <section className="terminal-page discover-page">
       <ProcessPageHeader
         pill={PROCESS_LABELS.discoverPill}
         title={PROCESS_LABELS.discoverTitle}
@@ -42,8 +43,9 @@ export default async function ScannerPage() {
           </p>
         </article>
       ) : (
-        <p className="meta" style={{ marginBottom: 12 }}>
-          {PROCESS_LABELS.nextStep}: open a product twin to evaluate, then continue on the{' '}
+        <p className="meta discover-page__lede">
+          {rows.length} opportunities · {withMedia} with media · Toggle <strong>Cards</strong> for
+          a visual grid. Open a product twin, then continue on the{' '}
           <Link href="/terminal/process">{PROCESS_LABELS.openProcess}</Link>.
         </p>
       )}

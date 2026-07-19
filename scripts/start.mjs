@@ -17,6 +17,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const isWin = process.platform === 'win32';
 const require = createRequire(import.meta.url);
 
+/**
+ * Load monorepo root `.env` into process.env.
+ * Matches packages/config loadDotEnvFiles policy:
+ * - never override non-empty existing process.env values
+ * - treat empty/whitespace process.env values as unset so file values can apply
+ *   (critical for COHERE_API_KEY when a shell exported an empty placeholder)
+ */
 function loadDotEnv() {
   const envPath = join(root, '.env');
   if (!existsSync(envPath)) return;
@@ -34,7 +41,10 @@ function loadDotEnv() {
     ) {
       val = val.slice(1, -1);
     }
-    if (process.env[key] === undefined) {
+    const cur = process.env[key];
+    const unset = cur === undefined;
+    const empty = typeof cur === 'string' && cur.trim() === '';
+    if (unset || empty) {
       process.env[key] = val;
     }
   }
@@ -95,11 +105,17 @@ function quoteWinArg(arg) {
 
 function run(command, args, name, env = {}) {
   // Windows: paths like C:\Program Files\nodejs\node.exe must be quoted for cmd.exe /c.
-  // Unquoted spawn spreads into argv and cmd treats C:\Program as the command (breaks PGlite auto-start).
+  // cmd /S /C strips the outermost quotes, so wrap the full cmdline in an extra pair.
+  // Without that, `"C:\Program Files\..."` becomes `C:\Program` and spawn fails.
   const child = isWin
     ? spawn(
         process.env.ComSpec || 'cmd.exe',
-        ['/d', '/s', '/c', [quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')],
+        [
+          '/d',
+          '/s',
+          '/c',
+          `"${[quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')}"`,
+        ],
         {
           cwd: root,
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -177,36 +193,110 @@ function portOpen(port, host = '127.0.0.1') {
 }
 
 /**
+ * TCP listen is not enough — zombie PGlite can hold the port without accepting Prisma.
+ */
+function prismaCanQuery(url) {
+  try {
+    const script = `
+      const { PrismaClient } = require('@prisma/client');
+      const p = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
+      p.$queryRawUnsafe('SELECT 1 AS x')
+        .then(() => p.$disconnect().then(() => process.exit(0)))
+        .catch(() => p.$disconnect().finally(() => process.exit(1)));
+    `;
+    execSync(`node -e ${JSON.stringify(script)}`, {
+      cwd: join(root, 'packages', 'database'),
+      env: { ...process.env, DATABASE_URL: url },
+      stdio: 'ignore',
+      timeout: 15_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ensureSchema(url) {
+  try {
+    console.log('Ensuring Prisma migrations are applied…');
+    execSync('pnpm --filter @tradeops/database migrate:deploy', {
+      cwd: root,
+      env: { ...process.env, DATABASE_URL: url },
+      stdio: 'inherit',
+      timeout: 120_000,
+    });
+  } catch (e) {
+    console.warn('migrate:deploy warning:', e instanceof Error ? e.message : e);
+  }
+  // Seed founder + fixture products if org table empty / missing seed data
+  try {
+    const check = `
+      const { PrismaClient } = require('@prisma/client');
+      const p = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
+      p.organization.count()
+        .then((n) => p.$disconnect().then(() => process.exit(n > 0 ? 0 : 2)))
+        .catch(() => p.$disconnect().finally(() => process.exit(2)));
+    `;
+    try {
+      execSync(`node -e ${JSON.stringify(check)}`, {
+        cwd: join(root, 'packages', 'database'),
+        env: { ...process.env, DATABASE_URL: url },
+        stdio: 'ignore',
+        timeout: 15_000,
+      });
+      console.log('Seed data present (organizations found).');
+    } catch {
+      console.log('No orgs found — running seed…');
+      execSync('pnpm --filter @tradeops/database seed', {
+        cwd: root,
+        env: { ...process.env, DATABASE_URL: url },
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+    }
+  } catch (e) {
+    console.warn('seed check warning:', e instanceof Error ? e.message : e);
+  }
+}
+
+/**
  * Ensure a reachable Postgres for the vertical slice.
- * Prefers existing DATABASE_URL; if that port is down, starts Prisma Dev (PGlite).
+ * Prefers existing DATABASE_URL; if that port is down or zombie, starts Prisma Dev (PGlite).
  */
 async function ensureDatabase() {
   const currentUrl =
     process.env.DATABASE_URL ||
     'postgresql://tradeops:tradeops@127.0.0.1:5432/tradeops?schema=public';
   const port = parseDatabasePort(currentUrl);
-  if (await portOpen(port)) {
-    console.log(`Database reachable at port ${port}`);
+  if ((await portOpen(port)) && prismaCanQuery(currentUrl)) {
+    console.log(`Database healthy at port ${port}`);
+    ensureSchema(currentUrl);
     return currentUrl;
   }
 
-  console.log(`Database not reachable on port ${port} — starting Prisma Dev (PGlite)…`);
+  if (await portOpen(port)) {
+    console.warn(
+      `Port ${port} is open but Prisma cannot query — starting/repairing Prisma Dev (PGlite)…`,
+    );
+  } else {
+    console.log(`Database not reachable on port ${port} — starting Prisma Dev (PGlite)…`);
+  }
+
   const dbPort = Number(process.env.PRISMA_DEV_DB_PORT || 51214);
   const pgliteUrl = `postgresql://postgres:postgres@127.0.0.1:${dbPort}/template1?schema=public&sslmode=disable&pgbouncer=true&connection_limit=5`;
 
-  if (!(await portOpen(dbPort))) {
-    // Fire-and-forget long-lived PGlite process.
-    run(process.execPath, [join(root, 'scripts', 'prisma-dev-db.mjs')], 'db');
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      if (await portOpen(dbPort)) break;
-    }
+  // Fire-and-forget long-lived PGlite process (script kills zombies itself).
+  run(process.execPath, [join(root, 'scripts', 'prisma-dev-db.mjs')], 'db');
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    if ((await portOpen(dbPort)) && prismaCanQuery(pgliteUrl)) break;
   }
 
-  if (!(await portOpen(dbPort))) {
+  if (!(await portOpen(dbPort)) || !prismaCanQuery(pgliteUrl)) {
     console.error(
-      'Could not start local database. Options:\n' +
+      'Could not start a healthy local database. Options:\n' +
         '  • pnpm run db:pglite   (Prisma PGlite — works under App Control)\n' +
+        '  • then: pnpm --filter @tradeops/database migrate:deploy && pnpm db:seed\n' +
         '  • docker compose up -d\n' +
         '  • Set DATABASE_URL to a hosted Postgres (Neon/Supabase)',
     );
@@ -215,6 +305,7 @@ async function ensureDatabase() {
 
   process.env.DATABASE_URL = pgliteUrl;
   console.log(`Using Prisma Dev DATABASE_URL on port ${dbPort}`);
+  ensureSchema(pgliteUrl);
   return pgliteUrl;
 }
 

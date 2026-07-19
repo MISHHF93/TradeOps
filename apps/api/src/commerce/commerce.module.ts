@@ -11,11 +11,16 @@ import { ConnectorOpsService } from './connector-ops.service';
 import { EcosystemService } from './ecosystem.service';
 import { LiveConnectorService } from './live-connector.service';
 import { OpsSyncScheduler } from './ops-sync.scheduler';
+import { SearchService } from './search.service';
 import { WorkspaceService } from './workspace.service';
+import { DiagnosticsController } from '../ops/diagnostics.controller';
+import { DiagnosticsService } from '../ops/diagnostics.service';
+import { RedisModule } from '../redis/redis.module';
+import { LifecyclePathService } from './lifecycle-path.service';
 
 @Module({
-  imports: [IdentityModule, forwardRef(() => BillingModule)],
-  controllers: [CommerceController],
+  imports: [IdentityModule, RedisModule, forwardRef(() => BillingModule)],
+  controllers: [CommerceController, DiagnosticsController],
   providers: [
     CommerceService,
     ArtifactService,
@@ -27,6 +32,9 @@ import { WorkspaceService } from './workspace.service';
     ConnectorOpsService,
     EventFabricService,
     OpsSyncScheduler,
+    SearchService,
+    DiagnosticsService,
+    LifecyclePathService,
   ],
   exports: [
     CommerceService,
@@ -37,6 +45,9 @@ import { WorkspaceService } from './workspace.service';
     CommerceRuntimeService,
     LiveConnectorService,
     ConnectorOpsService,
+    SearchService,
+    DiagnosticsService,
+    LifecyclePathService,
   ],
 })
 export class CommerceModule {}

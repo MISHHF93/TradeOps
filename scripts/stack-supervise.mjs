@@ -24,6 +24,7 @@ import {
   apiHealthy,
   clearStaleSupervisorLock,
   dbHealthy,
+  ensureDbSchema,
   freePort,
   isPidAlive,
   isWin,
@@ -175,8 +176,26 @@ async function ensureStack(env) {
       }
       report.db = ok ? 'restarted' : 'failed';
       if (!ok) logLine('DB failed to become queryable after restart');
-      else logLine('DB became queryable after restart');
+      else {
+        logLine('DB became queryable after restart');
+        // Hard reset often wipes tables — re-apply schema before bringing API back
+        try {
+          if (!ensureDbSchema(env)) logLine('DB schema ensure failed after restart');
+        } catch (e) {
+          logLine(`DB schema ensure error: ${e instanceof Error ? e.message : e}`);
+        }
+      }
       dbOk = ok;
+    }
+  } else {
+    // DB up but empty (0 tables) — apply schema without bouncing PGlite
+    try {
+      if (!ensureDbSchema(env)) {
+        report.db = 'schema_missing';
+        logLine('DB queryable but schema missing — db push failed');
+      }
+    } catch (e) {
+      logLine(`DB schema check error: ${e instanceof Error ? e.message : e}`);
     }
   }
 

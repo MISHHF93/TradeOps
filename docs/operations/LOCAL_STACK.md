@@ -58,10 +58,19 @@ Open: **http://127.0.0.1:3000**
 
 `.stack-logs/` — `db|api|web.out/err.log`, `supervisor.log`, `supervisor.heartbeat`, `watchdog.lock`
 
-## API “degraded”
+## API “degraded” / “Database request failed… migrations”
 
 - **Redis down** → optional locally; UI/operator still work.
 - **Postgres down** → stack is actually broken; supervisor should bring PGlite back within ~30–90s. If not: `pnpm stack:up --force`.
+- **`table users does not exist` / 503 migrations message** → PGlite data dir was wiped (hard reset) and schema was empty.  
+  `pnpm stack:up` now runs **`prisma db push`** when the `users` table is missing. Manual fix:
+
+  ```bash
+  pnpm stack:up
+  # or
+  pnpm --filter @tradeops/database exec prisma db push
+  pnpm db:seed
+  ```
 
 ## Recovery checklist
 

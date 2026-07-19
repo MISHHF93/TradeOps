@@ -14,6 +14,7 @@ import {
   apiHealthy,
   clearStaleSupervisorLock,
   dbHealthy,
+  ensureDbSchema,
   freePort,
   loadDotEnv,
   nodeBin,
@@ -87,6 +88,12 @@ async function main() {
     console.log(`OK PGlite queryable :${ports.db}`);
   } else {
     console.log(`OK PGlite already queryable :${ports.db}`);
+  }
+
+  // 1b) Schema — empty PGlite after hard reset has 0 tables (causes 503 "migrations are applied")
+  if (!ensureDbSchema(env)) {
+    console.error('FAIL database schema missing. Run: pnpm --filter @tradeops/database exec prisma db push');
+    process.exit(1);
   }
 
   // 2) API

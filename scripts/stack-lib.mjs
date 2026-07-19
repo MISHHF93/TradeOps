@@ -124,6 +124,82 @@ export async function dbHealthy(env = {}) {
   return dbQueryable(env);
 }
 
+function resolvePrismaEntry() {
+  const candidates = [
+    join(root, 'packages', 'database', 'node_modules', 'prisma', 'build', 'index.js'),
+    join(root, 'node_modules', 'prisma', 'build', 'index.js'),
+    join(root, 'node_modules', '.pnpm', 'node_modules', 'prisma', 'build', 'index.js'),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+/**
+ * True when core identity tables exist (empty PGlite after hard reset has 0 tables).
+ */
+export function dbHasSchema(env = {}) {
+  const ports = stackPorts(env);
+  const url =
+    env.DATABASE_URL ||
+    `postgresql://postgres:postgres@127.0.0.1:${ports.db}/template1?schema=public&sslmode=disable&pgbouncer=true&connection_limit=5`;
+  const script = `
+    const { PrismaClient } = require('@prisma/client');
+    const p = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
+    p.$queryRawUnsafe("SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='users'")
+      .then((rows) => p.$disconnect().then(() => process.exit(rows && rows.length ? 0 : 2)))
+      .catch(() => p.$disconnect().finally(() => process.exit(1)));
+  `;
+  const r = spawnSync(nodeBin, ['-e', script], {
+    cwd: join(root, 'packages', 'database'),
+    encoding: 'utf8',
+    env: { ...process.env, DATABASE_URL: url },
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  return r.status === 0;
+}
+
+/**
+ * After PGlite hard-reset the data dir can come back empty (0 tables) while TCP is fine.
+ * Apply schema via `prisma db push` (more reliable on Prisma Dev/PGlite than migrate deploy).
+ */
+export function ensureDbSchema(env = {}) {
+  if (dbHasSchema(env)) {
+    console.log('OK DB schema present (users table)');
+    return true;
+  }
+  const prismaEntry = resolvePrismaEntry();
+  const schema = join(root, 'packages', 'database', 'prisma', 'schema.prisma');
+  if (!prismaEntry || !existsSync(schema)) {
+    console.error('Cannot ensure schema: prisma CLI or schema.prisma missing');
+    return false;
+  }
+  const ports = stackPorts(env);
+  const url =
+    env.DATABASE_URL ||
+    `postgresql://postgres:postgres@127.0.0.1:${ports.db}/template1?schema=public&sslmode=disable&pgbouncer=true&connection_limit=1&connect_timeout=0`;
+  console.log('DB schema missing — applying Prisma schema (db push)…');
+  const r = spawnSync(
+    nodeBin,
+    [prismaEntry, 'db', 'push', '--schema', schema, '--accept-data-loss', '--skip-generate'],
+    {
+      cwd: join(root, 'packages', 'database'),
+      encoding: 'utf8',
+      env: { ...process.env, DATABASE_URL: url },
+      timeout: 120_000,
+      windowsHide: true,
+    },
+  );
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  const ok = dbHasSchema(env);
+  if (ok) console.log('OK DB schema applied');
+  else console.error('FAIL DB schema still missing after db push');
+  return ok;
+}
+
 export function writeLauncher(name, workDir, commandLine, envMap) {
   const out = join(logDir, `${name}.out.log`);
   const err = join(logDir, `${name}.err.log`);

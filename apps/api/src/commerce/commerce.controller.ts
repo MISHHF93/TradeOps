@@ -698,6 +698,20 @@ export class CommerceController {
     );
   }
 
+  /** AI product category classification (rules + optional xAI) — proposal only */
+  @Post('products/:productId/classify')
+  @RequirePermissions('products:read', 'ai:read')
+  classifyProduct(
+    @CurrentAuth() auth: AuthContext,
+    @Param('productId', ParseUUIDPipe) productId: string,
+    @Body() body: { useXai?: boolean },
+  ) {
+    this.requireOrg(auth);
+    return this.artifacts.classifyProduct(auth.activeOrganizationId!, productId, {
+      useXai: body?.useXai !== false,
+    });
+  }
+
   @Get('products/:productId/artifacts/listing-media-plan')
   @RequirePermissions('products:read')
   listingMediaPlan(
@@ -888,9 +902,11 @@ export class CommerceController {
 
   private requireOrg(auth: AuthContext): asserts auth is AuthContext & {
     activeOrganizationId: string;
+    tenant: NonNullable<AuthContext['tenant']>;
+    membershipId: string;
   } {
-    if (!auth.activeOrganizationId) {
-      throw new BadRequestException('Active organization required');
+    if (!auth.activeOrganizationId || !auth.tenant || !auth.membershipId) {
+      throw new BadRequestException('Active organization membership required');
     }
   }
 }

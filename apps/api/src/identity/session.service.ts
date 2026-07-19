@@ -102,4 +102,29 @@ export class SessionService {
       data: { activeOrganizationId: organizationId },
     });
   }
+
+  async setActiveWorkspace(sessionId: string, workspaceId: string | null): Promise<void> {
+    await this.prisma.client.session.update({
+      where: { id: sessionId },
+      data: { activeWorkspaceId: workspaceId },
+    });
+  }
+
+  async setActiveTenant(
+    sessionId: string,
+    organizationId: string | null,
+    workspaceId: string | null,
+  ): Promise<void> {
+    // Synthetic founder session is not a DB row
+    if (sessionId === '00000000-0000-4000-a000-0000000000f1') {
+      return;
+    }
+    await this.prisma.client.session.update({
+      where: { id: sessionId },
+      data: {
+        activeOrganizationId: organizationId,
+        activeWorkspaceId: workspaceId,
+      },
+    });
+  }
 }

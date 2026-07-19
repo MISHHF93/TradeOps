@@ -125,7 +125,9 @@ async function main() {
 
   await must('product artifacts list (when products exist)', async () => {
     const scan = await json(`${API}/api/v1/terminal/scanner`);
-    const products = Array.isArray(scan) ? scan : scan.products || [];
+    const products = Array.isArray(scan)
+      ? scan
+      : scan.items || scan.products || [];
     if (!products.length) {
       console.log('      skipped (no products — run fixture import or demo:loop)');
       return;
@@ -187,7 +189,9 @@ async function main() {
 
   await must('commerce case by product (when products exist)', async () => {
     const scan = await json(`${API}/api/v1/terminal/scanner`);
-    const products = Array.isArray(scan) ? scan : scan.products || [];
+    const products = Array.isArray(scan)
+      ? scan
+      : scan.items || scan.products || [];
     if (!products.length) {
       console.log('      skipped (no products)');
       return;

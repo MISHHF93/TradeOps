@@ -23,12 +23,13 @@ export default function GlobalError({
         <h1 style={{ fontSize: '1.25rem' }}>TradeOps failed to load</h1>
         <p style={{ opacity: 0.85 }}>{error?.message ?? 'Unknown error'}</p>
         <p style={{ opacity: 0.7, fontSize: '0.9rem' }}>
-          If you just rebuilt the app, hard-refresh (Ctrl+Shift+R) or clear the tab cache.
+          If you just rebuilt the app, hard-refresh (Ctrl+Shift+R) or clear the tab cache, then open
+          Workspace.
         </p>
         <button
           type="button"
           onClick={() => {
-            window.location.href = '/terminal/cockpit';
+            window.location.href = '/terminal/workspace';
           }}
           style={{
             marginTop: 16,
@@ -40,7 +41,7 @@ export default function GlobalError({
             cursor: 'pointer',
           }}
         >
-          Reload workspace
+          Open workspace
         </button>
         <button
           type="button"

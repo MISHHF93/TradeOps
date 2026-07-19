@@ -261,7 +261,7 @@ export const TERMINAL_ROUTES: TerminalRoute[] = [
     apis: ['/api/v1/finance/disputes'],
   },
 
-  // —— AI / run history (AI Operator is the right rail, not a primary page) ——
+  // —— AI (rail is the composer; these pages are platform + durable history) ——
   {
     id: 'objectives',
     path: '/terminal/objectives',
@@ -284,14 +284,26 @@ export const TERMINAL_ROUTES: TerminalRoute[] = [
   {
     id: 'ai',
     path: '/terminal/ai',
-    label: 'AI Operator (legacy)',
+    label: 'AI platform',
     group: 'ai',
-    kind: 'legacy_redirect',
-    redirectTo: '/terminal/objectives',
-    command: false,
+    kind: 'canonical',
+    command: true,
     related: false,
-    relatedId: 'ai',
-    apis: ['/api/v1/ai/operator/run', '/api/v1/ai/runs'],
+    apis: [
+      '/api/v1/ai/chat',
+      '/api/v1/ai/tools',
+      '/api/v1/ai/runs',
+      '/api/v1/ai/operator/run',
+    ],
+  },
+  {
+    id: 'ai-runtime-lab',
+    path: '/terminal/ai/runtime-lab',
+    label: 'AI runtime lab',
+    group: 'ai',
+    kind: 'canonical',
+    command: true,
+    apis: ['/api/v1/ai/chat', '/api/v1/ai/health'],
   },
   {
     id: 'live-examples',
@@ -304,6 +316,24 @@ export const TERMINAL_ROUTES: TerminalRoute[] = [
   },
 
   // —— Platform ——
+  {
+    id: 'ops',
+    path: '/terminal/ops',
+    label: 'Ops Center',
+    group: 'platform',
+    kind: 'canonical',
+    command: true,
+    apis: ['/api/v1/ops/command-center', '/api/v1/ops/connectors/health'],
+  },
+  {
+    id: 'integrations',
+    path: '/terminal/integrations',
+    label: 'Integration Hub',
+    group: 'platform',
+    kind: 'canonical',
+    command: true,
+    apis: ['/api/v1/ops/connectors/production', '/api/v1/saas/tenant'],
+  },
   {
     id: 'connectors',
     path: '/terminal/connectors',
@@ -344,6 +374,24 @@ export const TERMINAL_ROUTES: TerminalRoute[] = [
     command: true,
     apis: ['/api/v1/saas/agency/clients'],
   },
+  {
+    id: 'industrial',
+    path: '/terminal/industrial',
+    label: 'Industrial commerce',
+    group: 'platform',
+    kind: 'canonical',
+    command: true,
+    apis: ['/api/v1/commerce/industrial'],
+  },
+  {
+    id: 'industrial-products',
+    path: '/terminal/industrial/products',
+    label: 'Industrial catalog',
+    group: 'platform',
+    kind: 'canonical',
+    command: true,
+    apis: ['/api/v1/commerce/industrial'],
+  },
 
   // —— Legacy only (not in nav / palette) ——
   {
@@ -366,9 +414,9 @@ export const TERMINAL_ROUTES: TerminalRoute[] = [
     id: 'legacy-control-tower',
     path: '/terminal/control-tower',
     label: 'Control tower (legacy)',
-    group: 'intelligence',
+    group: 'platform',
     kind: 'legacy_redirect',
-    redirectTo: '/terminal/workspace/executive',
+    redirectTo: '/terminal/ops',
   },
 ];
 

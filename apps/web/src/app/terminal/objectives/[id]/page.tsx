@@ -44,6 +44,7 @@ type ExecutionPackage = {
 type RunDetail = {
   id: string;
   objective: string;
+  description?: string | null;
   status: string;
   decision: string | null;
   decisionNote: string | null;
@@ -56,6 +57,7 @@ type RunDetail = {
     responseSummary?: string;
     finalAnswer?: string;
     navigatorSummary?: string;
+    userObjective?: string;
     candidateStats?: { retrieved: number; ranked: number; normalized: number };
     filtersApplied?: Record<string, unknown>;
     objectiveType?: string;
@@ -129,7 +131,21 @@ export default async function ObjectiveDetailPage({
       <div className="detail-grid">
         <article className="panel">
           <h2>Objective</h2>
-          <p>{run.objective}</p>
+          <p>
+            <strong>{run.objective || '—'}</strong>
+          </p>
+          <h3 style={{ marginTop: 12, fontSize: '0.95rem' }}>Description</h3>
+          <p className="meta">
+            {(
+              run.description ??
+              plan.navigatorSummary ??
+              plan.responseSummary ??
+              plan.finalAnswer ??
+              run.decisionNote ??
+              ''
+            ).trim() ||
+              'No outcome summary for this run yet. System prompts are never shown here.'}
+          </p>
           <ul className="kv">
             <li>
               <span>Type</span>

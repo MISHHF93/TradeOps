@@ -1,9 +1,13 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import type { CustomerSegment, WorkspacePersona } from '@tradeops/saas-entitlements';
 import { CurrentAuth, RequirePermissions } from '../identity/decorators';
+import { requireOrgId } from '../identity/require-tenant';
 import type { AuthContext } from '../identity/types';
 import { SaasService } from './saas.service';
 
+/**
+ * SaaS surface — always tenant-scoped via server-resolved membership (requireOrgId).
+ */
 @Controller('saas')
 export class SaasController {
   constructor(private readonly saas: SaasService) {}
@@ -17,10 +21,8 @@ export class SaasController {
   @Get('tenant')
   @RequirePermissions('org:read')
   tenant(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) {
-      return { error: 'No active organization' };
-    }
-    return this.saas.getTenantContext(auth.activeOrganizationId, auth.userId);
+    const organizationId = requireOrgId(auth);
+    return this.saas.getTenantContext(organizationId, auth.userId);
   }
 
   @Post('onboarding')
@@ -36,10 +38,8 @@ export class SaasController {
       workspacePersona?: WorkspacePersona;
     },
   ) {
-    if (!auth.activeOrganizationId) {
-      return { error: 'No active organization' };
-    }
-    return this.saas.updateOnboarding(auth.activeOrganizationId, auth.userId, body);
+    const organizationId = requireOrgId(auth);
+    return this.saas.updateOnboarding(organizationId, auth.userId, body);
   }
 
   @Put('workspace-persona')
@@ -48,21 +48,17 @@ export class SaasController {
     @CurrentAuth() auth: AuthContext,
     @Body() body: { workspacePersona?: WorkspacePersona },
   ) {
-    if (!auth.activeOrganizationId || !body.workspacePersona) {
-      return { error: 'organization and workspacePersona required' };
+    const organizationId = requireOrgId(auth);
+    if (!body.workspacePersona) {
+      return { error: 'workspacePersona required' };
     }
-    return this.saas.setWorkspacePersona(
-      auth.activeOrganizationId,
-      auth.userId,
-      body.workspacePersona,
-    );
+    return this.saas.setWorkspacePersona(organizationId, auth.userId, body.workspacePersona);
   }
 
   @Get('founder-cockpit')
   @RequirePermissions('analytics:read', 'products:read')
   founderCockpit(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.founderCockpit(auth.activeOrganizationId);
+    return this.saas.founderCockpit(requireOrgId(auth));
   }
 
   @Get('channel-profitability/:productId')
@@ -71,15 +67,13 @@ export class SaasController {
     @CurrentAuth() auth: AuthContext,
     @Param('productId', ParseUUIDPipe) productId: string,
   ) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.channelProfitability(auth.activeOrganizationId, productId);
+    return this.saas.channelProfitability(requireOrgId(auth), productId);
   }
 
   @Get('agentic-readiness')
   @RequirePermissions('analytics:read', 'products:read')
   agenticTenant(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.agenticReadiness(auth.activeOrganizationId);
+    return this.saas.agenticReadiness(requireOrgId(auth));
   }
 
   @Get('agentic-readiness/:productId')
@@ -88,15 +82,13 @@ export class SaasController {
     @CurrentAuth() auth: AuthContext,
     @Param('productId', ParseUUIDPipe) productId: string,
   ) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.agenticReadiness(auth.activeOrganizationId, productId);
+    return this.saas.agenticReadiness(requireOrgId(auth), productId);
   }
 
   @Get('control-tower')
   @RequirePermissions('analytics:read')
   controlTower(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.controlTower(auth.activeOrganizationId);
+    return this.saas.controlTower(requireOrgId(auth));
   }
 
   @Get('atp/:productId')
@@ -105,22 +97,19 @@ export class SaasController {
     @CurrentAuth() auth: AuthContext,
     @Param('productId', ParseUUIDPipe) productId: string,
   ) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.productAtp(auth.activeOrganizationId, productId);
+    return this.saas.productAtp(requireOrgId(auth), productId);
   }
 
   @Get('customers/intelligence')
   @RequirePermissions('analytics:read', 'orders:read')
   customers(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.customerIntelligenceFromOrders(auth.activeOrganizationId);
+    return this.saas.customerIntelligenceFromOrders(requireOrgId(auth));
   }
 
   @Get('agency/clients')
   @RequirePermissions('org:read')
   agencyClients(@CurrentAuth() auth: AuthContext) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
-    return this.saas.listAgencyClients(auth.activeOrganizationId, auth.userId);
+    return this.saas.listAgencyClients(requireOrgId(auth), auth.userId);
   }
 
   @Post('agency/clients')
@@ -129,9 +118,9 @@ export class SaasController {
     @CurrentAuth() auth: AuthContext,
     @Body() body: { name?: string },
   ) {
-    if (!auth.activeOrganizationId) return { error: 'No active organization' };
+    const organizationId = requireOrgId(auth);
     if (!body.name?.trim()) return { error: 'name required' };
-    return this.saas.createAgencyClient(auth.activeOrganizationId, auth.userId, {
+    return this.saas.createAgencyClient(organizationId, auth.userId, {
       name: body.name,
     });
   }

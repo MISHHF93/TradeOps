@@ -34,6 +34,18 @@ Implementation:
 
 ---
 
+## Hybrid sidebar (current product)
+
+```text
+Focus     — persona primary (5–7) · always open
+Operate   — Discover · Cases · Tasks · Orders · Approvals · Opportunities · Fulfillment
+Platform  — Connectors · Ecosystem · Automations · System · Billing · Capability status
+More      — persona extras + procedure deep-links · collapsed by default
+```
+
+Implementation: `buildPersonaNav` in `packages/commerce-engine/src/workspace.ts`.  
+Client offline mirror: `apps/web/src/lib/nav-catalog.ts` (never collapse to four links).
+
 ## Personas (6)
 
 | Persona | Focus (sidebar) | Home |
@@ -45,7 +57,8 @@ Implementation:
 | Developer | Home, Connectors, Runtime, Automations, AI | `/terminal/workspace/developer` |
 | Administrator | Home, Personas, Billing, System, AI | `/terminal/workspace/administrator` |
 
-**More** (collapsed by default): secondary destinations + procedure deep-links.
+**Operate** and **Platform** are always visible (deduped against Focus).  
+**More** (collapsed by default): industrial, watchlist, objectives, switch persona, procedures.
 
 ---
 

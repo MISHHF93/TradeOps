@@ -106,4 +106,16 @@ describe('intelligence engine', () => {
     );
     assert.ok(insights.some((i) => i.id === 'ins-empty'));
   });
+
+  it('flags fixture-majority mixed catalogs as KPI skew risk', () => {
+    const insights = generateInsights(
+      base({
+        productCount: 12,
+        fixtureProductCount: 8,
+        liveProductCount: 4,
+        liveConnectorCount: 1,
+      }),
+    );
+    assert.ok(insights.some((i) => i.id === 'ins-fixture-skew'));
+  });
 });

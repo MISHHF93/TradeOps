@@ -28,8 +28,20 @@ export default async function TerminalLayout({ children }: { children: ReactNode
     organization?: { segment?: string; planTier?: string; name?: string };
   }>('/api/v1/saas/tenant');
 
+  const tenancyCtx = await terminalGet<{
+    organizationSlug?: string;
+    organizationName?: string;
+    workspaceSlug?: string;
+    workspaceName?: string;
+    commerceMode?: string;
+    tenantId?: string;
+    role?: string;
+  }>('/api/v1/tenancy/context');
+
   const workspaceRes = await terminalGet<ResolvedWorkspace>('/api/v1/workspace');
   const workspace = workspaceRes.ok ? workspaceRes.data : null;
+  const navSource: 'workspace' | 'fallback' =
+    workspaceRes.ok && workspace?.nav?.length ? 'workspace' : 'fallback';
 
   const connectors = await terminalGet<Array<{ status?: string; isFixture?: boolean }>>(
     '/api/v1/connectors',
@@ -61,6 +73,7 @@ export default async function TerminalLayout({ children }: { children: ReactNode
 
   const orgName =
     session?.activeOrganization?.name ??
+    (tenancyCtx.ok ? tenancyCtx.data.organizationName : null) ??
     workspace?.organizationName ??
     (tenant.ok ? tenant.data.organization?.name : null) ??
     (founder ? 'TradeOps Founder Workspace' : 'No org');
@@ -70,8 +83,18 @@ export default async function TerminalLayout({ children }: { children: ReactNode
     (founder ? 'founder@tradeops.local' : 'No session');
   const role =
     session?.activeRole ??
+    (tenancyCtx.ok ? tenancyCtx.data.role : null) ??
     (tenant.ok ? tenant.data.membership?.role : null) ??
     (founder ? 'owner' : '—');
+  const tenantLabel =
+    (tenancyCtx.ok ? tenancyCtx.data.organizationSlug : null) ??
+    (tenancyCtx.ok && tenancyCtx.data.tenantId
+      ? tenancyCtx.data.tenantId.slice(0, 8)
+      : null);
+  const workspaceLabel =
+    (tenancyCtx.ok ? tenancyCtx.data.workspaceName || tenancyCtx.data.workspaceSlug : null) ??
+    null;
+  const commerceMode = tenancyCtx.ok ? tenancyCtx.data.commerceMode ?? null : null;
 
   const simulationMode =
     process.env.TRADEOPS_SIMULATION_MODE === '1' ||
@@ -94,6 +117,10 @@ export default async function TerminalLayout({ children }: { children: ReactNode
       accessMode={mode}
       connectorSummary={connectorSummary}
       workspace={workspace}
+      tenantLabel={tenantLabel}
+      workspaceLabel={workspaceLabel}
+      commerceMode={commerceMode}
+      navSource={navSource}
       founderSlot={
         founder ? <FounderMenu email={email} orgName={orgName} /> : undefined
       }

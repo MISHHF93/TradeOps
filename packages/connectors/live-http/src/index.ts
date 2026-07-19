@@ -67,11 +67,54 @@ export function probeCredentials(providerKey: string): {
     'shopify-graphql-admin': ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN'],
     'stripe-api': ['STRIPE_SECRET_KEY'],
     'easypost-api': ['EASYPOST_API_KEY'],
+    // Local COS active stack
     'tavily-search': ['TAVILY_API_KEY'],
     'cohere-ai': ['COHERE_API_KEY'],
+    sentry: ['SENTRY_DSN'],
+    // Production catalog (credential probe map)
+    serpapi: ['SERPAPI_API_KEY'],
+    'paypal-rest': ['PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET'],
+    'square-api': ['SQUARE_ACCESS_TOKEN'],
+    'shipstation-api': ['SHIPSTATION_API_KEY', 'SHIPSTATION_API_SECRET'],
+    'amazon-sp-api': [
+      'AMAZON_SP_CLIENT_ID',
+      'AMAZON_SP_CLIENT_SECRET',
+      'AMAZON_SP_REFRESH_TOKEN',
+    ],
+    'ebay-sell': ['EBAY_ACCESS_TOKEN'],
+    'bigcommerce-rest': ['BIGCOMMERCE_STORE_HASH', 'BIGCOMMERCE_ACCESS_TOKEN'],
+    'google-ads': ['GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_REFRESH_TOKEN'],
+    'meta-marketing': ['META_ACCESS_TOKEN', 'META_AD_ACCOUNT_ID'],
+    'tiktok-ads': ['TIKTOK_ACCESS_TOKEN', 'TIKTOK_ADVERTISER_ID'],
     'google-analytics-4': ['GA4_PROPERTY_ID'],
     'posthog-api': ['POSTHOG_API_KEY'],
-    sentry: ['SENTRY_DSN'],
+    'mixpanel-api': ['MIXPANEL_PROJECT_TOKEN', 'MIXPANEL_API_SECRET'],
+    'quickbooks-online': ['QUICKBOOKS_ACCESS_TOKEN', 'QUICKBOOKS_REALM_ID'],
+    'xero-api': ['XERO_ACCESS_TOKEN', 'XERO_TENANT_ID'],
+    'google-merchant': ['GOOGLE_MERCHANT_ACCESS_TOKEN', 'GOOGLE_MERCHANT_ID'],
+    'keepa-api': ['KEEPA_API_KEY'],
+    avalara: ['AVALARA_ACCOUNT_ID', 'AVALARA_LICENSE_KEY'],
+    taxjar: ['TAXJAR_API_KEY'],
+    cohere: ['COHERE_API_KEY'],
+    openai: ['OPENAI_API_KEY'],
+    anthropic: ['ANTHROPIC_API_KEY'],
+    'google-gemini': ['GOOGLE_AI_API_KEY'],
+    xai: ['XAI_API_KEY'],
+    mistral: ['MISTRAL_API_KEY'],
+    'ups-api': ['UPS_CLIENT_ID', 'UPS_CLIENT_SECRET'],
+    'fedex-api': ['FEDEX_CLIENT_ID', 'FEDEX_CLIENT_SECRET'],
+    'dhl-api': ['DHL_API_KEY'],
+    'usps-api': ['USPS_CLIENT_ID', 'USPS_CLIENT_SECRET'],
+    'canada-post-api': ['CANADA_POST_USERNAME', 'CANADA_POST_PASSWORD'],
+    'alibaba-open': ['ALIBABA_APP_KEY', 'ALIBABA_APP_SECRET'],
+    'aliexpress-dropshipping': ['ALIEXPRESS_APP_KEY', 'ALIEXPRESS_APP_SECRET'],
+    'inventory-source': ['INVENTORY_SOURCE_API_KEY'],
+    'open-exchange-rates': ['OPENEXCHANGERATES_APP_ID'],
+    'woocommerce-rest': [
+      'WOOCOMMERCE_URL',
+      'WOOCOMMERCE_CONSUMER_KEY',
+      'WOOCOMMERCE_CONSUMER_SECRET',
+    ],
   };
   // Cohere alias
   if (providerKey === 'cohere-ai' && !env('COHERE_API_KEY') && env('CO_API_KEY')) {
@@ -572,6 +615,378 @@ export async function serpApiShoppingSearch(
 }
 
 /**
+ * BigCommerce REST — catalog products.
+ */
+export async function bigCommerceFetchProducts(): Promise<
+  LiveFetchResult<
+    Array<{
+      externalId: string;
+      title: string;
+      description: string;
+      status: string;
+    }>
+  >
+> {
+  const providerKey = 'bigcommerce-rest';
+  const hash = env('BIGCOMMERCE_STORE_HASH');
+  const token = env('BIGCOMMERCE_ACCESS_TOKEN');
+  if (!hash || !token) {
+    return missing(providerKey, ['BIGCOMMERCE_STORE_HASH', 'BIGCOMMERCE_ACCESS_TOKEN']);
+  }
+  const t0 = Date.now();
+  try {
+    const res = await fetch(
+      `https://api.bigcommerce.com/stores/${encodeURIComponent(hash)}/v3/catalog/products?limit=25`,
+      {
+        headers: {
+          'X-Auth-Token': token,
+          Accept: 'application/json',
+        },
+      },
+    );
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: Array<{
+        id: number;
+        name: string;
+        description?: string;
+        is_visible?: boolean;
+      }>;
+    };
+    return {
+      ok: true,
+      data: (json.data ?? []).map((p) => ({
+        externalId: String(p.id),
+        title: p.name,
+        description: p.description ?? '',
+        status: p.is_visible === false ? 'hidden' : 'active',
+      })),
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * eBay Sell Inventory API — inventory items (token-gated).
+ */
+export async function ebayFetchInventoryItems(): Promise<
+  LiveFetchResult<
+    Array<{
+      externalId: string;
+      title: string;
+      description: string;
+      status: string;
+    }>
+  >
+> {
+  const providerKey = 'ebay-sell';
+  const token = env('EBAY_ACCESS_TOKEN');
+  if (!token) return missing(providerKey, ['EBAY_ACCESS_TOKEN']);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(
+      'https://api.ebay.com/sell/inventory/v1/inventory_item?limit=25',
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Language': 'en-US',
+        },
+      },
+    );
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      inventoryItems?: Array<{
+        sku?: string;
+        product?: { title?: string; description?: string };
+      }>;
+    };
+    return {
+      ok: true,
+      data: (json.inventoryItems ?? []).map((item, i) => ({
+        externalId: (item.sku ?? `ebay-item-${i}`).slice(0, 128),
+        title: item.product?.title ?? item.sku ?? 'eBay inventory item',
+        description: item.product?.description ?? '',
+        status: 'inventory',
+      })),
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * PayPal REST — wallet balances (OAuth client credentials).
+ */
+export async function paypalFetchBalances(): Promise<
+  LiveFetchResult<{
+    balances: Array<{ currency: string; available: string; total: string }>;
+  }>
+> {
+  const providerKey = 'paypal-rest';
+  const clientId = env('PAYPAL_CLIENT_ID');
+  const secret = env('PAYPAL_CLIENT_SECRET');
+  if (!clientId || !secret) {
+    return missing(providerKey, ['PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET']);
+  }
+  const base =
+    env('PAYPAL_API_BASE')?.replace(/\/$/, '') ?? 'https://api-m.paypal.com';
+  const t0 = Date.now();
+  try {
+    const tokenRes = await fetch(`${base}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+    });
+    if (!tokenRes.ok) {
+      return httpError(providerKey, tokenRes.status, Date.now() - t0);
+    }
+    const tokenJson = (await tokenRes.json()) as { access_token?: string };
+    if (!tokenJson.access_token) {
+      return {
+        ok: false,
+        error: 'PayPal OAuth token missing access_token',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs: Date.now() - t0,
+      };
+    }
+    const balRes = await fetch(`${base}/v1/reporting/balances`, {
+      headers: {
+        Authorization: `Bearer ${tokenJson.access_token}`,
+        Accept: 'application/json',
+      },
+    });
+    const latencyMs = Date.now() - t0;
+    if (!balRes.ok) return httpError(providerKey, balRes.status, latencyMs);
+    const balJson = (await balRes.json()) as {
+      balances?: Array<{
+        currency?: string;
+        available_balance?: { value?: string };
+        total_balance?: { value?: string };
+      }>;
+    };
+    return {
+      ok: true,
+      data: {
+        balances: (balJson.balances ?? []).map((b) => ({
+          currency: (b.currency ?? 'USD').toUpperCase(),
+          available: b.available_balance?.value ?? '0',
+          total: b.total_balance?.value ?? '0',
+        })),
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * ShipStation — recent shipments.
+ */
+export async function shipStationFetchShipments(): Promise<
+  LiveFetchResult<
+    Array<{
+      externalId: string;
+      trackingCode: string;
+      status: string;
+      carrier: string;
+    }>
+  >
+> {
+  const providerKey = 'shipstation-api';
+  const key = env('SHIPSTATION_API_KEY');
+  const secret = env('SHIPSTATION_API_SECRET');
+  if (!key || !secret) {
+    return missing(providerKey, ['SHIPSTATION_API_KEY', 'SHIPSTATION_API_SECRET']);
+  }
+  const t0 = Date.now();
+  try {
+    const res = await fetch('https://ssapi.shipstation.com/shipments?pageSize=25', {
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`,
+        Accept: 'application/json',
+      },
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      shipments?: Array<{
+        shipmentId?: number;
+        trackingNumber?: string;
+        shipmentStatus?: string;
+        carrierCode?: string;
+      }>;
+    };
+    return {
+      ok: true,
+      data: (json.shipments ?? []).map((s) => ({
+        externalId: String(s.shipmentId ?? s.trackingNumber ?? 'unknown'),
+        trackingCode: s.trackingNumber ?? '',
+        status: s.shipmentStatus ?? 'unknown',
+        carrier: s.carrierCode ?? 'unknown',
+      })),
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Keepa — product lookup by ASIN (query = ASIN).
+ */
+export async function keepaFetchProduct(
+  asin: string,
+): Promise<
+  LiveFetchResult<
+    Array<{
+      externalId: string;
+      title: string;
+      description: string;
+      status: string;
+    }>
+  >
+> {
+  const providerKey = 'keepa-api';
+  const key = env('KEEPA_API_KEY');
+  if (!key) return missing(providerKey, ['KEEPA_API_KEY']);
+  const cleanAsin = asin.trim().toUpperCase();
+  if (!/^[A-Z0-9]{10}$/.test(cleanAsin)) {
+    return {
+      ok: false,
+      error: 'keepa requires a 10-char ASIN in options.query',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const t0 = Date.now();
+  try {
+    const url = new URL('https://api.keepa.com/product');
+    url.searchParams.set('key', key);
+    url.searchParams.set('domain', '1');
+    url.searchParams.set('asin', cleanAsin);
+    const res = await fetch(url.toString());
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      products?: Array<{ asin?: string; title?: string; description?: string }>;
+    };
+    return {
+      ok: true,
+      data: (json.products ?? []).map((p) => ({
+        externalId: p.asin ?? cleanAsin,
+        title: p.title ?? cleanAsin,
+        description: p.description ?? '',
+        status: 'keepa',
+      })),
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Square Catalog API — list catalog objects (items).
+ */
+export async function squareFetchCatalogItems(): Promise<
+  LiveFetchResult<
+    Array<{
+      externalId: string;
+      title: string;
+      description: string;
+      status: string;
+    }>
+  >
+> {
+  const providerKey = 'square-api';
+  const token = env('SQUARE_ACCESS_TOKEN');
+  if (!token) return missing(providerKey, ['SQUARE_ACCESS_TOKEN']);
+  const base =
+    env('SQUARE_API_BASE')?.replace(/\/$/, '') ?? 'https://connect.squareup.com';
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${base}/v2/catalog/list?types=ITEM`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Square-Version': '2024-12-18',
+      },
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      objects?: Array<{
+        id?: string;
+        type?: string;
+        item_data?: { name?: string; description?: string };
+      }>;
+    };
+    return {
+      ok: true,
+      data: (json.objects ?? [])
+        .filter((o) => o.type === 'ITEM' || o.item_data)
+        .slice(0, 25)
+        .map((o) => ({
+          externalId: (o.id ?? 'unknown').slice(0, 128),
+          title: o.item_data?.name ?? 'Square item',
+          description: o.item_data?.description ?? '',
+          status: 'active',
+        })),
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/** Provider keys with a full live HTTP adapter in this package. */
+export const LIVE_HTTP_ADAPTER_KEYS = [
+  'shopify-graphql-admin',
+  'stripe-api',
+  'open-exchange-rates',
+  'woocommerce-rest',
+  'easypost-api',
+  'serpapi',
+  'bigcommerce-rest',
+  'ebay-sell',
+  'paypal-rest',
+  'shipstation-api',
+  'keepa-api',
+  'square-api',
+] as const;
+
+/**
  * Dispatch live sync by provider key. Only implemented providers hit the network.
  * Others return a structured credentials/not-implemented result — never fake data.
  */
@@ -629,10 +1044,28 @@ export async function liveSyncProvider(
       return easyPostFetchTrackers();
     case 'tavily-search':
       return tavilyWebSearch(options?.query ?? 'commerce market research');
+    case 'open-exchange-rates':
+      return fetchFxRates();
+    case 'woocommerce-rest':
+      return wooCommerceFetchProducts();
+    case 'serpapi':
+      return serpApiShoppingSearch(options?.query ?? 'wireless earbuds');
+    case 'bigcommerce-rest':
+      return bigCommerceFetchProducts();
+    case 'ebay-sell':
+      return ebayFetchInventoryItems();
+    case 'paypal-rest':
+      return paypalFetchBalances();
+    case 'shipstation-api':
+      return shipStationFetchShipments();
+    case 'keepa-api':
+      return keepaFetchProduct(options?.query ?? '');
+    case 'square-api':
+      return squareFetchCatalogItems();
     default:
       return {
         ok: false,
-        error: `provider_not_in_active_stack: ${providerKey} is planned/disabled or not implemented. Active live HTTP: shopify, stripe, easypost, tavily.`,
+        error: `provider_not_in_active_stack: ${providerKey} is planned/disabled or not implemented. Active live HTTP: shopify, stripe, easypost, tavily, open-exchange, woocommerce, bigcommerce, ebay, paypal, shipstation, keepa, square.`,
         providerKey,
         isLive: true,
         fetchedAt: new Date().toISOString(),

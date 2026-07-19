@@ -117,25 +117,110 @@ enum WorkspacePersona {
   administrator
 }
 
+/// Canonical tenant organization type (retail + industrial commerce OS)
+enum OrganizationType {
+  retailer
+  marketplace_seller
+  distributor
+  wholesaler
+  manufacturer
+  industrial_supplier
+  procurement_organization
+  logistics_provider
+  enterprise_group
+  service_provider
+}
+
+/// Primary commerce operating mode for the tenant
+enum CommerceMode {
+  retail
+  b2b
+  industrial
+  hybrid
+}
+
+enum TenantStatus {
+  active
+  suspended
+  provisioning
+  closed
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  cancelled
+  incomplete
+}
+
+enum WorkspaceKind {
+  default
+  business_unit
+  brand
+  region
+  site
+  industrial_plant
+}
+
+enum MembershipStatus {
+  active
+  invited
+  suspended
+}
+
+/// Permission effect for per-user overrides (membership-scoped)
+enum PermissionEffect {
+  allow
+  deny
+}
+
+/// Canonical Tenant = Organization (table retained for backward compatibility).
+/// Hierarchy: Platform → Tenant → Workspace → Team → User → Membership → Role → Permission
 model Organization {
   id             String               @id @default(uuid()) @db.Uuid
+  /// Stable non-secret public identifier for URLs / support (not a security boundary)
+  publicId       String               @unique @default(uuid()) @map("public_id") @db.Uuid
   name           String               @db.VarChar(200)
   slug           String               @unique @db.VarChar(64)
+  legalName      String?              @map("legal_name") @db.VarChar(300)
+  organizationType OrganizationType   @default(retailer) @map("organization_type")
+  industry       String?              @db.VarChar(128)
+  commerceMode   CommerceMode         @default(retail) @map("commerce_mode")
+  region         String?              @db.VarChar(64)
+  country        String?              @db.VarChar(2)
+  defaultCurrency String              @default("USD") @map("default_currency") @db.VarChar(3)
+  defaultLanguage String              @default("en") @map("default_language") @db.VarChar(16)
+  timezone       String               @default("UTC") @db.VarChar(64)
   /// SaaS customer segment
   segment        CustomerSegment      @default(individual)
   planTier       PlanTier             @default(evaluation) @map("plan_tier")
+  /// Mirror of commercial plan label (string for billing provider flexibility)
+  subscriptionPlan String?            @map("subscription_plan") @db.VarChar(64)
+  subscriptionStatus SubscriptionStatus @default(trialing) @map("subscription_status")
+  billingCustomerId String?           @map("billing_customer_id") @db.VarChar(128)
+  tenantStatus   TenantStatus         @default(active) @map("tenant_status")
   deploymentMode TenantDeploymentMode @default(pooled) @map("deployment_mode")
   /// Optional parent org (agency → client, or corporate hierarchy)
   parentOrganizationId String?        @map("parent_organization_id") @db.Uuid
   businessModel  String?              @map("business_model") @db.VarChar(64)
   onboardingStep String               @default("created") @map("onboarding_step") @db.VarChar(64)
+  onboardingStatus String             @default("created") @map("onboarding_status") @db.VarChar(64)
   onboardingComplete Boolean          @default(false) @map("onboarding_complete")
+  dataResidencyRegion String?         @map("data_residency_region") @db.VarChar(32)
+  retentionPolicy Json                @default("{}") @map("retention_policy")
+  featureFlags   Json                 @default("{}") @map("feature_flags")
+  settings       Json                 @default("{}") @map("settings")
   createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   parentOrganization     Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
   childOrganizations     Organization[] @relation("OrgHierarchy")
   memberships            Membership[]
+  workspaces             Workspace[]
+  teams                  Team[]
+  roles                  Role[]
+  permissionOverrides    UserPermissionOverride[]
   auditEvents            AuditEvent[]
   activeSessions         Session[]                 @relation("SessionActiveOrganization")
   connectorInstallations ConnectorInstallation[]
@@ -164,6 +249,7 @@ model Organization {
   shadowDecisions        ShadowDecision[]
   operatorRuns           OperatorRun[]
   operatorRecommendations OperatorRecommendation[]
+  aiConversations        AiConversation[]
   connectorHealthEvents  ConnectorHealthEvent[]
   usageMeters            UsageMeter[]
   watchlistItems         ProductWatchlistItem[]
@@ -189,6 +275,7 @@ model Organization {
   capitalLedgerEntries      CapitalLedgerEntry[]
   capitalDisbursements      CapitalDisbursement[]
   campaignDistributions     CampaignDistribution[]
+  campaignBudgets           CampaignBudget[]
   // Client-owned commerce operating capital (managed commerce — not pooled fund)
   commerceCapitalAccounts   CommerceCapitalAccount[]
   commerceMandates          CommerceMandate[]
@@ -196,6 +283,9 @@ model Organization {
   fundingIntents            FundingIntent[]
 
   @@index([parentOrganizationId])
+  @@index([tenantStatus])
+  @@index([organizationType])
+  @@index([commerceMode])
   @@map("organizations")
 }
 
@@ -215,22 +305,198 @@ model User {
   @@map("users")
 }
 
+/// Org membership only — never put a global role on User.
+/// `role` is a compatibility primary SystemRole; authoritative grants live in MembershipRole + overrides.
 model Membership {
   id             String           @id @default(uuid()) @db.Uuid
   organizationId String           @map("organization_id") @db.Uuid
   userId         String           @map("user_id") @db.Uuid
+  /// Legacy primary system role (kept for backward compatibility; membership-scoped)
   role           SystemRole       @default(viewer)
+  status         MembershipStatus @default(active)
   /// Preferred workspace persona for adaptive navigation
   workspacePersona WorkspacePersona @default(founder) @map("workspace_persona")
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization          Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membershipRoles       MembershipRole[]
+  workspaceMemberships  WorkspaceMembership[]
+  teamMemberships       TeamMembership[]
+  permissionOverrides   UserPermissionOverride[]
 
   @@unique([organizationId, userId])
   @@index([userId])
+  @@index([organizationId, status])
   @@map("memberships")
+}
+
+/// Business unit / brand / site under a tenant
+model Workspace {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  publicId       String        @unique @default(uuid()) @map("public_id") @db.Uuid
+  name           String        @db.VarChar(200)
+  slug           String        @db.VarChar(64)
+  kind           WorkspaceKind @default(default)
+  isDefault      Boolean       @default(false) @map("is_default")
+  settings       Json          @default("{}")
+  status         TenantStatus  @default(active)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  WorkspaceMembership[]
+  teams        Team[]
+  activeSessions Session[]           @relation("SessionActiveWorkspace")
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, isDefault])
+  @@map("workspaces")
+}
+
+model WorkspaceMembership {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @map("workspace_id") @db.Uuid
+  membershipId   String   @map("membership_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Optional workspace-local system role override (null = inherit org membership)
+  role           SystemRole?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([organizationId, userId])
+  @@index([membershipId])
+  @@map("workspace_memberships")
+}
+
+model Team {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  workspaceId    String?      @map("workspace_id") @db.Uuid
+  name           String       @db.VarChar(200)
+  slug           String       @db.VarChar(64)
+  description    String?      @db.VarChar(500)
+  status         TenantStatus @default(active)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace    Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  memberships  TeamMembership[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@index([workspaceId])
+  @@map("teams")
+}
+
+model TeamMembership {
+  id             String   @id @default(uuid()) @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  membershipId   String   @map("membership_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  role           SystemRole @default(viewer)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([organizationId, userId])
+  @@index([membershipId])
+  @@map("team_memberships")
+}
+
+/// RBAC role — system templates (organizationId null) or tenant-custom roles
+model Role {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  key            String   @db.VarChar(64)
+  name           String   @db.VarChar(128)
+  description    String?  @db.VarChar(500)
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  membershipRoles MembershipRole[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+/// Permission catalog row (key matches Permission contract string)
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(128)
+  description String?  @db.VarChar(500)
+  category    String   @default("general") @db.VarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  rolePermissions RolePermission[]
+  overrides       UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(uuid()) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model MembershipRole {
+  id           String   @id @default(uuid()) @db.Uuid
+  membershipId String   @map("membership_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId])
+  @@index([roleId])
+  @@map("membership_roles")
+}
+
+/// Per-user allow/deny within a tenant (membership-scoped; never global on User alone)
+model UserPermissionOverride {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  membershipId   String           @map("membership_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  permissionId   String           @map("permission_id") @db.Uuid
+  effect         PermissionEffect
+  reason         String?          @db.VarChar(500)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  membership   Membership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  permission   Permission   @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, permissionId])
+  @@index([organizationId, userId])
+  @@map("user_permission_overrides")
 }
 
 /// Metered usage for SaaS entitlements (do not bill platform-caused failures)
@@ -255,6 +521,8 @@ model Session {
   userId               String    @map("user_id") @db.Uuid
   tokenHash            String    @unique @map("token_hash") @db.VarChar(64)
   activeOrganizationId String?   @map("active_organization_id") @db.Uuid
+  /// Active business unit / workspace under the tenant (validated against workspace membership)
+  activeWorkspaceId    String?   @map("active_workspace_id") @db.Uuid
   expiresAt            DateTime  @map("expires_at") @db.Timestamptz(3)
   revokedAt            DateTime? @map("revoked_at") @db.Timestamptz(3)
   ipAddress            String?   @map("ip_address") @db.VarChar(64)
@@ -264,9 +532,11 @@ model Session {
 
   user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeOrganization Organization? @relation("SessionActiveOrganization", fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+  activeWorkspace    Workspace?    @relation("SessionActiveWorkspace", fields: [activeWorkspaceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([activeWorkspaceId])
   @@map("sessions")
 }
 
@@ -961,6 +1231,47 @@ model OperatorRun {
 
   @@index([organizationId, startedAt])
   @@map("operator_runs")
+}
+
+/// Durable chat thread for Cohere AI runtime (not operator-cycle objectives).
+model AiConversation {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  title          String?  @db.VarChar(500)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages     AiMessage[]
+
+  @@index([organizationId, updatedAt])
+  @@map("ai_conversations")
+}
+
+/// One user or assistant turn in an AI conversation.
+model AiMessage {
+  id               String   @id @default(uuid()) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  conversationId   String   @map("conversation_id") @db.Uuid
+  role             String   @db.VarChar(16)
+  content          String   @db.Text
+  status           String?  @db.VarChar(32)
+  dataMode         String?  @map("data_mode") @db.VarChar(32)
+  intentCategory   String?  @map("intent_category") @db.VarChar(64)
+  informationMode  String?  @map("information_mode") @db.VarChar(64)
+  provider         String?  @db.VarChar(32)
+  model            String?  @db.VarChar(128)
+  requestId        String?  @map("request_id") @db.VarChar(64)
+  errorCode        String?  @map("error_code") @db.VarChar(64)
+  /// Full canonical envelope (no secrets); used for provenance/debug.
+  responseJson     Json?    @map("response_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, conversationId, createdAt])
+  @@map("ai_messages")
 }
 
 model OperatorRecommendation {
@@ -1674,6 +1985,7 @@ model CommerceCampaign {
 
 model CampaignBudget {
   id                    String   @id @default(uuid()) @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
   campaignId            String   @unique @map("campaign_id") @db.Uuid
   inventoryBudgetMinor  Int      @default(0) @map("inventory_budget_minor")
   advertisingBudgetMinor Int     @default(0) @map("advertising_budget_minor")
@@ -1687,8 +1999,10 @@ model CampaignBudget {
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  campaign CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     CommerceCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
+  @@index([organizationId])
   @@map("campaign_budgets")
 }
 

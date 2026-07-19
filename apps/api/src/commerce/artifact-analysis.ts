@@ -1,13 +1,13 @@
 /**
- * Multimodal product understanding — rule-based proposals for local product.
- * All outputs are labeled proposals (not ground truth). LLM vision can plug in later.
+ * Multimodal product understanding — rule-based proposals + optional xAI Grok enrichment.
+ * All outputs are labeled proposals (not ground truth). Human review required.
  */
 
 export type ArtifactAnalysisProposal = {
   proposal: true;
   humanReviewRequired: true;
   sourceArtifactId: string;
-  model: 'tradeops-rule-multimodal-v1';
+  model: string;
   confidence: number;
   artifactType: string;
   analysis: Record<string, unknown>;
@@ -166,4 +166,93 @@ function classifyDoc(purpose: string, blob: string): string {
   if (purpose === 'warranty' || /warrant/.test(blob)) return 'warranty';
   if (purpose === 'compliance' || /certif|compliance|safety/.test(blob)) return 'compliance_certificate';
   return purpose || 'document';
+}
+
+/**
+ * Full analysis: rules first, optional xAI enrichment for purpose + content narrative.
+ */
+export async function analyzeArtifactWithAi(input: {
+  artifactId: string;
+  artifactType: string;
+  purpose: string;
+  title?: string | null;
+  altText?: string | null;
+  description?: string | null;
+  mimeType?: string | null;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+  pageCount?: number | null;
+  bodyTextSample?: string | null;
+  sourcePlatform?: string | null;
+  useXai?: boolean;
+}): Promise<{
+  content: ArtifactAnalysisProposal;
+  purpose: Awaited<
+    ReturnType<typeof import('@tradeops/ai-runtime').classifyArtifactPurpose>
+  >;
+  hybrid: boolean;
+}> {
+  const content = analyzeArtifactContent(input);
+  const { classifyArtifactPurpose, enrichClassificationWithXai } =
+    await import('@tradeops/ai-runtime');
+
+  let purpose = await classifyArtifactPurpose({
+    title: input.title,
+    altText: input.altText,
+    description: input.description,
+    purpose: input.purpose,
+    mimeType: input.mimeType,
+    artifactType: input.artifactType,
+    useXai: input.useXai,
+  });
+
+  let hybrid = purpose.source === 'hybrid' || purpose.source === 'xai';
+
+  // Optionally enrich content analysis narrative via xAI (text only — not vision)
+  if (input.useXai !== false) {
+    try {
+      const contentAsProposal = {
+        proposal: true as const,
+        humanReviewRequired: true as const,
+        kind: 'artifact_content' as const,
+        model: content.model,
+        confidence: content.confidence,
+        labels: {
+          artifactType: content.artifactType,
+        },
+        analysis: content.analysis,
+        extractedAt: content.extractedAt,
+        source: 'rules' as const,
+      };
+      const enriched = await enrichClassificationWithXai({
+        kind: 'artifact_content',
+        rules: contentAsProposal,
+        context: JSON.stringify({
+          artifact: input,
+          ruleAnalysis: content.analysis,
+        }),
+        systemExtra:
+          'Enrich listing suitability, quality notes, and policy concerns. Keep proposal:true. Do not claim OCR of images you cannot see.',
+      });
+      if (enriched.source === 'hybrid') {
+        hybrid = true;
+        // Merge xAI analysis into content proposal
+        (content as ArtifactAnalysisProposal).model = `${content.model}+${enriched.model}`;
+        (content as ArtifactAnalysisProposal).confidence = Math.max(
+          content.confidence,
+          enriched.confidence,
+        );
+        (content as ArtifactAnalysisProposal).analysis = {
+          ...content.analysis,
+          xaiEnrichment: enriched.analysis,
+          xaiLabels: enriched.labels,
+        };
+      }
+    } catch {
+      // keep rules-only content
+    }
+  }
+
+  return { content, purpose, hybrid };
 }

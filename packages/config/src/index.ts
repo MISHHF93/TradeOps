@@ -27,6 +27,60 @@ export {
   type TradeOpsAccessMode,
 } from './access-mode';
 
+export {
+  assertSecurityBoot,
+  evaluateSecurityBoot,
+  isLoopbackHost,
+  isPublicNetworkBind,
+  isWeakAppSecret,
+  isWeakCredentialsKey,
+  type SecurityBootEnv,
+  type SecurityBootResult,
+} from './security-boot';
+
+export {
+  getXaiConfig,
+  isXaiConfigured,
+  parseAiMode,
+  resolveAiMode,
+  resolveXaiApiKey,
+  shouldDefaultGenerate,
+  shouldUseXai,
+  xaiPublicStatus,
+  type ResolvedAiMode,
+  type TradeOpsAiMode,
+  type XaiConfig,
+} from './xai-config';
+
+export {
+  getAiPlatformConfig,
+  aiPlatformPublicStatus,
+  isAiRuntimeConfigured,
+  type AiPlatformConfig,
+  type AiProviderId,
+  type SearchProviderId,
+} from './ai-platform-config';
+
+export {
+  PLATFORM_ENV_MANIFEST,
+  TENANT_SCOPED_CREDENTIAL_NAMES,
+  ENV_ALIASES,
+  listManifestSecrets,
+  listRequiredProductionEnv,
+  resolveEnvAlias,
+  environmentManifestPublicStatus,
+  type EnvVarManifest,
+  type EnvStorage,
+} from './environment-manifest';
+
+export {
+  validateEnvironmentConfig,
+  assertProductionEnv,
+  envValidationPublicStatus,
+  type EnvValidationIssue,
+  type EnvValidationResult,
+} from './env-validation';
+
 /**
  * Platform environment schema.
  * Fail fast on boot if required configuration is missing or invalid.
@@ -36,10 +90,16 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   API_PORT: z.coerce.number().int().positive().default(4000),
-  API_HOST: z.string().default('0.0.0.0'),
+  /**
+   * Default 127.0.0.1 — loopback only. Use 0.0.0.0 only behind a reverse proxy
+   * with auth, and never with founder_direct on the public internet.
+   */
+  API_HOST: z.string().default('127.0.0.1'),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
+  /** Prefer 127.0.0.1 so Next binds loopback when start.mjs passes -H */
+  WEB_HOST: z.string().default('127.0.0.1'),
   WEB_ORIGIN: z.string().url().default('http://localhost:3000'),
-  API_PUBLIC_URL: z.string().url().default('http://localhost:4000'),
+  API_PUBLIC_URL: z.string().url().default('http://127.0.0.1:4000'),
 
   DATABASE_URL: z
     .string()
@@ -239,6 +299,7 @@ export { FOUNDER_DIRECT_DEFAULTS as FOUNDER_DEFAULTS };
 export {
   type FinancialGateKey,
   type FinancialGateState,
+  FINANCIAL_GATE_ENV_NAMES,
   isFinancialGateEnabled,
   getFinancialGate,
   listFinancialGates,

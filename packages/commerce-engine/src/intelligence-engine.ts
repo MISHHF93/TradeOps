@@ -361,6 +361,29 @@ export function generateInsights(signals: IntelligenceSignals): RankedInsight[] 
         'Connect a live supplier or storefront so KPIs move off fixture data; label simulation until then.',
       suggestedAiQuery: 'Connect live Shopify products',
     });
+  } else if (
+    signals.fixtureProductCount > 0 &&
+    signals.liveProductCount > 0 &&
+    signals.fixtureProductCount >= signals.liveProductCount
+  ) {
+    // Mixed catalog: majority fixtures can silently skew KPIs if isolation is off
+    insights.push({
+      id: 'ins-fixture-skew',
+      kind: 'data_quality',
+      title: 'Fixture products dominate the catalog',
+      detail: `${signals.fixtureProductCount} fixture vs ${signals.liveProductCount} live/canonical — KPI totals may be skewed unless production isolation is on.`,
+      urgencyScore: 36,
+      confidence: 0.95,
+      href: '/terminal/portfolio',
+      personaRelevance: weight(p, 'data_quality'),
+      evidence: [
+        `fixtureProductCount=${signals.fixtureProductCount}`,
+        `liveProductCount=${signals.liveProductCount}`,
+      ],
+      suggestedObjective:
+        'Enable TRADEOPS_PRODUCTION_WORKSPACE=1 to exclude fixtures from scanner/portfolio KPIs, or remove fixture imports from this org.',
+      suggestedAiQuery: 'How do I isolate production KPIs from fixtures?',
+    });
   }
 
   if (signals.liveConnectorCount === 0 && signals.connectorIssues === 0) {

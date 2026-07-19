@@ -80,6 +80,10 @@ export class AuthController {
 
   @Get('me')
   async me(@CurrentAuth() auth: AuthContext): Promise<AuthResponse> {
-    return this.authService.me(auth.userId, auth.activeOrganizationId);
+    return this.authService.me(
+      auth.userId,
+      auth.activeOrganizationId,
+      auth.activeWorkspaceId,
+    );
   }
 }

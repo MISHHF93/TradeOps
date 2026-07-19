@@ -107,6 +107,9 @@ export default async function ConnectorsOpsPage() {
             <Link className="btn primary" href="/terminal/process">
               {PROCESS_LABELS.openProcess}
             </Link>
+            <Link className="btn ghost" href="/terminal/integrations">
+              Integration hub
+            </Link>
             <Link className="btn ghost" href="/terminal/ecosystem">
               Capability graph
             </Link>

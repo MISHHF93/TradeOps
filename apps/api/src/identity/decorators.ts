@@ -1,5 +1,6 @@
-import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
+import { createParamDecorator, ExecutionContext, ForbiddenException, SetMetadata } from '@nestjs/common';
 import type { Permission } from '@tradeops/contracts';
+import type { TenantContext } from '@tradeops/domain';
 import type { AuthContext } from './types';
 
 export const IS_PUBLIC_KEY = 'isPublic';
@@ -19,5 +20,16 @@ export const CurrentAuth = createParamDecorator(
       throw new Error('Auth context missing — AuthGuard must run first');
     }
     return request.auth;
+  },
+);
+
+/** Require fully resolved tenant context (membership-validated). */
+export const CurrentTenant = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): TenantContext => {
+    const request = ctx.switchToHttp().getRequest<{ auth?: AuthContext }>();
+    if (!request.auth?.tenant) {
+      throw new ForbiddenException('Active organization membership required');
+    }
+    return request.auth.tenant;
   },
 );

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { loadEnv } from '@tradeops/config';
+import { tenantCacheKey } from '@tradeops/domain';
 import Redis from 'ioredis';
 
 export type RedisHealthResult = {
@@ -8,6 +9,9 @@ export type RedisHealthResult = {
   message?: string;
 };
 
+/**
+ * Redis access — all cache keys for tenant data MUST use tenantCacheKey / tenantGet/Set.
+ */
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   readonly client: Redis;
@@ -30,43 +34,93 @@ export class RedisService implements OnModuleDestroy {
     });
   }
 
+  /** Tenant-isolated cache get */
+  async tenantGet(
+    organizationId: string,
+    namespace: string,
+    ...parts: string[]
+  ): Promise<string | null> {
+    try {
+      await this.connect();
+      return await this.client.get(tenantCacheKey(organizationId, namespace, ...parts));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Tenant-isolated cache set with optional TTL seconds */
+  async tenantSet(
+    organizationId: string,
+    namespace: string,
+    value: string,
+    ttlSeconds?: number,
+    ...parts: string[]
+  ): Promise<boolean> {
+    try {
+      await this.connect();
+      const key = tenantCacheKey(organizationId, namespace, ...parts);
+      if (ttlSeconds && ttlSeconds > 0) {
+        await this.client.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.client.set(key, value);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async tenantDel(organizationId: string, namespace: string, ...parts: string[]): Promise<void> {
+    try {
+      await this.connect();
+      await this.client.del(tenantCacheKey(organizationId, namespace, ...parts));
+    } catch {
+      /* ignore */
+    }
+  }
+
   async connect(): Promise<void> {
-    if (this.client.status === 'wait') {
-      await this.client.connect();
+    try {
+      if (this.client.status === 'wait') {
+        await this.client.connect();
+      }
+    } catch {
+      // Redis optional — callers treat null/false as cache miss
     }
   }
 
   async checkHealth(): Promise<RedisHealthResult> {
     const started = performance.now();
-    const timeoutMs = 1500;
+    /** Local first-run often has no Redis — never hang the health endpoint (optional for AI). */
+    const HEALTH_TIMEOUT_MS = 1500;
     try {
-      const result = await Promise.race([
-        (async (): Promise<RedisHealthResult> => {
-          await this.connect();
-          const pong = await this.client.ping();
-          if (pong !== 'PONG') {
-            return {
-              status: 'down',
-              latencyMs: Math.round(performance.now() - started),
-              message: `Unexpected PING response: ${pong}`,
-            };
-          }
-          return {
-            status: 'up',
-            latencyMs: Math.round(performance.now() - started),
-          };
-        })(),
-        new Promise<RedisHealthResult>((resolve) => {
-          setTimeout(() => {
-            resolve({
-              status: 'down',
-              latencyMs: timeoutMs,
-              message: `Redis health timed out after ${timeoutMs}ms (optional for AI operator)`,
-            });
-          }, timeoutMs);
-        }),
-      ]);
-      return result;
+      const ping = (async () => {
+        await this.connect();
+        return this.client.ping();
+      })();
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Redis health timed out after ${HEALTH_TIMEOUT_MS}ms (optional for AI operator)`,
+              ),
+            ),
+          HEALTH_TIMEOUT_MS,
+        );
+      });
+      const pong = await Promise.race([ping, timeout]);
+      if (pong !== 'PONG') {
+        return {
+          status: 'down',
+          latencyMs: Math.round(performance.now() - started),
+          message: `Unexpected PING response: ${pong}`,
+        };
+      }
+      return {
+        status: 'up',
+        latencyMs: Math.round(performance.now() - started),
+      };
     } catch (error) {
       // Reset for a clean next health attempt
       try {

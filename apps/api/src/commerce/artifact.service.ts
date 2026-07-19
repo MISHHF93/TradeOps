@@ -31,7 +31,7 @@ import {
   mapToShopifyMediaType,
   selectListingMedia,
 } from './channel-media-rules';
-import { analyzeArtifactContent } from './artifact-analysis';
+import { analyzeArtifactContent, analyzeArtifactWithAi } from './artifact-analysis';
 import { discoverSupplierArtifacts } from './supplier-artifact-adapter';
 
 function sha256(buf: Buffer | string): string {
@@ -507,7 +507,7 @@ export class ArtifactService {
     };
   }
 
-  /** Rule-based multimodal analysis — always labeled as proposal */
+  /** Multimodal analysis — rules + optional xAI Grok; always a proposal */
   async analyzeArtifact(organizationId: string, productId: string, artifactId: string) {
     await this.requireProduct(organizationId, productId);
     const art = await this.prisma.client.productArtifact.findFirst({
@@ -524,7 +524,24 @@ export class ArtifactService {
       }
     }
 
-    const proposal = analyzeArtifactContent({
+    const { content, purpose, hybrid } = await analyzeArtifactWithAi({
+      artifactId: art.id,
+      artifactType: art.artifactType,
+      purpose: art.purpose,
+      title: art.title,
+      altText: art.altText,
+      description: art.description,
+      mimeType: art.mimeType,
+      width: art.width,
+      height: art.height,
+      durationSeconds: art.durationSeconds,
+      pageCount: art.pageCount,
+      bodyTextSample,
+      sourcePlatform: art.sourcePlatform,
+      useXai: true,
+    });
+
+    const rulesOnly = analyzeArtifactContent({
       artifactId: art.id,
       artifactType: art.artifactType,
       purpose: art.purpose,
@@ -540,20 +557,57 @@ export class ArtifactService {
       sourcePlatform: art.sourcePlatform,
     });
 
-    // Persist proposal under metadata (does not mutate product attributes as truth)
     const prev = (art.metadataJson ?? {}) as Record<string, unknown>;
     const nextMeta = JSON.parse(
-      JSON.stringify({ ...prev, lastAnalysis: proposal }),
+      JSON.stringify({
+        ...prev,
+        lastAnalysis: content,
+        lastPurposeClassification: purpose,
+        lastRulesOnlyAnalysis: rulesOnly,
+      }),
     ) as object;
     await this.prisma.client.productArtifact.update({
       where: { id: art.id },
-      data: { metadataJson: nextMeta },
+      data: {
+        metadataJson: nextMeta,
+        qualityScore:
+          typeof content.analysis.imageQualityScore === 'number'
+            ? (content.analysis.imageQualityScore as number)
+            : art.qualityScore,
+      },
     });
 
     return {
-      proposal,
+      proposal: content,
+      purposeClassification: purpose,
+      rulesOnly,
+      hybrid,
       honesty: {
-        note: 'Inferred attributes are proposals — not ground truth. Human review required before listing use.',
+        note: hybrid
+          ? 'Hybrid rules + xAI Grok proposals — not ground truth. Human review required before listing use.'
+          : 'Rule-based proposals only (xAI not used or unavailable). Human review required before listing use.',
+      },
+    };
+  }
+
+  async classifyProduct(
+    organizationId: string,
+    productId: string,
+    options?: { useXai?: boolean },
+  ) {
+    const product = await this.requireProduct(organizationId, productId);
+    const { classifyProductCategory } = await import('@tradeops/ai-runtime');
+    const category = await classifyProductCategory({
+      title: product.title,
+      description: product.description,
+      category: product.category,
+      useXai: options?.useXai !== false,
+    });
+    return {
+      productId,
+      category,
+      honesty: {
+        note: 'Category is a proposal. Does not auto-rewrite Product.category.',
       },
     };
   }

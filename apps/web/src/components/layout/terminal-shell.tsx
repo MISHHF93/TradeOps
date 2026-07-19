@@ -29,6 +29,10 @@ function TerminalShellInner({
   founderSlot,
   logoutSlot,
   workspace,
+  tenantLabel,
+  workspaceLabel,
+  commerceMode,
+  navSource,
 }: {
   children: ReactNode;
   founderDirect: boolean;
@@ -42,6 +46,10 @@ function TerminalShellInner({
   founderSlot?: ReactNode;
   logoutSlot?: ReactNode;
   workspace?: ResolvedWorkspace | null;
+  tenantLabel?: string | null;
+  workspaceLabel?: string | null;
+  commerceMode?: string | null;
+  navSource?: 'workspace' | 'fallback';
 }) {
   const { open, setOpen, railMode, setRailMode } = useAiOperator();
 
@@ -67,6 +75,10 @@ function TerminalShellInner({
           showLogout={!founderDirect}
           logoutSlot={logoutSlot}
           workspace={workspace}
+          tenantLabel={tenantLabel}
+          workspaceLabel={workspaceLabel}
+          commerceMode={commerceMode}
+          navSource={navSource}
         />
         <main className="terminal-main" id="main-workspace">
           {children}

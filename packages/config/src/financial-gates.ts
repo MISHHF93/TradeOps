@@ -22,6 +22,22 @@ export type FinancialGateKey =
   | 'PRIVATE_AGREEMENT_LEDGER_ENABLED'
   | 'CAPITAL_SANDBOX_ENABLED';
 
+/** Canonical env names read by isFinancialGateEnabled (process.env[key]). */
+export const FINANCIAL_GATE_ENV_NAMES: readonly FinancialGateKey[] = [
+  'CAPITAL_NETWORK_ENABLED',
+  'PUBLIC_CAMPAIGNS_ENABLED',
+  'INVESTOR_ONBOARDING_ENABLED',
+  'PROFIT_SHARING_ENABLED',
+  'EQUITY_OFFERINGS_ENABLED',
+  'POOLED_INVESTMENT_ENABLED',
+  'AUTOMATED_INVESTMENT_ADVICE_ENABLED',
+  'CAPITAL_CUSTODY_ENABLED',
+  'DISTRIBUTIONS_ENABLED',
+  'MARKETPLACE_CONNECT_ENABLED',
+  'PRIVATE_AGREEMENT_LEDGER_ENABLED',
+  'CAPITAL_SANDBOX_ENABLED',
+] as const;
+
 export type FinancialGateState = {
   key: FinancialGateKey;
   enabled: boolean;

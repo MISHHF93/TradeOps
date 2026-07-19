@@ -3,35 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { buildClientFallbackNav } from '../../lib/nav-catalog';
 import type { ResolvedWorkspace, WorkspaceNavGroup } from '../../lib/workspace';
 
-/** Fallback when workspace API unavailable — same spine as commerce-engine Focus */
-/** Offline fallback — BO spine only; AI is the right rail, not Focus. */
-const FALLBACK_NAV: WorkspaceNavGroup[] = [
-  {
-    id: 'focus',
-    label: 'Focus',
-    items: [
-      { id: 'home', href: '/terminal/workspace', label: 'Home', kind: 'procedure_hub' },
-      { id: 'discover', href: '/terminal', label: 'Discover', kind: 'procedure_step' },
-      { id: 'process', href: '/terminal/process', label: 'Cases', kind: 'procedure_hub' },
-      { id: 'opps', href: '/terminal/opportunities', label: 'Opportunities', kind: 'procedure_step' },
-      { id: 'tasks', href: '/terminal/tasks', label: 'Tasks', kind: 'resource' },
-    ],
-  },
-  {
-    id: 'more',
-    label: 'More',
-    items: [
-      { id: 'orders', href: '/terminal/orders', label: 'Orders', kind: 'procedure_step' },
-      { id: 'approvals', href: '/terminal/approvals', label: 'Approvals', kind: 'resource' },
-      { id: 'objectives', href: '/terminal/objectives', label: 'AI run history', kind: 'resource' },
-      { id: 'connectors', href: '/terminal/connectors', label: 'Connectors', kind: 'resource' },
-      { id: 'switch', href: '/terminal/workspace?switch=1', label: 'Switch persona', kind: 'admin' },
-    ],
-  },
-];
-
+/**
+ * Persona workspace nav — prefers server ResolvedWorkspace.nav.
+ * Offline fallback uses nav-catalog hybrid (Focus · Operate · Platform · More).
+ * Multi-tenancy labels are display-only (server-resolved).
+ */
 export function TerminalSidebar({
   founderDirect: _founderDirect,
   orgName,
@@ -42,6 +21,10 @@ export function TerminalSidebar({
   showLogout,
   logoutSlot,
   workspace,
+  tenantLabel,
+  workspaceLabel,
+  commerceMode,
+  navSource,
 }: {
   founderDirect: boolean;
   orgName: string;
@@ -52,12 +35,22 @@ export function TerminalSidebar({
   showLogout?: boolean;
   logoutSlot?: React.ReactNode;
   workspace?: ResolvedWorkspace | null;
+  /** Server-resolved tenant display (slug or short id) */
+  tenantLabel?: string | null;
+  workspaceLabel?: string | null;
+  commerceMode?: string | null;
+  /** When workspace API failed — show honesty banner */
+  navSource?: 'workspace' | 'fallback';
 }) {
   const pathname = usePathname();
-  const groups = useMemo(
-    () => (workspace?.nav?.length ? workspace.nav : FALLBACK_NAV),
-    [workspace],
-  );
+  const groups = useMemo((): WorkspaceNavGroup[] => {
+    if (workspace?.nav?.length) return workspace.nav;
+    return buildClientFallbackNav();
+  }, [workspace]);
+
+  const usingFallback = navSource === 'fallback' || !workspace?.nav?.length;
+
+  // Only "More" collapsed by default — Focus / Operate / Platform stay open
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ more: true });
 
   function toggle(id: string) {
@@ -67,8 +60,8 @@ export function TerminalSidebar({
   return (
     <aside className="terminal-nav" aria-label="Persona workspace navigation">
       <div className="terminal-brand">
-        <strong>TradeOps</strong>
-        <span>{workspace?.personaLabel ?? 'Commerce OS'}</span>
+        <strong>{workspace?.personaLabel ?? segment ?? 'Commerce OS'}</strong>
+        <span>{workspace?.mission ?? 'One User · One Workspace · One Objective · One AI'}</span>
       </div>
 
       <p className="nav-principle">
@@ -77,6 +70,23 @@ export function TerminalSidebar({
       <p className="nav-meta-line">
         {workspace?.personaLabel ?? segment ?? '—'} · {planTier ?? '—'} · {role}
       </p>
+      {(tenantLabel || workspaceLabel || commerceMode) && (
+        <p
+          className="meta"
+          style={{ margin: '0 0 8px', fontSize: '0.65rem', opacity: 0.9 }}
+          title="Server-resolved tenant isolation context"
+        >
+          Tenant {tenantLabel ?? '—'}
+          {workspaceLabel ? ` · WS ${workspaceLabel}` : ''}
+          {commerceMode ? ` · ${commerceMode}` : ''}
+        </p>
+      )}
+
+      {usingFallback ? (
+        <p className="meta" style={{ margin: '0 0 8px', fontSize: '0.68rem', opacity: 0.95 }}>
+          Catalog nav{workspace ? '' : ' · workspace API offline'}
+        </p>
+      ) : null}
 
       {workspace?.surface?.healthLabel || workspace?.recommendedNextAction ? (
         <div className="nav-insight">
@@ -113,7 +123,9 @@ export function TerminalSidebar({
 
       <nav className="nav-groups">
         {groups.map((g) => {
-          const isCollapsed = collapsed[g.id] ?? g.id === 'more';
+          // Focus / Operate / Platform expanded unless user collapsed; More starts collapsed
+          const defaultCollapsed = g.id === 'more';
+          const isCollapsed = collapsed[g.id] ?? defaultCollapsed;
           return (
             <div key={g.id} className="nav-group">
               <button
@@ -128,11 +140,12 @@ export function TerminalSidebar({
               {!isCollapsed ? (
                 <ul className="nav-group-items">
                   {g.items.map((item) => {
+                    const pathOnly = item.href.split('?')[0] ?? item.href;
                     const active =
-                      pathname === item.href ||
-                      (item.href !== '/terminal' &&
-                        item.href !== '/terminal/workspace' &&
-                        pathname?.startsWith(item.href));
+                      pathname === pathOnly ||
+                      (pathOnly !== '/terminal' &&
+                        pathOnly !== '/terminal/workspace' &&
+                        Boolean(pathname?.startsWith(pathOnly)));
                     return (
                       <li key={item.id}>
                         <Link
@@ -160,6 +173,9 @@ export function TerminalSidebar({
       </nav>
 
       <div className="terminal-nav-footer">
+        <p className="meta" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
+          Jump anywhere with ⌘K · expand More for persona extras
+        </p>
         <p className="meta" style={{ fontSize: '0.75rem', margin: 0, fontWeight: 600 }}>
           {orgName}
         </p>

@@ -1,7 +1,9 @@
 import {
   assessProductPolicy,
   calculateUnitEconomics,
+  forecastDemand,
   scoreOpportunity,
+  type DemandObservation,
 } from '@tradeops/commerce-engine';
 import { listLiveFeeds } from '@tradeops/connector-core';
 import { registerTool } from './tool-registry';
@@ -225,6 +227,408 @@ export function registerBuiltinTools(): void {
         dataConfidence: Number(i.dataConfidence ?? 70),
         policyBlocked: Boolean(i.policyBlocked),
       });
+    },
+  });
+
+  registerTool({
+    name: 'evaluateIndustrialProcurement',
+    description:
+      'Evaluate industrial procurement for a product: technical fit, quote compare, substitutes, RFQ draft, risk. Award remains approval-gated.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        quantity: { type: 'number' },
+        requirementText: {
+          type: 'string',
+          description: 'Free-text specs e.g. 24V IP67 3000 psi',
+        },
+      },
+      required: ['productId'],
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 45_000,
+    idempotent: true,
+    execute: async (input, ctx) => {
+      const evaluate = ctx.deps.evaluateIndustrialProcurement as
+        | ((args: {
+            organizationId: string;
+            productId: string;
+            quantity?: number;
+            requirementText?: string;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!evaluate) {
+        return {
+          note: 'Host did not inject evaluateIndustrialProcurement — use POST /api/v1/industrial/procurement/evaluate',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        quantity?: number;
+        requirementText?: string;
+      };
+      return evaluate({
+        organizationId: ctx.organizationId,
+        productId: String(i.productId ?? ''),
+        quantity: i.quantity,
+        requirementText: i.requirementText,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'searchIndustrialCompatibility',
+    description:
+      'Find substitute/compatible industrial parts by productId or free-text technical requirements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        requirementText: { type: 'string' },
+        take: { type: 'number' },
+      },
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input, ctx) => {
+      const search = ctx.deps.searchIndustrialCompatibility as
+        | ((args: {
+            organizationId: string;
+            productId?: string;
+            requirementText?: string;
+            take?: number;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!search) {
+        return {
+          note: 'Host did not inject searchIndustrialCompatibility — use POST /api/v1/industrial/compatibility/search',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        requirementText?: string;
+        take?: number;
+      };
+      return search({
+        organizationId: ctx.organizationId,
+        productId: i.productId,
+        requirementText: i.requirementText,
+        take: i.take,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'classifyArtifactPurpose',
+    description:
+      'Classify product artifact purpose/type (rules + optional xAI). Always a proposal requiring human review.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        mimeType: { type: 'string' },
+        purpose: { type: 'string' },
+        artifactType: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyArtifactPurpose } = await import('./ai-classifiers');
+      const i = input as Record<string, unknown>;
+      return classifyArtifactPurpose({
+        title: i.title != null ? String(i.title) : null,
+        description: i.description != null ? String(i.description) : null,
+        mimeType: i.mimeType != null ? String(i.mimeType) : null,
+        purpose: i.purpose != null ? String(i.purpose) : null,
+        artifactType: i.artifactType != null ? String(i.artifactType) : null,
+        useXai: i.useXai !== false,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'classifyProductCategory',
+    description:
+      'Propose a product category (rules + optional xAI). Proposal only — does not write Product.category.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        description: { type: 'string' },
+        category: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+      required: ['title'],
+    },
+    requiredPermissions: ['products:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 30_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyProductCategory } = await import('./ai-classifiers');
+      const i = input as Record<string, unknown>;
+      return classifyProductCategory({
+        title: String(i.title ?? ''),
+        description: i.description != null ? String(i.description) : undefined,
+        category: i.category != null ? String(i.category) : undefined,
+        useXai: i.useXai !== false,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'classifyObjectiveIntent',
+    description:
+      'Classify an operator objective intent (research, publish, procurement, …). Proposal for routing only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        objective: { type: 'string' },
+        useXai: { type: 'boolean' },
+      },
+      required: ['objective'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 20_000,
+    idempotent: true,
+    execute: async (input) => {
+      const { classifyObjectiveIntent } = await import('./ai-classifiers');
+      const i = input as { objective?: string; useXai?: boolean };
+      return classifyObjectiveIntent(String(i.objective ?? ''), i.useXai !== false);
+    },
+  });
+
+  registerTool({
+    name: 'runPredictionEngine',
+    description:
+      'Run transparent demand/profit/signal predictions for top opportunities (or a productId). Writes DemandForecast rows. Empty history → zero units, low confidence.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        productId: { type: 'string' },
+        horizonDays: { type: 'number' },
+        limit: { type: 'number' },
+      },
+    },
+    requiredPermissions: ['ai:write', 'products:read'],
+    risk: {
+      actionClass: 'draft',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 60_000,
+    idempotent: false,
+    execute: async (input, ctx) => {
+      const run = ctx.deps.runPredictionEngine as
+        | ((args: {
+            organizationId: string;
+            productId?: string;
+            horizonDays?: number;
+            limit?: number;
+          }) => Promise<unknown>)
+        | undefined;
+      if (!run) {
+        return {
+          ok: false,
+          note: 'Host did not inject runPredictionEngine — use POST /api/v1/ai/prediction/run',
+        };
+      }
+      const i = input as {
+        productId?: string;
+        horizonDays?: number;
+        limit?: number;
+      };
+      return run({
+        organizationId: ctx.organizationId,
+        productId: i.productId,
+        horizonDays: i.horizonDays,
+        limit: i.limit,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'trainRagIndex',
+    description:
+      'Rebuild the org RAG (retrieval) index from products, artifacts, cases, operator runs, connectors, and SOPs. Continuous retrieval training — not GPU fine-tuning of foundation weights.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+    requiredPermissions: ['ai:write'],
+    risk: {
+      actionClass: 'draft',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 60_000,
+    idempotent: false,
+    execute: async (_input, ctx) => {
+      const train = ctx.deps.trainRagIndex as
+        | ((args: { organizationId: string }) => Promise<unknown>)
+        | undefined;
+      if (!train) {
+        return {
+          ok: false,
+          note: 'Host did not inject trainRagIndex — call POST /api/v1/ai/rag/train from API.',
+        };
+      }
+      return train({ organizationId: ctx.organizationId });
+    },
+  });
+
+  registerTool({
+    name: 'queryRagKnowledge',
+    description:
+      'Retrieve org knowledge chunks for a query (TF-IDF RAG). Never invents documents. Optional generate requires host LLM.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Retrieval question or objective' },
+        topK: { type: 'number' },
+        excludeFixtures: { type: 'boolean' },
+        generate: {
+          type: 'boolean',
+          description: 'If true and XAI_API_KEY set, ground an LLM answer',
+        },
+      },
+      required: ['query'],
+    },
+    requiredPermissions: ['ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 45_000,
+    idempotent: true,
+    execute: async (input, ctx) => {
+      const queryRag = ctx.deps.queryRagKnowledge as
+        | ((args: {
+            organizationId: string;
+            query: string;
+            topK?: number;
+            excludeFixtures?: boolean;
+            generate?: boolean;
+          }) => Promise<unknown>)
+        | undefined;
+      const q = String((input as { query?: string }).query ?? '').trim();
+      if (!q) return { error: 'query required' };
+      if (!queryRag) {
+        return {
+          hits: [],
+          note: 'Host did not inject queryRagKnowledge — use POST /api/v1/ai/rag/query',
+        };
+      }
+      const i = input as {
+        topK?: number;
+        excludeFixtures?: boolean;
+        generate?: boolean;
+      };
+      return queryRag({
+        organizationId: ctx.organizationId,
+        query: q,
+        topK: i.topK,
+        excludeFixtures: i.excludeFixtures,
+        generate: i.generate,
+      });
+    },
+  });
+
+  registerTool({
+    name: 'forecastDemand',
+    description:
+      'Transparent demand forecast (baseline-ma-v2: SMA × day-of-week × half-window trend). Not a neural model. Empty history returns zero units with low confidence — never invents sales.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        observations: {
+          type: 'string',
+          description:
+            'JSON array of {date:YYYY-MM-DD, units:number}. Empty array allowed.',
+        },
+        horizonDays: {
+          type: 'number',
+          description: '7, 14, or 30 (default 14)',
+        },
+      },
+    },
+    requiredPermissions: ['analytics:read', 'ai:read'],
+    risk: {
+      actionClass: 'read_only',
+      approvalRequired: false,
+      allowedInLoopModes: ALL_LOOPS,
+    },
+    timeoutMs: 5_000,
+    idempotent: true,
+    execute: async (input) => {
+      const i = input as Record<string, unknown>;
+      let observations: DemandObservation[] = [];
+      if (typeof i.observations === 'string' && i.observations.trim()) {
+        try {
+          const parsed = JSON.parse(i.observations) as unknown;
+          if (Array.isArray(parsed)) {
+            observations = parsed
+              .map((row) => {
+                const r = row as { date?: string; units?: number };
+                return {
+                  date: String(r.date ?? ''),
+                  units: Number(r.units ?? 0),
+                };
+              })
+              .filter((o) => o.date && Number.isFinite(o.units));
+          }
+        } catch {
+          return {
+            error: 'observations must be a JSON array of {date, units}',
+            modelVersion: 'baseline-ma-v2',
+          };
+        }
+      } else if (Array.isArray(i.observations)) {
+        observations = (i.observations as DemandObservation[]).map((o) => ({
+          date: String(o.date),
+          units: Number(o.units),
+        }));
+      }
+      const rawHorizon = Number(i.horizonDays ?? 14);
+      const horizonDays: 7 | 14 | 30 =
+        rawHorizon === 7 || rawHorizon === 30 ? rawHorizon : 14;
+      const result = forecastDemand(observations, horizonDays);
+      return {
+        ...result,
+        honesty:
+          'baseline-ma-v2 is a transparent statistical baseline — not neural demand forecasting.',
+      };
     },
   });
 

@@ -1,6 +1,6 @@
 # TradeOps Execution Status vs Markdown
 
-**Date:** 2026-07-17 (rescan #5 — process consolidation + doc alignment)  
+**Date:** 2026-07-17 (rescan #6 — multi-tenancy + integration hub + internet security)  
 **Purpose:** Single source of truth for “what the docs describe” vs “what is actually built and runnable.”  
 **Method:** Full markdown inventory + filesystem checks + live API/web smoke.  
 **Full file inventory:** [TRADEOPS_MARKDOWN_SCAN.md](./TRADEOPS_MARKDOWN_SCAN.md)  
@@ -60,10 +60,19 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 |-------|--------|-------|
 | Session auth foundation | **DONE** | retained for multi-user restore |
 | Direct Founder Access | **DONE** | idempotent founder bootstrap; org-scoped |
-| RBAC + org filters | **DONE** | still enforced under founder_direct |
+| Production multi-tenancy hierarchy | **DONE** | Tenant/Workspace/Team/RBAC migration + TenantContext |
+| Trusted TenantContext resolver | **DONE** | membership-validated; never client-only org id |
+| RBAC + org filters | **DONE** | matrix + DB roles + overrides; founder_direct still scoped |
+| Tenancy APIs + workspace switch | **DONE** | `/api/v1/tenancy/*` |
+| Tenant isolation inventory | **DONE** | `TRADEOPS_TENANT_ISOLATION_INVENTORY.md` |
 | AUTH_BYPASS / access mode | **DONE** | central `access-mode.ts` |
+| Team-level ACLs on every commerce row | **PARTIAL** | models + APIs; progressive row filters |
+| Cross-tenant HTTP e2e matrix | **PARTIAL** | domain/API isolation tests exist |
 | Email verify / password reset | **DOC ONLY** | public multi-tenant launch gap |
-| Credential vault UI | **DOC ONLY** | env for Google today |
+| Credential vault UI | **DONE foundations** | `/terminal/integrations` — env key presence only, never secret values |
+| Integration hub | **DONE foundations** | Production catalog + usage quotas + paste instructions |
+| Internet security (loopback bind) | **DONE** | `API_HOST=127.0.0.1`, security boot assert |
+| Vendor API key paste templates | **DONE** | `docs/env-api-keys.paste.env`, `env.vendors.template` |
 | Segment onboarding | **DONE foundations** | redirected under founder_direct |
 | Plans / quotas / meters | **DONE foundations** | no Stripe charges |
 
@@ -87,7 +96,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Live Examples framework | **DONE foundations** | catalog + readiness + `/terminal/live-examples` |
 | Watchlist | **DONE** | saved state on shared products/cases |
 | Unit economics / score / policy / baseline forecast | **DONE** | commerce-engine |
-| Neural forecasting | **STUB** | baseline MA only |
+| Neural forecasting | **STUB** | transparent baseline-ma-v2 (SMA×DOW×trend); not neural |
 | Billing charges | **DOC ONLY** | meters exist |
 
 ---
@@ -100,7 +109,12 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Full workspace `/terminal/ai` | **DONE** | |
 | Side panel on terminal pages | **DONE** | `AiSidePanel` |
 | Persist runs / shadow decisions | **DONE** | |
-| Free-form LLM | **OPTIONAL** | not required |
+| Free-form LLM (xAI Grok) | **DONE foundations** | Sole LLM provider when key set; modes in `xai-config.ts` |
+| Unified AI stack (xAI + Tavily + gateway) | **DONE foundations** | Search Manager, capabilities, text+JSON envelope, `POST /ai/gateway/run` |
+| xAI platform status / probe | **DONE** | `GET /ai/status`, `POST /ai/xai/probe`, UI strip |
+| RAG engine (org train/query) | **DONE** | Artifacts + hybrid dense + CSV + xAI-grounded default generate |
+| Artifact corpus CSV | **DONE** | `artifacts-corpus.csv` at repo root; sample committed |
+| Prediction engine | **DONE foundations** | train/run/evaluate/export; DemandForecast rows; not neural |
 | Contextual product assistants | **PARTIAL** | product page + global panel |
 | Stage-aware AI with `commerceCaseId` | **DONE foundations** | preamble + product filter + suggested objectives |
 
@@ -110,7 +124,7 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 
 | Claim | Status | Notes |
 |-------|--------|-------|
-| 6 workflow templates | **DONE** | metered runs |
+| 6 workflow templates | **DONE foundations** | Discovery ranks DB opportunities; inventory shadow drafts; metered |
 | Weekend Google shadow | **DONE** | live post blocked |
 | Visual builder / durable DAG | **DOC ONLY / PARTIAL** | |
 
@@ -121,7 +135,8 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | Claim | Status |
 |-------|--------|
 | Fixture connectors | **DONE** |
-| Live Shopify/Amazon/eBay/Google | **BLOCKED** credentials |
+| Live HTTP adapters (12) | **DONE foundations** | Shopify, Stripe, FX, Woo, EasyPost, SerpAPI, BigCommerce, eBay, PayPal, ShipStation, Keepa, Square — credential-gated |
+| Live Shopify/Amazon/eBay/Google | **BLOCKED** credentials | Amazon/Google post still blocked; eBay HTTP ready when token set |
 | Harmonization + event fabric | **DONE foundations** |
 | Docker / compose / release readiness page | **DONE** |
 | Local full deploy (`pnpm start` + PGlite) | **DONE** | Windows path-quoted spawn fixed in `start.mjs` |
@@ -138,13 +153,13 @@ Operational truth = this file + `plan.md` + `TRADEOPS_IMPLEMENTATION_LEDGER.md`.
 | 3 | Capability packs | **DONE foundations** |
 | 4 | Usage commercial model | **PARTIAL** (no Stripe) |
 | 5 | Enterprise structure | **PARTIAL** |
-| 6 | B2B workspace | **PLANNED** (page only) |
+| 6 | B2B / Industrial OS | **DONE foundations** | Industrial profile, procurement, twin, roles |
 | 7 | Customer intelligence | **DONE foundations** |
 | 8 | ATP | **DONE foundations** |
 | 9 | Channel profitability | **DONE foundations** |
 | 10 | Agentic readiness | **DONE foundations** |
 | 11 | Control tower | **DONE foundations** |
-| 12 | Integration hub | **PLANNED** |
+| 12 | Integration hub | **DONE foundations** |
 | 13 | BYOD | **PLANNED** |
 | 14 | AI governance depth | **PARTIAL** |
 | 15 | Segment onboarding | **DONE foundations** |

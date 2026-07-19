@@ -20,7 +20,15 @@ export * from './data-provenance';
 export * from './production-isolation';
 export * from './intelligence-engine';
 export * from './workspace';
+// Local COS business objects / knowledge graph / search
 export * from './business-objects';
 export * from './knowledge-graph';
 export * from './search-orchestration';
 export * from './object-workspace';
+// Industrial / prediction (origin/master)
+export * from './prediction-engine';
+export * from './industrial-domains';
+export * from './industrial-product';
+export * from './procurement-engine';
+export * from './digital-twin';
+export * from './industrial-personas';

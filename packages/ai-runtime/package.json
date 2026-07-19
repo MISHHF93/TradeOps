@@ -19,7 +19,9 @@
   },
   "dependencies": {
     "@tradeops/commerce-engine": "workspace:*",
-    "@tradeops/connector-core": "workspace:*"
+    "@tradeops/config": "workspace:*",
+    "@tradeops/connector-core": "workspace:*",
+    "cohere-ai": "^8.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

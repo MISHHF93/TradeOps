@@ -27,12 +27,14 @@ Access-mode resolver  (@tradeops/config access-mode)
         ↓
 Authentication provider (session cookie OR founder direct identity)
         ↓
-User identity + Organization context
+TenantContext resolver (membership-validated Organization + Workspace)
         ↓
-Permission engine (RBAC on role; org-scoped queries)
+Permission engine (membership-scoped roles + overrides; org-scoped queries)
 ```
 
-Auth models, memberships, sessions, OAuth connector flows, and audit tables **remain** in all modes.
+Auth models, memberships, sessions, workspaces, teams, RBAC tables, OAuth connector flows, and audit tables **remain** in all modes.
+
+**Multi-tenant isolation** is not optional when authenticated: every commerce/AI/billing mutation uses server-resolved `tenantId` / `organizationId`. See [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md).
 
 ## Restoring multi-user login
 
@@ -47,5 +49,7 @@ Then use `/login` and `/register` again.
 ## Related
 
 - [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md)
+- [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md)
+- [TRADEOPS_MULTI_TENANCY_EXECUTION.md](./TRADEOPS_MULTI_TENANCY_EXECUTION.md)
 - [TRADEOPS_SECURITY_MODEL.md](./TRADEOPS_SECURITY_MODEL.md)
 - [TRADEOPS_LOCAL_SETUP.md](./TRADEOPS_LOCAL_SETUP.md)

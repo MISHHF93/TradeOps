@@ -54,6 +54,8 @@ loadDotEnv();
 
 const API_PORT = Number(process.env.API_PORT || 4000);
 const WEB_PORT = Number(process.env.WEB_PORT || 3000);
+const API_HOST = process.env.API_HOST || '127.0.0.1';
+const WEB_HOST = process.env.WEB_HOST || '127.0.0.1';
 
 function freePorts(ports) {
   try {
@@ -103,34 +105,47 @@ function quoteWinArg(arg) {
   return `"${s.replace(/"/g, '""')}"`;
 }
 
+function isNodeExecutable(command) {
+  const s = String(command).toLowerCase().replace(/\//g, '\\');
+  return (
+    s === process.execPath.toLowerCase() ||
+    s.endsWith('\\node.exe') ||
+    s.endsWith('\\node') ||
+    s === 'node' ||
+    s === 'node.exe'
+  );
+}
+
 function run(command, args, name, env = {}) {
-  // Windows: paths like C:\Program Files\nodejs\node.exe must be quoted for cmd.exe /c.
-  // cmd /S /C strips the outermost quotes, so wrap the full cmdline in an extra pair.
-  // Without that, `"C:\Program Files\..."` becomes `C:\Program` and spawn fails.
-  const child = isWin
-    ? spawn(
-        process.env.ComSpec || 'cmd.exe',
-        [
-          '/d',
-          '/s',
-          '/c',
-          `"${[quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')}"`,
-        ],
-        {
+  // Prefer direct spawn for node.exe — avoids cmd.exe splitting "C:\Program Files\nodejs\node.exe".
+  // For pnpm.cmd and other shells on Windows: cmd /c with quoted args.
+  // Extra outer quotes + windowsVerbatimArguments: cmd /S /C strips outermost quotes.
+  const child =
+    !isWin || isNodeExecutable(command)
+      ? spawn(command, args, {
           cwd: root,
           stdio: ['ignore', 'pipe', 'pipe'],
           shell: false,
           env: { ...process.env, ...env },
           windowsHide: true,
-          windowsVerbatimArguments: true,
-        },
-      )
-    : spawn(command, args, {
-        cwd: root,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: false,
-        env: { ...process.env, ...env },
-      });
+        })
+      : spawn(
+          process.env.ComSpec || 'cmd.exe',
+          [
+            '/d',
+            '/s',
+            '/c',
+            `"${[quoteWinArg(command), ...args.map(quoteWinArg)].join(' ')}"`,
+          ],
+          {
+            cwd: root,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            shell: false,
+            env: { ...process.env, ...env },
+            windowsHide: true,
+            windowsVerbatimArguments: true,
+          },
+        );
 
   const prefix = (line) => `[${name}] ${line}`;
   const pipe = (stream) => {
@@ -339,8 +354,12 @@ const databaseUrl = await ensureDatabase();
 
 // Shared env for local stack. Next.js `next start` requires NODE_ENV=production;
 // API stays on development so AUTH_BYPASS (local no-login) remains active.
+// Bind loopback by default so founder_direct is not reachable from LAN/WAN.
 const sharedEnv = {
   API_PORT: String(API_PORT),
+  API_HOST,
+  WEB_HOST,
+  HOSTNAME: WEB_HOST,
   PORT: String(WEB_PORT),
   WEB_PORT: String(WEB_PORT),
   API_PUBLIC_URL: process.env.API_PUBLIC_URL || `http://127.0.0.1:${API_PORT}`,
@@ -352,6 +371,13 @@ const sharedEnv = {
   DATABASE_URL: databaseUrl,
 };
 
+console.log(`  Bind:     API ${API_HOST}:${API_PORT} · Web ${WEB_HOST}:${WEB_PORT}`);
+if (API_HOST === '0.0.0.0' || API_HOST === '::') {
+  console.warn(
+    '  ⚠ API_HOST is public-facing. Prefer 127.0.0.1 unless behind a reverse proxy. See docs/TRADEOPS_INTERNET_SECURITY.md',
+  );
+}
+
 const children = [
   run(pnpm, ['--filter', '@tradeops/api', 'start'], 'api', {
     ...sharedEnv,
@@ -359,7 +385,17 @@ const children = [
   }),
   run(
     pnpm,
-    ['--filter', '@tradeops/web', 'exec', 'next', 'start', '-p', String(WEB_PORT)],
+    [
+      '--filter',
+      '@tradeops/web',
+      'exec',
+      'next',
+      'start',
+      '-H',
+      WEB_HOST,
+      '-p',
+      String(WEB_PORT),
+    ],
     'web',
     {
       ...sharedEnv,

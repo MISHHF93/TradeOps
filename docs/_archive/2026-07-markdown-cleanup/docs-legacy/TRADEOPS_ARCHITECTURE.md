@@ -1,6 +1,10 @@
 # TradeOps Architecture
 
-> **Runtime note (2026-07-16):** Local vertical slice is live (terminal + fixtures + PGlite).  
+> **Canonical reconciliation (2026-07-18):**  
+> [architecture/ARCHITECTURE_RECONCILIATION.md](./architecture/ARCHITECTURE_RECONCILIATION.md)  
+> Code registry: `@tradeops/domain` → `architecture.ts` · API: `GET /api/v1/health/architecture`  
+>  
+> **Runtime note:** Local vertical slice is live (terminal + fixtures + PGlite).  
 > See [IMPLEMENTATION_LEDGER.md](./TRADEOPS_IMPLEMENTATION_LEDGER.md) and [docs/README.md](./README.md).  
 > **Vision:** [TRADEOPS_SIX_PILLARS.md](./TRADEOPS_SIX_PILLARS.md) · [TRADEOPS_PRODUCT_POSITIONING.md](./TRADEOPS_PRODUCT_POSITIONING.md)
 

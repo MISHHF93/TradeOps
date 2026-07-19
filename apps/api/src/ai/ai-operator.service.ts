@@ -10,13 +10,15 @@ import {
   bootstrapWebSearchProvider,
   describeAiProviders,
   diagnoseCohereConfig,
-  resolveProviderFromEnv,
-  registerBuiltinTools,
-  renderPrompt,
   detectOperatorLiveCredentials,
+  operatorRunDescription,
+  registerBuiltinTools,
+  resolveAIProvider,
+  resolveProviderFromEnv,
   resolveLoopMode,
   runOperatorCycle,
   summarizeExecutionPackage,
+  synthesizeWithXai,
   type KnowledgeBaseEntry,
   type LiveExampleDefinition,
   type NavigatorPlatformSnapshot,
@@ -24,11 +26,12 @@ import {
   type OperationLoopMode,
   type OperatorProduct,
 } from '@tradeops/ai-runtime';
-import { loadEnv } from '@tradeops/config';
+import { loadEnv, resolveAiMode, shouldUseXai, xaiPublicStatus } from '@tradeops/config';
 import {
   evaluatePredictions,
   realizedContributionProfitMinor,
 } from '@tradeops/commerce-engine';
+
 import { LIVE_HTTP_IMPLEMENTED, listLiveFeeds } from '@tradeops/connector-core';
 import { dataModeFromPlatform, newRequestIds, wrapEnvelope } from '@tradeops/contracts';
 import { BillingService } from '../billing/billing.service';
@@ -43,6 +46,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EventFabricService } from '../events/event-fabric.service';
 import { HarmonizationService } from '../harmonization/harmonization.service';
 import { SaasService } from '../saas/saas.service';
+import { RagService } from './rag.service';
+import { PredictionService } from './prediction.service';
+import { IndustrialService } from '../commerce/industrial.service';
 
 /** Prisma JSON columns accept structured values at runtime; cast for strict InputJsonValue. */
 function asJson(value: unknown): object {
@@ -66,6 +72,9 @@ export class AiOperatorService implements OnModuleInit {
     private readonly billing: BillingService,
     private readonly commercePayments: CommercePaymentService,
     @Inject(forwardRef(() => SaasService)) private readonly saas: SaasService,
+    private readonly rag: RagService,
+    private readonly prediction: PredictionService,
+    private readonly industrial: IndustrialService,
   ) {}
 
   onModuleInit(): void {
@@ -110,7 +119,8 @@ export class AiOperatorService implements OnModuleInit {
         authMode: f.authMode,
         capabilities: f.capabilities,
       })),
-      note: 'Tools are typed and permissioned. Consequential actions require approval. Fixture data is never labeled live. AI is an Objective Resolution Engine — start with objectives, not chat.',
+      note: 'Tools are typed and permissioned. Free-form intelligence is xAI Grok when configured, always RAG-grounded. Consequential actions require approval.',
+      xai: xaiPublicStatus(),
       navigator: {
         packageVersion: '1.0',
         sections: [
@@ -125,6 +135,34 @@ export class AiOperatorService implements OnModuleInit {
           'executionStatus',
           'verification',
         ],
+      },
+      rag: {
+        train: 'POST /api/v1/ai/rag/train',
+        query: 'POST /api/v1/ai/rag/query',
+        status: 'GET /api/v1/ai/rag/status',
+        platformStatus: 'GET /api/v1/ai/status',
+        embeddingModel: 'rag-tfidf-v1+dense',
+        llm: 'xAI Grok (XAI_API_KEY) — primary free-form provider',
+        note: 'RAG train indexes org knowledge. xAI synthesizes answers over retrieval — not GPU fine-tuning.',
+      },
+    };
+  }
+
+  async platformAiStatus(organizationId: string) {
+    const rag = this.rag.status(organizationId);
+    const xai = xaiPublicStatus();
+    return {
+      ...xai,
+      aiMode: resolveAiMode(),
+      usesXai: shouldUseXai(),
+      rag: {
+        trained: rag.trained,
+        embeddingMode: rag.embeddingMode,
+        embeddingModel: rag.embeddingModel,
+        stats: rag.stats,
+      },
+      honesty: {
+        note: 'Primary LLM is xAI. Without XAI_API_KEY the platform runs tools + local RAG only.',
       },
     };
   }
@@ -236,11 +274,43 @@ export class AiOperatorService implements OnModuleInit {
     executionPackage: ObjectiveExecutionPackage;
     summary: string;
     cycleResult?: Awaited<ReturnType<AiOperatorService['runObjective']>>;
+    rag?: {
+      trained: boolean;
+      hitCount: number;
+      citations: Array<{
+        title: string;
+        sourceType: string;
+        score: number;
+        isFixture: boolean;
+      }>;
+      groundedContextPreview: string;
+    } | null;
+    xaiSynthesis?: {
+      ok: boolean;
+      text?: string;
+      model?: string;
+      error?: string;
+      latencyMs?: number;
+    } | null;
   }> {
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
 
     const snapshot = await this.buildNavigatorSnapshot(input.organizationId);
     const priorKnowledge = await this.loadPriorKnowledge(input.organizationId);
+
+    // Ground objective on org RAG index (auto-train if missing)
+    let ragGround: Awaited<ReturnType<RagService['groundObjective']>> | null =
+      null;
+    try {
+      ragGround = await this.rag.groundObjective(
+        input.organizationId,
+        input.objective,
+      );
+    } catch (e) {
+      this.logger.warn(
+        `RAG ground skipped: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
 
     const wantsCycle =
       input.runCycle !== false &&
@@ -254,12 +324,18 @@ export class AiOperatorService implements OnModuleInit {
     let runId: string | null = null;
 
     if (wantsCycle) {
+      // Prefer live product ranking when the org has non-fixture catalog rows.
+      // Fixture-only orgs stay in shadow by default so demo packs are labeled honestly.
+      const defaultForceShadow = snapshot.liveProductCount === 0;
+      const forceShadow =
+        input.forceShadow !== undefined ? input.forceShadow : defaultForceShadow;
       cycleResult = await this.runObjective({
         organizationId: input.organizationId,
         userId: input.userId,
         objective: input.objective,
         loopMode: input.loopMode,
-        forceShadow: input.forceShadow === true,
+        forceShadow,
+
         permissions: input.permissions,
         commerceCaseId: input.commerceCaseId,
       });
@@ -317,6 +393,13 @@ export class AiOperatorService implements OnModuleInit {
               executionPackage,
               knowledgeBaseDelta: executionPackage.knowledgeBaseDelta,
               navigatorSummary: summarizeExecutionPackage(executionPackage),
+              rag: ragGround
+                ? {
+                    hitCount: ragGround.hits.length,
+                    topTitles: ragGround.hits.slice(0, 5).map((h) => h.title),
+                    groundedContext: ragGround.groundedContext.slice(0, 2500),
+                  }
+                : null,
             }),
           },
         });
@@ -344,6 +427,13 @@ export class AiOperatorService implements OnModuleInit {
             objectiveType: executionPackage.objective.objectiveType,
             finalAnswer: summarizeExecutionPackage(executionPackage),
             responseSummary: summarizeExecutionPackage(executionPackage),
+            rag: ragGround
+              ? {
+                  hitCount: ragGround.hits.length,
+                  topTitles: ragGround.hits.slice(0, 5).map((h) => h.title),
+                  groundedContext: ragGround.groundedContext.slice(0, 2500),
+                }
+              : null,
           }),
           toolTraceJson: [],
           decision: 'accept',
@@ -372,11 +462,93 @@ export class AiOperatorService implements OnModuleInit {
       },
     });
 
+    // xAI synthesis over RAG + package (never bypasses approvals)
+    let xaiSynthesis: {
+      ok: boolean;
+      text?: string;
+      model?: string;
+      error?: string;
+      latencyMs?: number;
+    } | null = null;
+
+    if (shouldUseXai() && ragGround) {
+      const mode = resolveAiMode();
+      const shouldSynth =
+        mode === 'xai_rag' ||
+        mode === 'xai_rag_tools' ||
+        (mode as string) === 'xai_rag';
+      if (shouldSynth) {
+        try {
+          const recJson = JSON.stringify(
+            (executionPackage.recommendations ?? []).slice(0, 8),
+          );
+          const synth = await synthesizeWithXai({
+            objective: input.objective,
+            groundedContext: ragGround.groundedContext,
+            packageSummary: summarizeExecutionPackage(executionPackage),
+            recommendationsJson: recJson,
+          });
+          xaiSynthesis = {
+            ok: synth.ok,
+            text: synth.text,
+            model: synth.model,
+            error: synth.error,
+            latencyMs: synth.latencyMs,
+          };
+          if (runId && synth.ok && synth.text) {
+            const existing = await this.prisma.client.operatorRun.findFirst({
+              where: { id: runId, organizationId: input.organizationId },
+            });
+            if (existing) {
+              const prev = (existing.planJson ?? {}) as Record<string, unknown>;
+              await this.prisma.client.operatorRun.update({
+                where: { id: runId },
+                data: {
+                  planJson: asJson({
+                    ...prev,
+                    xaiSynthesis,
+                  }),
+                  decisionNote: [
+                    existing.decisionNote ?? '',
+                    '',
+                    '--- xAI synthesis ---',
+                    synth.text.slice(0, 2000),
+                  ]
+                    .filter(Boolean)
+                    .join('\n')
+                    .slice(0, 4000),
+                },
+              });
+            }
+          }
+        } catch (e) {
+          xaiSynthesis = {
+            ok: false,
+            error: e instanceof Error ? e.message : String(e),
+          };
+        }
+      }
+    }
+
     return {
       runId,
       executionPackage,
       summary: summarizeExecutionPackage(executionPackage),
       cycleResult,
+      rag: ragGround
+        ? {
+            trained: ragGround.trained,
+            hitCount: ragGround.hits.length,
+            citations: ragGround.hits.slice(0, 8).map((h) => ({
+              title: h.title,
+              sourceType: h.sourceType,
+              score: h.score,
+              isFixture: h.isFixture,
+            })),
+            groundedContextPreview: ragGround.groundedContext.slice(0, 1200),
+          }
+        : null,
+      xaiSynthesis,
     };
   }
 
@@ -404,16 +576,40 @@ export class AiOperatorService implements OnModuleInit {
         return { ...ex, ...readiness };
       }),
       productCount,
-      connectors: connectors.map((c) => ({
-        providerKey: c.providerKey,
-        status: c.status,
-        dataClass: c.isFixture ? 'TEST_FIXTURE' : 'CONNECTED',
-        label: c.isFixture
-          ? 'TEST FIXTURE — NOT LIVE DATA'
-          : `Connector ${c.providerKey}: ${c.status}`,
-      })),
+      connectors: connectors.map((c) => {
+        const status = String(c.status).toLowerCase();
+        const isFixture = c.isFixture;
+        // Honesty: never label credentials_required / unhealthy as CONNECTED
+        let dataClass:
+          | 'TEST_FIXTURE'
+          | 'CONNECTED'
+          | 'CREDENTIALS_REQUIRED'
+          | 'UNHEALTHY'
+          | 'REGISTERED';
+        if (isFixture) {
+          dataClass = 'TEST_FIXTURE';
+        } else if (status === 'connected') {
+          dataClass = 'CONNECTED';
+        } else if (status.includes('credential') || status === 'credentials_required') {
+          dataClass = 'CREDENTIALS_REQUIRED';
+        } else if (status === 'unhealthy' || status === 'error') {
+          dataClass = 'UNHEALTHY';
+        } else {
+          dataClass = 'REGISTERED';
+        }
+        return {
+          providerKey: c.providerKey,
+          status: c.status,
+          dataClass,
+          label: isFixture
+            ? 'TEST FIXTURE — NOT LIVE DATA'
+            : dataClass === 'CONNECTED'
+              ? `Live connector ${c.providerKey}: connected (env credentials present — not a success claim)`
+              : `Connector ${c.providerKey}: ${c.status}`,
+        };
+      }),
       honesty: {
-        note: 'Readiness is capability-based. Fixture connectors never count as live marketplace data.',
+        note: 'Readiness is capability-based. Fixture connectors never count as live marketplace data. CONNECTED means install status only — not a successful vendor sync.',
       },
     };
   }
@@ -994,19 +1190,30 @@ export class AiOperatorService implements OnModuleInit {
       process.env.TRADEOPS_FORCE_FIXTURE === '1' ||
       process.env.TRADEOPS_FORCE_FIXTURE === 'true';
 
-    // forceShadow is opt-in only. Missing/false → resolveLoopMode (usually development).
+    // When forceShadow is omitted: fixture-only orgs stay shadow; live catalog prefers non-forced shadow.
+    let forceShadow = input.forceShadow;
+    if (forceShadow === undefined) {
+      try {
+        const snap = await this.buildNavigatorSnapshot(input.organizationId);
+        forceShadow = snap.liveProductCount === 0;
+      } catch {
+        forceShadow = true;
+      }
+    }
+
+    // Trusted server-generated correlation (never client-supplied tenant/auth).
+    const { requestId, traceId } = newRequestIds();
+    const correlationId = requestId;
+
     const effectiveMode: OperationLoopMode =
       input.loopMode ??
       resolveLoopMode({
-        forceShadow: input.forceShadow === true,
+        forceShadow: forceShadow === true,
         forceFixture,
         hasLiveCredentials,
         controlledLiveEnabled,
       });
 
-    // Trusted server-generated correlation (never client-supplied tenant/auth).
-    const { requestId, traceId } = newRequestIds();
-    const correlationId = requestId;
 
     // Server-side entitlement enforcement (never UI-only)
     await this.saas.assertAiEvaluationAllowed(input.organizationId);
@@ -1040,7 +1247,9 @@ export class AiOperatorService implements OnModuleInit {
       }
     }
 
-    let objective = input.objective;
+    // User-facing objective only — never persist system/workspace preambles on OperatorRun.objective.
+    // Preambles are AI context; they belong in planJson for audit, not Opportunities/Objectives UI.
+    const userObjective = input.objective.trim();
     let caseContext: {
       caseId: string;
       productId: string;
@@ -1060,39 +1269,25 @@ export class AiOperatorService implements OnModuleInit {
         stageStatus: ctx.stageStatus,
         contextPreamble: ctx.contextPreamble,
       };
-      // Prompt registry owns case framing (source-controlled, versioned)
-      const framed = renderPrompt('operator.case_context', {
-        caseId: ctx.caseId,
-        productTitle: ctx.productTitle,
-        stage: ctx.currentStage,
-        stageStatus: ctx.stageStatus,
-        nextAction: String(ctx.nextActionLabel ?? ''),
-        preamble: ctx.contextPreamble,
-      });
-      const caseBlock = framed.ok ? framed.text : ctx.contextPreamble;
-      objective = `${caseBlock}\n\nOperator objective:\n${input.objective}`;
-    }
-    if (runtimePreamble) {
-      objective = `${runtimePreamble}\n\n${objective}`;
-    } else if (workspacePreamble) {
-      objective = `${workspacePreamble}\n\n${objective}`;
+
     }
 
     const run = await this.prisma.client.operatorRun.create({
       data: {
         organizationId: input.organizationId,
         userId: input.userId ?? null,
-        objective,
+        objective: userObjective,
         loopMode: effectiveMode,
         status: 'collecting',
         planJson: asJson({
+          userObjective,
           ...(caseContext
             ? { commerceCaseId: caseContext.caseId, stage: caseContext.currentStage }
             : {}),
           allowedAiTools,
           workspaceBound: Boolean(workspacePreamble),
           phases: { A: 'pending', B: 'pending' },
-          forceShadow: input.forceShadow === true,
+          forceShadow: forceShadow === true,
           requestId,
           traceId,
           correlationId,
@@ -1106,6 +1301,16 @@ export class AiOperatorService implements OnModuleInit {
             xai: Boolean(process.env.XAI_API_KEY?.trim()),
             generativeProvider: resolveProviderFromEnv(),
             tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
+          },
+          // AI-only context (never render as the human "Objective" / "Description")
+          aiContext: {
+            hasWorkspacePreamble: Boolean(workspacePreamble),
+            hasRuntimePreamble: Boolean(runtimePreamble),
+            hasCasePreamble: Boolean(caseContext?.contextPreamble),
+            workspacePreambleChars: workspacePreamble.length,
+            runtimePreambleChars: runtimePreamble.length,
+            casePreambleChars: caseContext?.contextPreamble.length ?? 0,
+
           },
         }),
         toolTraceJson: [],
@@ -1131,7 +1336,7 @@ export class AiOperatorService implements OnModuleInit {
         payload: {
           objective: input.objective.slice(0, 500),
           loopMode: effectiveMode,
-          forceShadow: input.forceShadow === true,
+          forceShadow: forceShadow === true,
           requestId,
           correlationId,
           traceId,
@@ -1326,6 +1531,86 @@ export class AiOperatorService implements OnModuleInit {
                 })),
               };
             },
+            trainRagIndex: async ({ organizationId }: { organizationId: string }) =>
+              this.rag.train(organizationId, input.userId),
+            queryRagKnowledge: async ({
+              organizationId,
+              query,
+              topK,
+              excludeFixtures,
+              generate,
+            }: {
+              organizationId: string;
+              query: string;
+              topK?: number;
+              excludeFixtures?: boolean;
+              generate?: boolean;
+            }) =>
+              this.rag.query(organizationId, {
+                query,
+                topK,
+                excludeFixtures,
+                generate,
+                autoTrainIfMissing: true,
+              }),
+            runPredictionEngine: async ({
+              organizationId,
+              productId,
+              horizonDays,
+              limit,
+            }: {
+              organizationId: string;
+              productId?: string;
+              horizonDays?: number;
+              limit?: number;
+            }) => {
+              const h: 7 | 14 | 30 =
+                horizonDays === 7 || horizonDays === 30 ? horizonDays : 14;
+              return this.prediction.run(organizationId, {
+                productId,
+                horizonDays: h,
+                limit,
+              });
+            },
+            evaluateIndustrialProcurement: async ({
+              organizationId,
+              productId,
+              quantity,
+              requirementText,
+            }: {
+              organizationId: string;
+              productId: string;
+              quantity?: number;
+              requirementText?: string;
+            }) => {
+              const { parseTechnicalRequirementsFromText } = await import(
+                '@tradeops/commerce-engine'
+              );
+              const requirements = requirementText
+                ? parseTechnicalRequirementsFromText(requirementText)
+                : [];
+              return this.industrial.evaluateProcurement(organizationId, {
+                productId,
+                quantity,
+                requirements,
+              });
+            },
+            searchIndustrialCompatibility: async ({
+              organizationId,
+              productId,
+              requirementText,
+              take,
+            }: {
+              organizationId: string;
+              productId?: string;
+              requirementText?: string;
+              take?: number;
+            }) =>
+              this.industrial.findCompatible(organizationId, {
+                productId,
+                requirementText,
+                take,
+              }),
             draftListing: async ({
               organizationId,
               productId,
@@ -1569,6 +1854,24 @@ export class AiOperatorService implements OnModuleInit {
         correlationId,
       });
 
+      // Cohere narration over ranked evidence (live LLM — not a canned script)
+      const narrative = await this.narrateOperatorWithCohere({
+        objective: userObjective,
+        machineSummary: cycle.responseSummary,
+        recommendations: cycle.recommendations,
+        fixtureCatalog: products.some((p) => p.sourcePlatform.startsWith('fixture')),
+      });
+      const responseSummary = narrative.ok
+        ? [
+            narrative.text,
+            '',
+            '---',
+            'Machine ranking summary (deterministic):',
+            cycle.responseSummary,
+          ].join('\n')
+        : cycle.responseSummary;
+
+
       // Execution Navigator package (objective → verified outcome)
       let executionPackage: ObjectiveExecutionPackage | null = null;
       try {
@@ -1594,26 +1897,35 @@ export class AiOperatorService implements OnModuleInit {
         : dataModeFromPlatform('live', effectiveMode);
 
       // Persist full A→Z plan envelope (keep readiness from create; add cycle outputs)
+      const prevPlan = (run.planJson ?? {}) as Record<string, unknown>;
+
       const planEnvelope = {
+        ...prevPlan,
         ...cycle.plan,
+        userObjective,
         timeline: cycle.timeline,
         sources: cycle.sources,
-        responseSummary: cycle.responseSummary,
+        responseSummary,
         briefingSource: cycle.briefingSource ?? null,
+        aiNarrative: narrative.ok ? narrative.text : null,
+        aiNarrativeError: narrative.ok ? null : narrative.error,
+        aiNarrativeProvider: narrative.provider,
+        aiNarrativeModel: narrative.model,
+
         candidateStats: cycle.candidateStats,
         filtersApplied: cycle.filtersApplied,
         objectiveType: cycle.objectiveType,
         riskClass: cycle.riskClass,
         approvalRequired: cycle.approvalRequired,
         liveExampleId: input.liveExampleId ?? null,
-        finalAnswer: cycle.responseSummary,
+        finalAnswer: responseSummary,
         executionPackage: executionPackage ?? undefined,
         knowledgeBaseDelta: executionPackage?.knowledgeBaseDelta,
         navigatorSummary: executionPackage
           ? summarizeExecutionPackage(executionPackage)
           : undefined,
         // Loop metadata (not overwritten silently)
-        forceShadow: input.forceShadow === true,
+        forceShadow: forceShadow === true,
         loopMode: effectiveMode,
         dataMode,
         liveProgress: progressBuf,
@@ -1658,6 +1970,8 @@ export class AiOperatorService implements OnModuleInit {
       await this.prisma.client.operatorRun.update({
         where: { id: run.id },
         data: {
+          // Keep objective as the user goal only (never re-attach preambles)
+          objective: userObjective,
           status: runStatus,
           planJson: asJson(planEnvelope),
           toolTraceJson: asJson(cycle.toolTrace),
@@ -1687,7 +2001,7 @@ export class AiOperatorService implements OnModuleInit {
           objectiveType: cycle.objectiveType,
           recommendationCount: cycle.recommendations.length,
           loopMode: effectiveMode,
-          responseSummary: cycle.responseSummary,
+          responseSummary,
           phaseA: 'tools_executed',
           phaseB: 'synthesis_complete',
           casesSynced,
@@ -1695,6 +2009,8 @@ export class AiOperatorService implements OnModuleInit {
           correlationId,
           traceId,
           dataSourcePlan,
+          aiNarrative: narrative.ok,
+
         },
       });
 
@@ -1715,6 +2031,8 @@ export class AiOperatorService implements OnModuleInit {
           correlationId,
           traceId,
           casesSynced,
+          aiNarrative: narrative.ok,
+
         },
       });
 
@@ -1740,8 +2058,12 @@ export class AiOperatorService implements OnModuleInit {
         approvalRequired: cycle.approvalRequired,
         decision: cycle.decision,
         decisionNote: cycle.decisionNote,
-        responseSummary: cycle.responseSummary,
+        responseSummary,
         briefingSource: cycle.briefingSource ?? null,
+        aiNarrative: narrative.ok ? narrative.text : null,
+        aiNarrativeProvider: narrative.provider,
+        aiNarrativeModel: narrative.model,
+
         plan: cycle.plan,
         timeline: cycle.timeline,
         sources: cycle.sources,
@@ -1776,16 +2098,20 @@ export class AiOperatorService implements OnModuleInit {
         honesty: {
           fixtureProductsPresent: fixturePresent,
           liveCredentialsPresent: hasLiveCredentials,
-          forceShadow: input.forceShadow === true,
+          forceShadow: forceShadow === true,
           loopMode: effectiveMode,
-          shadowByDefault: false,
+          shadowByDefault: effectiveMode === 'shadow',
           dataMode,
+          cohereNarration: narrative.ok,
           note:
             cycle.objectiveType === 'READ_ONLY_ANALYSIS'
-              ? 'Read-only analysis: no approval records created. Publish still requires explicit approval. Commerce cases synced for process board. Full Execution Package attached.'
+              ? narrative.ok
+                ? 'Live Cohere narration over ranked catalog evidence. Ranking is deterministic; prose is model-generated. Fixture catalog is not live Shopify. Commerce cases synced for process board. Full Execution Package attached.'
+                : 'Read-only analysis: no approval records created. Publish still requires explicit approval. Commerce cases synced for process board. Full Execution Package attached.'
               : effectiveMode === 'shadow'
                 ? 'Shadow mode records what the AI would do. No live marketplace publish without credentials + approval. Execution Package tracks plan → verification.'
                 : `Loop mode ${effectiveMode}: tool path is live against org store; fixture products remain labeled. Consequential publish still requires approval.`,
+
         },
       };
 
@@ -1795,7 +2121,7 @@ export class AiOperatorService implements OnModuleInit {
         data: body,
         state: runtimeState,
         dataMode,
-        text: cycle.responseSummary,
+        text: responseSummary,
         requestId,
         traceId,
         correlationId,
@@ -1869,7 +2195,7 @@ export class AiOperatorService implements OnModuleInit {
   }
 
   async listRuns(organizationId: string, take = 20) {
-    return this.prisma.client.operatorRun.findMany({
+    const rows = await this.prisma.client.operatorRun.findMany({
       where: { organizationId },
       orderBy: { startedAt: 'desc' },
       take,
@@ -1880,16 +2206,54 @@ export class AiOperatorService implements OnModuleInit {
         },
       },
     });
+    // Sanitize legacy rows that stored system/workspace preambles as objective
+    return rows.map((row) => {
+      const display = operatorRunDescription({
+        objective: row.objective,
+        decisionNote: row.decisionNote,
+        planJson: row.planJson as {
+          responseSummary?: string;
+          navigatorSummary?: string;
+          finalAnswer?: string;
+          interpretation?: string;
+          userObjective?: string;
+          executionPackage?: { objective?: { goal?: string; desiredOutcome?: string } };
+        },
+      });
+      return {
+        ...row,
+        objective: display.objective,
+        description: display.description,
+      };
+    });
   }
 
   async getRun(organizationId: string, runId: string) {
-    return this.prisma.client.operatorRun.findFirst({
+    const row = await this.prisma.client.operatorRun.findFirst({
       where: { id: runId, organizationId },
       include: {
         recommendations: { orderBy: { rank: 'asc' } },
         shadowDecisions: true,
       },
     });
+    if (!row) return null;
+    const display = operatorRunDescription({
+      objective: row.objective,
+      decisionNote: row.decisionNote,
+      planJson: row.planJson as {
+        responseSummary?: string;
+        navigatorSummary?: string;
+        finalAnswer?: string;
+        interpretation?: string;
+        userObjective?: string;
+        executionPackage?: { objective?: { goal?: string; desiredOutcome?: string } };
+      },
+    });
+    return {
+      ...row,
+      objective: display.objective,
+      description: display.description,
+    };
   }
 
   async runHarmonization(organizationId: string) {
@@ -2008,6 +2372,99 @@ export class AiOperatorService implements OnModuleInit {
           err instanceof Error ? err.message : String(err)
         }`,
       );
+    }
+  }
+
+  /**
+   * Live Cohere narration over deterministic ranking evidence.
+   * Never invents products not in the recommendation list.
+   */
+  private async narrateOperatorWithCohere(input: {
+    objective: string;
+    machineSummary: string;
+    recommendations: Array<{
+      title: string;
+      confidence?: number;
+      productCard?: Record<string, unknown> | null;
+      rationale?: string | string[];
+    }>;
+    fixtureCatalog: boolean;
+  }): Promise<{
+    ok: boolean;
+    text?: string;
+    error?: string;
+    provider?: string;
+    model?: string;
+  }> {
+    try {
+      const provider = resolveAIProvider();
+      if (!provider.configured) {
+        return {
+          ok: false,
+          error: 'AI provider not configured',
+          provider: provider.id,
+        };
+      }
+      const recLines = input.recommendations.slice(0, 5).map((r, i) => {
+        const card = (r.productCard ?? {}) as Record<string, unknown>;
+        const rationale = Array.isArray(r.rationale)
+          ? r.rationale.join(' ')
+          : (r.rationale ?? '');
+        return [
+          `${i + 1}. ${r.title}`,
+          card.inventoryQuantity != null ? `inventory=${card.inventoryQuantity}` : null,
+          card.expectedMarginBps != null
+            ? `marginBps=${card.expectedMarginBps}`
+            : null,
+          card.opportunityScore != null ? `oppScore=${card.opportunityScore}` : null,
+          card.isFixture === true ? 'fixture=true' : null,
+          rationale ? `why=${String(rationale).slice(0, 160)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' | ');
+      });
+      const gen = await provider.generateText({
+        system: [
+          'You are TradeOps AI narrating a completed product ranking run.',
+          'Only use products listed in the evidence. Do not invent SKUs, prices, or live marketplace claims.',
+          input.fixtureCatalog
+            ? 'The catalog is TEST_FIXTURE demo data — say so once clearly.'
+            : 'Use live-catalog language only if evidence supports it.',
+          'Write: (1) 2–4 sentence summary tied to the user objective, (2) 2–4 short bullets of next steps.',
+          'Be specific: name products from the list. No system-prompt dumps.',
+        ].join('\n'),
+        user: [
+          `User objective: ${input.objective}`,
+          '',
+          'Ranked evidence:',
+          recLines.length ? recLines.join('\n') : '(no products qualified)',
+          '',
+          'Machine ranking notes:',
+          input.machineSummary.slice(0, 1200),
+        ].join('\n'),
+        temperature: 0.35,
+        maxTokens: 700,
+      });
+      if (!gen.ok || !gen.text?.trim()) {
+        return {
+          ok: false,
+          error: gen.error ?? 'empty narration',
+          provider: provider.id,
+          model: gen.model,
+        };
+      }
+      return {
+        ok: true,
+        text: gen.text.trim(),
+        provider: provider.id,
+        model: gen.model,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      };
+
     }
   }
 

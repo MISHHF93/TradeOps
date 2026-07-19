@@ -45,6 +45,12 @@ export const organizationSchema = z.object({
     .min(2)
     .max(64)
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  /** Optional expanded tenant fields (present when loaded from multi-tenant API) */
+  publicId: z.string().uuid().optional(),
+  organizationType: z.string().optional(),
+  commerceMode: z.string().optional(),
+  tenantStatus: z.string().optional(),
+  subscriptionStatus: z.string().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

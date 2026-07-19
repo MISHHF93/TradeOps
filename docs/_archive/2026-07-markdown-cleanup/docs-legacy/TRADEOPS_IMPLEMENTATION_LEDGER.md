@@ -36,7 +36,26 @@
 | Commerce Process consolidation | Operational foundations | CommerceCase spine, stage transitions, next-action engine, `/terminal/process` board + journey, Listings/Fulfillment stage views, product CaseHandoff, Tasks + blockers + SOPs, AI case context, process-first nav, Terminal process summary, legacy pipeline/control-tower redirects |
 | Workflow templates | Partial | Dry-run / approval skips; metered |
 | Google weekend | Shadow operational | Live post blocked |
-| Shopify/Amazon/eBay live | Credential-blocked | Registry only |
+| Live HTTP adapters (12) | Operational foundations | Shopify, Stripe, FX, Woo, EasyPost, SerpAPI, BigCommerce, eBay, PayPal, ShipStation, Keepa, Square |
+| Shopify/Amazon/eBay live vendor data | Credential-blocked | HTTP ready; needs merchant tokens |
+| Production isolation (scanner/portfolio) | Operational | `TRADEOPS_PRODUCTION_WORKSPACE` filters fixtures |
+| Demand forecast baseline-ma-v2 | Operational | SMA × DOW × half-window trend; neural still STUB |
+| AI tool `forecastDemand` | Operational | Typed tool; empty history → zero units, low confidence |
+| Workflow discovery evidence | Operational foundations | Host Opportunity rows ranked; no invented scores |
+| Inventory protection shadow | Operational foundations | Draft pause/reduce; no external reconcile without approval |
+| Live-example connector honesty | Operational | CONNECTED only when install status is connected |
+| Fixture-skew intelligence | Operational | Majority fixtures in mixed catalog surface insight |
+| RAG Engine (org knowledge) | Operational | Artifacts in corpus; hybrid dense; CSV export; navigator auto-ground |
+| Artifact corpus CSV | Operational | Repo-root export + sample file |
+| Prediction engine v1 | Operational foundations | Bias fit from outcomes; batch run → DemandForecast |
+| LLM free-form (xAI) | Optional | `XAI_API_KEY` — retrieval works without it |
+| Dense embeddings (xAI API) | Optional | Tries embeddings endpoint; falls back to local dense |
+| Production multi-tenancy | Operational foundations | Tenant/Workspace/Team/RBAC, TenantContext, tenancy APIs, isolation inventory |
+| Internet security harden | Operational | Loopback bind default, security boot, secret rotation helpers |
+| Vendor API key catalog | Operational | paste templates + sync/write-key-docs scripts |
+| Integration hub + credential vault UI | Operational foundations | `/terminal/integrations` — env presence matrix, usage quotas, never shows secrets |
+| Industrial Commerce OS | Operational foundations | Verticals, industrial product profile, procurement engine, digital twin, industrial personas, ERP/PIM registry |
+| AI procurement evaluate | Operational foundations | Requirements match, quotes, substitutes, RFQ draft — award approval-gated |
 | Agency client hierarchy | Operational foundations | Create/list client orgs under parent |
 | Enterprise SSO / legal entities | Planned | Not built |
 | B2B negotiated catalogs | Planned | Not built |

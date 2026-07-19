@@ -18,6 +18,7 @@ type Cmd = {
 
 /**
  * ⌘K directory — driven by terminal-routes registry (no legacy / duplicate paths).
+ * Live object search hits prepend when query length ≥ 2.
  */
 const COMMANDS: Cmd[] = [
   { id: 'ws-switch', label: 'Switch persona', href: '/terminal/workspace?switch=1', group: 'Workspace', kbd: 'G W' },
@@ -29,7 +30,16 @@ const COMMANDS: Cmd[] = [
   { id: 'ws-adm', label: 'Administrator home', href: '/terminal/workspace/administrator', group: 'Workspace' },
   ...commandPaletteEntries().map((e) => ({
     ...e,
-    kbd: e.id === 'discover' ? 'G D' : e.id === 'process' ? 'G C' : e.id === 'ai' ? 'G A' : undefined,
+    kbd:
+      e.id === 'discover'
+        ? 'G D'
+        : e.id === 'process'
+          ? 'G C'
+          : e.id === 'objectives' || e.id === 'ai'
+            ? 'G A'
+            : e.id === 'workspace'
+              ? 'G T'
+              : undefined,
   })),
   // Outside terminal (not in registry, still jump targets)
   { id: 'billing', label: 'SaaS billing', href: '/app/billing', group: 'Govern' },

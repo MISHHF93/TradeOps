@@ -22,8 +22,9 @@ With `TRADEOPS_ACCESS_MODE=founder_direct` (default):
 1. `npm start`
 2. Open **http://localhost:3000** → **`/terminal/workspace`** → active **persona home** (intelligence surface)
 3. No login, register, or onboarding
+4. Server still resolves a real **tenant membership + default workspace** (not unrestricted multi-org data)
 
-See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md).
+See [TRADEOPS_DIRECT_FOUNDER_ACCESS.md](./TRADEOPS_DIRECT_FOUNDER_ACCESS.md) and [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md).
 
 ## Prerequisites
 
@@ -65,7 +66,7 @@ Open (with default `founder_direct`):
 | http://localhost:3000/terminal/workspace | Resolver entry (redirects to persona home) |
 | http://localhost:3000/terminal/workspace?switch=1 | Switch persona |
 | http://localhost:3000/terminal/process | Commerce Process board (shared spine) |
-| http://localhost:3000/terminal/ai | AI Execution Navigator (shadow by default) |
+| http://localhost:3000/terminal/ai | AI Execution Navigator + **RAG Engine** (train/query) |
 | http://localhost:3000/terminal/objectives | Durable objective / Execution Package history |
 | http://localhost:3000/terminal/connectors | Connector Ops Center |
 | http://localhost:3000/terminal | Discover / product scan |
@@ -78,6 +79,21 @@ Open (with default `founder_direct`):
 
 1. Open persona home — ranked priorities + health score  
 2. Click **Resolve focus objective** or **Ask AI** on an insight  
+3. Optional RAG: open `/terminal/ai` → **Train / reindex** → **Query knowledge**  
+4. Optional free-form grounded answers: set `XAI_API_KEY` (server-side only) — see [TRADEOPS_RAG_ENGINE.md](./TRADEOPS_RAG_ENGINE.md)  
+
+### Verify package tests (after pull)
+
+```powershell
+pnpm --filter @tradeops/connector-core test
+pnpm --filter @tradeops/connector-live-http test
+pnpm --filter @tradeops/commerce-engine test
+pnpm --filter @tradeops/ai-runtime test
+pnpm --filter @tradeops/workflow-engine test
+pnpm --filter @tradeops/api build
+pnpm --filter @tradeops/web typecheck
+```
+
 3. Or: `GET http://localhost:4000/api/v1/workspace/intelligence` (with session/cookies)  
 
 Optional simulation: `TRADEOPS_SIMULATION_MODE=1` labels fixture data.  

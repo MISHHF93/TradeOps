@@ -1,22 +1,32 @@
 # TradeOps Multimodal AI (Product Artifacts)
 
-**Status:** Planned / partial hooks  
+**Status:** Operational foundations — rules + optional xAI Grok enrichment  
 
 ## Intent
 
 AI may evaluate product artifacts and propose attributes for the Digital Twin. All inferences are **proposals**, not ground truth.
 
-## Image proposals (when wired)
+## Pipeline
 
-- Visible product type, color, packaging, text OCR, quality score, listing suitability, near-duplicate hints
+```text
+Artifact metadata (+ optional text sample)
+        ↓
+Rule classifiers (purpose, type, image/doc heuristics)
+        ↓  when XAI_API_KEY + TRADEOPS_AI_MODE allow
+xAI Grok enrichment (JSON proposals)
+        ↓
+metadataJson.lastAnalysis / lastPurposeClassification
+```
 
-## Video proposals
+## Image / video / document proposals
 
-- Demonstrated use case, duration suitability, policy concerns
-
-## Document proposals
-
-- Document type, specs, warnings, warranty terms, language, effective/expiry dates
+| Kind | Rules | xAI enrich |
+|------|-------|------------|
+| Image quality, suitability, type clues | Yes | Optional text narrative (not pixel vision yet) |
+| Video duration / policy text flags | Yes | Optional |
+| Document type (manual/warranty/spec) | Yes | Optional |
+| Purpose (primary, gallery, warranty, …) | Yes | Optional |
+| Product category | Yes | Optional |
 
 ## Required metadata on every extraction
 
@@ -30,8 +40,24 @@ AI may evaluate product artifacts and propose attributes for the Digital Twin. A
 }
 ```
 
-## Current product behavior
+## APIs
 
-- Completeness + channel readiness are rule-based (not LLM).
-- AI operator can reference product context; dedicated multimodal artifact evaluation jobs are incomplete.
-- Never auto-publish AI-generated listing assets without rights lineage and approval.
+| Method | Path |
+|--------|------|
+| POST | `/api/v1/products/:productId/artifacts/:artifactId/analyze` |
+| POST | `/api/v1/products/:productId/classify` |
+
+## AI tools
+
+- `classifyArtifactPurpose`
+- `classifyProductCategory`
+- `classifyObjectiveIntent`
+
+## Honesty
+
+- Never auto-publish AI-generated listing assets without rights + approval  
+- Policy **blocks** remain rule fail-closed (xAI does not override blocks)  
+- Without xAI: rules-only proposals still run  
+- Vision LLM on raw image bytes is still **not** shipped (text/metadata only)
+
+See [TRADEOPS_XAI_CONFIGURATION.md](./TRADEOPS_XAI_CONFIGURATION.md).

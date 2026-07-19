@@ -27,7 +27,7 @@ export type EvaluationReport = {
 
 export function evaluatePredictions(
   samples: PredictionSample[],
-  modelVersion = 'baseline-ma-v1',
+  modelVersion = 'baseline-ma-v2',
   now = new Date(),
 ): EvaluationReport {
   if (samples.length === 0) {

@@ -10,10 +10,11 @@ import {
 } from './production-connectors';
 import { listLiveFeeds, listPlannedLiveFeeds } from './live-feed-registry';
 
-describe('production connector catalog (approved stack)', () => {
-  it('registers only approved operational providers', () => {
+describe('production connector catalog (union stack)', () => {
+  it('registers approved local stack + production commerce/AI/industrial providers', () => {
     const list = listProductionConnectors();
     const ids = new Set(list.map((c) => c.id));
+    // Local COS active stack
     for (const id of [
       'shopify-graphql-admin',
       'stripe-api',
@@ -27,21 +28,26 @@ describe('production connector catalog (approved stack)', () => {
     ]) {
       assert.ok(ids.has(id), `missing production connector ${id}`);
     }
-    // Removed speculative multi-provider AI / marketplaces
+    // Remote production catalog
     for (const id of [
+      'quickbooks-online',
+      'xero-api',
       'openai',
-      'anthropic',
       'xai',
-      'mistral',
-      'amazon-sp-api',
-      'ebay-sell',
+      'cohere',
+      'open-exchange-rates',
+      'avalara',
       'serpapi',
-      'paypal-rest',
-      'shipstation-api',
-      'mixpanel-api',
+      'keepa-api',
+      'sap-s4hana',
+      'oracle-netsuite',
+      'salsify-pim',
+      'manhattan-wms',
+      'taxjar',
     ]) {
-      assert.ok(!ids.has(id), `inactive provider must not be operational: ${id}`);
+      assert.ok(ids.has(id), `missing production connector ${id}`);
     }
+    assert.ok(list.length >= 35);
     assert.ok(list.every((c) => c.isFixture === false));
     assert.ok(list.every((c) => c.maturity === 'operational'));
   });
@@ -90,11 +96,16 @@ describe('production connector catalog (approved stack)', () => {
 
   it('listProductionRuntime includes capability maps for active stack', () => {
     const runtime = listProductionRuntime({} as NodeJS.ProcessEnv);
-    assert.ok(runtime.every((r) => r.id !== 'openai'));
     assert.ok(CAPABILITY_PROVIDER_MAP.read_orders?.includes('shopify-graphql-admin'));
     assert.ok(LIVE_HTTP_IMPLEMENTED.has('stripe-api'));
     assert.ok(LIVE_HTTP_IMPLEMENTED.has('tavily-search'));
-    assert.ok(!LIVE_HTTP_IMPLEMENTED.has('serpapi'));
-    assert.ok(!LIVE_HTTP_IMPLEMENTED.has('woocommerce-rest'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('bigcommerce-rest'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('ebay-sell'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('paypal-rest'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('shipstation-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('keepa-api'));
+    assert.ok(LIVE_HTTP_IMPLEMENTED.has('square-api'));
+    // Union: master 12 + tavily-search
+    assert.equal(LIVE_HTTP_IMPLEMENTED.size, 13);
   });
 });

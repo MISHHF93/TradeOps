@@ -108,6 +108,28 @@ describe('forecastDemand', () => {
     const f7 = forecastDemand(obs, 7, new Date('2026-07-01T00:00:00Z'));
     const f14 = forecastDemand(obs, 14, new Date('2026-07-01T00:00:00Z'));
     assert.ok(f14.expectedUnits >= f7.expectedUnits);
+    assert.equal(f7.modelVersion, 'baseline-ma-v2');
+  });
+
+  it('raises forecast when second-half trend is up', () => {
+    const obs = [
+      ...Array.from({ length: 7 }, (_, i) => ({
+        date: `2026-06-${String(i + 1).padStart(2, '0')}`,
+        units: 5,
+      })),
+      ...Array.from({ length: 7 }, (_, i) => ({
+        date: `2026-06-${String(i + 8).padStart(2, '0')}`,
+        units: 15,
+      })),
+    ];
+    const flat = Array.from({ length: 14 }, (_, i) => ({
+      date: `2026-06-${String(i + 1).padStart(2, '0')}`,
+      units: 10,
+    }));
+    const up = forecastDemand(obs, 14, new Date('2026-07-01T00:00:00Z'));
+    const base = forecastDemand(flat, 14, new Date('2026-07-01T00:00:00Z'));
+    assert.ok(up.expectedUnits > base.expectedUnits);
+    assert.ok(up.factors.some((f) => f.startsWith('trend_factor=')));
   });
 });
 

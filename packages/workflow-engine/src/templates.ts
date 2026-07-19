@@ -71,8 +71,9 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     key: 'inventory_protection',
     name: 'Inventory Protection',
-    version: '1.0.0',
-    description: 'When supplier stock falls: reduce sync qty or pause listing after approval.',
+    version: '1.1.0',
+    description:
+      'When supplier stock falls: inspect listings, draft pause/reduce actions, queue for approval. Shadow only — no external pause without approval + live connector.',
     trigger: 'supplier_stock_change',
     requiresApproval: true,
     steps: [
@@ -83,7 +84,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
       'reconcile_external',
     ],
     variables: ['minStock', 'pauseBelow'],
-    executionStatus: 'coming_soon',
+    executionStatus: 'shadow_only',
   },
   {
     key: 'supplier_routing',

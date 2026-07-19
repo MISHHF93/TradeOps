@@ -50,27 +50,52 @@ export class OrgsService {
         data: {
           name: input.name.trim(),
           slug,
+          organizationType: 'retailer',
+          commerceMode: 'retail',
+          tenantStatus: 'active',
+          subscriptionStatus: 'trialing',
+          onboardingStatus: 'created',
         },
       });
-      await tx.membership.create({
+      const membership = await tx.membership.create({
         data: {
+          userId,
+          organizationId: org.id,
+          role: 'owner',
+          status: 'active',
+        },
+      });
+      const workspace = await tx.workspace.create({
+        data: {
+          organizationId: org.id,
+          name: 'Default',
+          slug: 'default',
+          kind: 'default',
+          isDefault: true,
+          status: 'active',
+        },
+      });
+      await tx.workspaceMembership.create({
+        data: {
+          workspaceId: workspace.id,
+          membershipId: membership.id,
           userId,
           organizationId: org.id,
           role: 'owner',
         },
       });
-      return org;
+      return { org, workspaceId: workspace.id };
     });
 
-    await this.sessions.setActiveOrganization(sessionId, organization.id);
+    await this.sessions.setActiveTenant(sessionId, organization.org.id, organization.workspaceId);
 
     await this.audit.write({
       action: 'org.create',
       resourceType: 'organization',
-      resourceId: organization.id,
-      organizationId: organization.id,
+      resourceId: organization.org.id,
+      organizationId: organization.org.id,
       actorUserId: userId,
-      metadata: { slug: organization.slug },
+      metadata: { slug: organization.org.slug },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
@@ -85,7 +110,8 @@ export class OrgsService {
     return toAuthResponse({
       user,
       memberships,
-      activeOrganizationId: organization.id,
+      activeOrganizationId: organization.org.id,
+      activeWorkspaceId: organization.workspaceId,
     });
   }
 
@@ -114,7 +140,36 @@ export class OrgsService {
       throw new ForbiddenException('You are not a member of this organization');
     }
 
-    await this.sessions.setActiveOrganization(sessionId, organizationId);
+    let defaultWs = await this.prisma.client.workspace.findFirst({
+      where: { organizationId, isDefault: true },
+    });
+    if (!defaultWs) {
+      defaultWs = await this.prisma.client.workspace.create({
+        data: {
+          organizationId,
+          name: 'Default',
+          slug: 'default',
+          kind: 'default',
+          isDefault: true,
+          status: 'active',
+        },
+      });
+      await this.prisma.client.workspaceMembership.upsert({
+        where: {
+          workspaceId_userId: { workspaceId: defaultWs.id, userId },
+        },
+        create: {
+          workspaceId: defaultWs.id,
+          membershipId: membership.id,
+          userId,
+          organizationId,
+          role: membership.role,
+        },
+        update: {},
+      });
+    }
+
+    await this.sessions.setActiveTenant(sessionId, organizationId, defaultWs.id);
 
     await this.audit.write({
       action: 'org.switch',
@@ -122,6 +177,7 @@ export class OrgsService {
       resourceId: organizationId,
       organizationId,
       actorUserId: userId,
+      metadata: { workspaceId: defaultWs.id },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     });
@@ -137,6 +193,7 @@ export class OrgsService {
       user,
       memberships,
       activeOrganizationId: organizationId,
+      activeWorkspaceId: defaultWs.id,
     });
   }
 

@@ -27,7 +27,7 @@ export default function AppError({
       <h1>{chunkFail ? 'App was updated' : 'Something went wrong'}</h1>
       <p className="lede">
         {chunkFail
-          ? 'A new build is running and this tab loaded old JavaScript. Reload to continue.'
+          ? 'A new build is running and this tab loaded old JavaScript. Hard-refresh (Ctrl+Shift+R) to continue.'
           : (error?.message ?? 'An unexpected client error occurred.')}
       </p>
       <div className="cta-row">
@@ -36,7 +36,7 @@ export default function AppError({
           className="btn primary"
           onClick={() => {
             if (chunkFail) {
-              window.location.href = '/terminal/cockpit';
+              window.location.href = '/terminal/workspace';
               return;
             }
             reset();
@@ -44,8 +44,11 @@ export default function AppError({
         >
           {chunkFail ? 'Reload workspace' : 'Try again'}
         </button>
-        <a className="btn ghost" href="/terminal/cockpit">
-          Command center
+        <a className="btn ghost" href="/terminal/workspace">
+          Workspace
+        </a>
+        <a className="btn ghost" href="/terminal">
+          Discover
         </a>
       </div>
       {error?.digest ? <p className="meta">Digest: {error.digest}</p> : null}

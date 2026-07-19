@@ -230,6 +230,7 @@ export class CapitalService {
         }),
         budget: {
           create: {
+            organizationId: input.organizationId,
             inventoryBudgetMinor: inv,
             advertisingBudgetMinor: ads,
             fulfillmentBudgetMinor: ful,

@@ -463,6 +463,12 @@ export async function runOperatorCycle(input: {
     );
   }
 
+  const objectiveTokens = extractObjectiveTokens(input.objective);
+  const inventoryRiskIntent =
+    /\b(inventory|stock|low.?stock|out of stock|risk|overs?tock|understock)\b/i.test(
+      input.objective,
+    );
+
   const retrieved = input.products.length;
   let rejectedMissingCost = 0;
   const normalized = input.products.filter((p) => {
@@ -480,8 +486,27 @@ export async function runOperatorCycle(input: {
     `${normalized.length} normalized; ${rejectedMissingCost} rejected for missing cost`,
   );
 
-  const scored = normalized.map((p) => scoreCandidate(p, filters));
+  const scored = normalized.map((p) => {
+    const base = scoreCandidate(p, filters);
+    const objectiveMatch = scoreObjectiveMatch(p, objectiveTokens, input.objective);
+    let rankScore = base.rankScore + objectiveMatch * 18;
+    // Inventory / risk objectives: surface low stock and high-qty risk SKUs first
+    if (inventoryRiskIntent) {
+      if (p.inventoryQuantity <= 0) rankScore += 40;
+      else if (p.inventoryQuantity <= 5) rankScore += 28;
+      else if (p.inventoryQuantity >= 40) rankScore += 12; // overstock risk
+      rankScore += Math.max(0, 30 - Math.min(30, p.inventoryQuantity));
+    }
+    return { ...base, objectiveMatch, rankScore };
+  });
   const passed = scored.filter((c) => c.pass);
+  const anyObjectiveHit = scored.some((c) => c.objectiveMatch > 0);
+  // When the user names a product/category, prefer matches; else use all that passed filters.
+  const relevancePool =
+    anyObjectiveHit && objectiveTokens.length > 0
+      ? passed.filter((c) => c.objectiveMatch > 0)
+      : passed;
+  const pool = relevancePool.length > 0 ? relevancePool : passed;
   const failedReasons = scored
     .filter((c) => !c.pass)
     .slice(0, 8)
@@ -496,10 +521,10 @@ export async function runOperatorCycle(input: {
     timeline,
     'Costs, risks, and opportunity scores evaluated',
     'done',
-    `${passed.length} of ${normalized.length} passed filters`,
+    `${passed.length} of ${normalized.length} passed filters; objective tokens=[${objectiveTokens.slice(0, 6).join(', ')}] matches=${pool.filter((c) => c.objectiveMatch > 0).length}`,
   );
 
-  const candidates = passed
+  const candidates = pool
     .sort((a, b) => b.rankScore - a.rankScore)
     .slice(0, filters.topN ?? 3);
 
@@ -632,6 +657,7 @@ export async function runOperatorCycle(input: {
       forecastConfidence: p.dataConfidence,
       dataFreshnessAt: p.dataFreshnessAt,
       currency: p.currency,
+      inventoryQuantity: p.inventoryQuantity,
       isFixture,
       deliveryEstimateDays: filters.maxDeliveryDays ?? 14,
       currentSignal: p.currentSignal ?? null,
@@ -846,6 +872,9 @@ export async function runOperatorCycle(input: {
     | undefined;
 
   // Machine-readable tool facts (for Phase B prompt only — NEVER ship as a fake "AI briefing")
+  const fixtureCount = input.products.filter((p) =>
+    p.sourcePlatform.startsWith('fixture'),
+  ).length;
   const toolFactsLines: string[] = [];
   if (retrieved === 0) {
     toolFactsLines.push(
@@ -859,6 +888,11 @@ export async function runOperatorCycle(input: {
       `rejected_missing_cost=${rejectedMissingCost}`,
       `rejected_by_filter=${rejectedByFilter}`,
       `ranked=${finalRecs.length}`,
+      fixtureCount === input.products.length && input.products.length > 0
+        ? 'data_class=TEST_FIXTURE'
+        : fixtureCount > 0
+          ? `data_class=MIXED fixture=${fixtureCount}`
+          : 'data_class=LIVE',
     );
     for (let i = 0; i < Math.min(5, finalRecs.length); i++) {
       const r = finalRecs[i]!;
@@ -900,6 +934,7 @@ export async function runOperatorCycle(input: {
    * - Cohere Phase B success → ONLY model text (unique per objective/evidence)
    * - Cohere missing/fail → short honest block; numbers live on recommendation cards
    * - Empty store / zero ranks → short operational status (not a fake evaluation essay)
+   * Fixture/data-class notes live in toolFactsBlob for the model (not as fixed essays).
    */
   let responseSummary: string;
   let briefingSource: 'cohere' | 'blocked' | 'empty_store' | 'no_qualifiers' | 'tools_structured' =
@@ -1092,6 +1127,75 @@ function deriveSourcesFromProducts(
   });
   sources.push({ name: 'Trend feed', status: 'limited', detail: 'Baseline model only' });
   return sources;
+}
+
+const OBJECTIVE_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'that',
+  'this',
+  'find',
+  'search',
+  'evaluate',
+  'recommend',
+  'product',
+  'products',
+  'list',
+  'show',
+  'what',
+  'which',
+  'our',
+  'are',
+  'need',
+  'needs',
+  'please',
+  'help',
+  'top',
+  'best',
+  'high',
+  'low',
+]);
+
+/** Tokens from the user objective used to bias ranking (not filters that hard-fail). */
+export function extractObjectiveTokens(objective: string): string[] {
+  return objective
+    .toLowerCase()
+    .replace(/[^a-z0-9\s\-]/g, ' ')
+    .split(/[\s\-]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 2 && !OBJECTIVE_STOPWORDS.has(t))
+    .slice(0, 16);
+}
+
+export function scoreObjectiveMatch(
+  product: OperatorProduct,
+  tokens: string[],
+  objective: string,
+): number {
+  if (tokens.length === 0) return 0;
+  const hay = [
+    product.title,
+    product.description,
+    product.category,
+    product.supplierName ?? '',
+    product.sourcePlatform,
+  ]
+    .join(' ')
+    .toLowerCase();
+  let hits = 0;
+  for (const t of tokens) {
+    if (hay.includes(t)) hits += 1;
+  }
+  // multi-word phrases from objective
+  if (/\busb\b/i.test(objective) && /usb/i.test(hay)) hits += 2;
+  if (/\baluminum|aluminium\b/i.test(objective) && /alumin/i.test(hay)) hits += 2;
+  if (/\bholster|weapon|tactical\b/i.test(objective) && /holster|weapon|tactical/i.test(hay)) {
+    hits += 2;
+  }
+  return hits;
 }
 
 function scoreCandidate(

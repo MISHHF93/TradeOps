@@ -5,9 +5,20 @@
 All money fields: **integer minor units** + `currency` (ISO 4217).  
 Timestamps: UTC `timestamptz`.
 
-## Identity (existing)
+## Identity & multi-tenancy
 
-Organization, User, Membership, Session, AuditEvent
+**Canonical Tenant = Organization.** Hierarchy:
+
+- **Organization** (tenant) — publicId, organizationType, commerceMode, subscription, featureFlags, residency, …
+- **User** — identity only (no global role)
+- **Membership** — user↔tenant; membership-scoped `SystemRole` + status
+- **Workspace** / **WorkspaceMembership** — business unit under tenant
+- **Team** / **TeamMembership** — collaboration groups
+- **Role** / **Permission** / **RolePermission** / **MembershipRole** / **UserPermissionOverride** — RBAC
+- **Session** — `activeOrganizationId` + `activeWorkspaceId`
+- **AuditEvent** — optional organizationId
+
+See [TRADEOPS_MULTI_TENANCY.md](./TRADEOPS_MULTI_TENANCY.md).
 
 ## Connectors
 

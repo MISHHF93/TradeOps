@@ -219,11 +219,52 @@ export function listCapabilities(input?: {
     {
       id: 'app.pipeline',
       surface: 'app',
-      name: 'Commerce pipeline board',
-      path: '/terminal/pipeline',
+      name: 'Commerce process board',
+      path: '/terminal/process',
       status: 'operational',
-      description: 'Stage counts from real DB rows.',
-      evidence: 'GET /api/v1/terminal/pipeline',
+      description:
+        'CommerceCase lifecycle board (legacy /terminal/pipeline redirects here). Stage counts from real DB rows.',
+      evidence: 'GET /api/v1/commerce/process',
+    },
+    {
+      id: 'app.live_http',
+      surface: 'app',
+      name: 'Live HTTP adapters (12)',
+      path: '/terminal/connectors',
+      status: 'operational',
+      description:
+        'Credential-gated Shopify, Stripe, FX, Woo, EasyPost, SerpAPI, BigCommerce, eBay, PayPal, ShipStation, Keepa, Square. Never fabricates payloads.',
+      evidence: 'LIVE_HTTP_IMPLEMENTED + @tradeops/connector-live-http',
+    },
+    {
+      id: 'app.production_isolation',
+      surface: 'app',
+      name: 'Production workspace isolation',
+      path: '/terminal',
+      status: 'operational',
+      description:
+        'Scanner/portfolio exclude fixture rows when TRADEOPS_PRODUCTION_WORKSPACE=1 (or production without simulation).',
+      evidence: 'filterForProductionWorkspace + GET /api/v1/terminal/scanner isolation',
+    },
+    {
+      id: 'app.ai.rag',
+      surface: 'app',
+      name: 'RAG knowledge engine',
+      path: '/terminal/ai',
+      status: 'operational',
+      description:
+        'Org-specific hybrid train/query over products, artifacts, cases, runs. xAI Grok answers when configured.',
+      evidence: 'POST /api/v1/ai/rag/train · POST /api/v1/ai/rag/query · docs/TRADEOPS_RAG_ENGINE.md',
+    },
+    {
+      id: 'app.ai.xai',
+      surface: 'app',
+      name: 'xAI Grok free-form intelligence',
+      path: '/terminal/ai',
+      status: 'operational',
+      description:
+        'Primary LLM provider (SpaceXAI). Modes auto/tools_only/xai_rag/xai_rag_tools. RAG-grounded; probe via POST /ai/xai/probe.',
+      evidence: 'GET /api/v1/ai/status · packages/config/src/xai-config.ts · docs/TRADEOPS_XAI_CONFIGURATION.md',
     },
     {
       id: 'app.approvals',

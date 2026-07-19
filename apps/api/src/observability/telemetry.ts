@@ -34,18 +34,31 @@ export function opsLog(
     commerceCaseId?: string;
     providerKey?: string;
     eventType?: string;
+    /** Canonical tenant id (= organizationId) */
     organizationId?: string;
+    tenantId?: string;
+    workspaceId?: string;
   },
 ): void {
+  const tenant = fields?.tenantId ?? fields?.organizationId;
   const parts = [
     message,
     fields?.traceId ? `trace=${fields.traceId}` : null,
-    fields?.organizationId ? `org=${fields.organizationId.slice(0, 8)}` : null,
+    tenant ? `tenant=${tenant.slice(0, 8)}` : null,
+    fields?.workspaceId ? `ws=${fields.workspaceId.slice(0, 8)}` : null,
     fields?.commerceCaseId ? `case=${fields.commerceCaseId.slice(0, 8)}` : null,
     fields?.providerKey ? `provider=${fields.providerKey}` : null,
     fields?.eventType ? `event=${fields.eventType}` : null,
   ].filter(Boolean);
   log.log(parts.join(' '));
+}
+
+/** Tenant-dimension metric label helper for future OTel export. */
+export function tenantMetricDims(organizationId: string | null | undefined): {
+  tenant_id: string;
+} | Record<string, never> {
+  if (!organizationId) return {};
+  return { tenant_id: organizationId };
 }
 
 /**

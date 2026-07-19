@@ -1,0 +1,1801 @@
+{
+  "scannedAt": "2026-07-18T02:54:12.392Z",
+  "totalKeys": 227,
+  "keys": {
+    "AI_INCLUDE_ACTIONS": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_INCLUDE_CONFIDENCE": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_INCLUDE_EVIDENCE": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_INCLUDE_JSON_OUTPUT": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_INCLUDE_TEXT_OUTPUT": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_MAX_EXECUTION_SECONDS": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_MAX_TOOL_CALLS": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_MAX_TOOL_ROUNDS": {
+      "count": 2,
+      "files": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_OUTPUT_SCHEMA_VERSION": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_PROMPT_VERSION": {
+      "count": 2,
+      "files": [
+        "packages/ai-runtime/src/prompts/registry.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_PROVIDER": {
+      "count": 16,
+      "files": [
+        "packages/ai-runtime/src/provider/resolve-provider.ts",
+        "packages/ai-runtime/src/runtime/agent-loop.fail-closed.test.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/start-api-with-env.mjs",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/verify-ai-runtime.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "AI_REQUIRE_APPROVAL_FOR_PAYMENTS": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_REQUIRE_APPROVAL_FOR_PUBLISHING": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_REQUIRE_APPROVAL_FOR_REFUNDS": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_REQUIRE_APPROVAL_FOR_WRITES": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_RESPONSE_CACHE_ENABLED": {
+      "count": 3,
+      "files": [
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/verify-ai-runtime.mjs"
+      ]
+    },
+    "AI_RESPONSE_MODE": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_RUNTIME_ENABLED": {
+      "count": 12,
+      "files": [
+        "packages/ai-runtime/src/runtime/agent-loop.fail-closed.test.ts",
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/verify-ai-runtime.mjs"
+      ]
+    },
+    "AI_STREAMING_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_STRUCTURED_OUTPUT_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_TEXT_OUTPUT_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AI_TOOL_CALLING_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AKENEO_BASE_URL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AKENEO_CLIENT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "AKENEO_CLIENT_SECRET": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "ALIBABA_APP_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "ALIBABA_APP_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "ALIEXPRESS_APP_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "ALIEXPRESS_APP_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AMAZON_SP_CLIENT_ID": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "AMAZON_SP_CLIENT_SECRET": {
+      "count": 5,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "AMAZON_SP_REFRESH_TOKEN": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "ANTHROPIC_API_KEY": {
+      "count": 1,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "API_HOST": {
+      "count": 8,
+      "files": [
+        "apps/api/src/main.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/start-api-with-env.mjs",
+        "scripts/start.mjs"
+      ]
+    },
+    "API_PORT": {
+      "count": 6,
+      "files": [
+        "apps/api/src/main.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.test.ts",
+        "scripts/start.mjs"
+      ]
+    },
+    "API_PUBLIC_URL": {
+      "count": 13,
+      "files": [
+        "apps/web/next.config.ts",
+        "apps/web/src/lib/api.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/demo-commerce-loop.mjs",
+        "scripts/e2e-smoke.mjs",
+        "scripts/export-artifact-corpus.mjs",
+        "scripts/google-weekend-prepare.mjs",
+        "scripts/rebuild-intelligence.mjs",
+        "scripts/start.mjs",
+        "scripts/tenant-isolation-smoke.mjs",
+        "scripts/verify-ai-runtime.mjs"
+      ]
+    },
+    "API_TIMEOUT_MS": {
+      "count": 2,
+      "files": [
+        "apps/web/src/lib/api.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "APP_SECRET": {
+      "count": 4,
+      "files": [
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/generate-secrets.mjs"
+      ]
+    },
+    "ARTIFACT_STORAGE_ROOT": {
+      "count": 1,
+      "files": [
+        "apps/api/src/commerce/artifact-storage.ts"
+      ]
+    },
+    "AUTH_BYPASS": {
+      "count": 7,
+      "files": [
+        "packages/config/src/access-mode.ts",
+        "packages/config/src/index.test.ts",
+        "packages/config/src/index.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/start.mjs"
+      ]
+    },
+    "AUTODESK_CLIENT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "AUTODESK_CLIENT_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "AUTOMATED_INVESTMENT_ADVICE_ENABLED": {
+      "count": 5,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "AVALARA_ACCOUNT_ID": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "AVALARA_LICENSE_KEY": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "BIGCOMMERCE_ACCESS_TOKEN": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "BIGCOMMERCE_STORE_HASH": {
+      "count": 6,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "CANADA_POST_PASSWORD": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "CANADA_POST_USERNAME": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "CAPITAL_CUSTODY_ENABLED": {
+      "count": 10,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "CAPITAL_NETWORK_ENABLED": {
+      "count": 9,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "CAPITAL_SANDBOX_ENABLED": {
+      "count": 10,
+      "files": [
+        "apps/api/src/capital/marketplace-accounts.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "COHERE_API_KEY": {
+      "count": 17,
+      "files": [
+        "packages/ai-runtime/src/provider/cohere-provider.ts",
+        "packages/ai-runtime/src/runtime/agent-loop.fail-closed.test.ts",
+        "packages/ai-runtime/src/runtime-provenance.test.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/scan-env-keys.mjs",
+        "scripts/start-api-with-env.mjs",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/verify-ai-runtime.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_BASE_URL": {
+      "count": 6,
+      "files": [
+        "packages/ai-runtime/src/provider/cohere-provider.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_CHAT_MODEL": {
+      "count": 6,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_EMBED_MODEL": {
+      "count": 4,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_MAX_RETRIES": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "COHERE_MAX_TOKENS": {
+      "count": 4,
+      "files": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "COHERE_MODEL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/env-validation.ts"
+      ]
+    },
+    "COHERE_REQUEST_TIMEOUT_MS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "COHERE_RERANK_MODEL": {
+      "count": 4,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_RETRIEVAL_ENABLED": {
+      "count": 5,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "COHERE_TEMPERATURE": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "COHERE_TIMEOUT_MS": {
+      "count": 6,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs"
+      ]
+    },
+    "CREDENTIALS_MASTER_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/generate-secrets.mjs"
+      ]
+    },
+    "DATABASE_URL": {
+      "count": 12,
+      "files": [
+        "apps/api/src/prisma/prisma.service.ts",
+        "apps/worker/src/main.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.test.ts",
+        "packages/database/scripts/pg-ping.cjs",
+        "scripts/bootstrap-local.mjs",
+        "scripts/pg-ping.mjs",
+        "scripts/start.mjs"
+      ]
+    },
+    "DHL_API_KEY": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "DISTRIBUTIONS_ENABLED": {
+      "count": 9,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "apps/web/src/app/capital/distributions/page.tsx",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "EASYPOST_API_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "EBAY_ACCESS_TOKEN": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "EMBEDDED_PG_PORT": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "scripts/local-db.mjs"
+      ]
+    },
+    "ENABLE_SIMULATION_MODE": {
+      "count": 3,
+      "files": [
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/verify-ai-runtime.mjs"
+      ]
+    },
+    "EQUITY_OFFERINGS_ENABLED": {
+      "count": 6,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "FEDEX_CLIENT_ID": {
+      "count": 5,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "FEDEX_CLIENT_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "GA4_PROPERTY_ID": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "GEMINI_API_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "GEMINI_MODEL": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "GOOGLE_ADS_DEVELOPER_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "GOOGLE_ADS_REFRESH_TOKEN": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "GOOGLE_AI_API_KEY": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "GOOGLE_MERCHANT_ACCESS_TOKEN": {
+      "count": 8,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/automation/google-weekend.service.ts",
+        "apps/api/src/public/public-tools.controller.ts",
+        "apps/worker/src/main.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "GOOGLE_MERCHANT_DATA_SOURCE_ID": {
+      "count": 4,
+      "files": [
+        "apps/api/src/automation/google-weekend.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "GOOGLE_MERCHANT_ID": {
+      "count": 6,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/automation/google-weekend.service.ts",
+        "apps/api/src/public/public-tools.controller.ts",
+        "apps/worker/src/main.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "GROK_API_KEY": {
+      "count": 6,
+      "files": [
+        "packages/ai-runtime/src/rag-engine.test.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "GUARANTEED_RETURNS_ENABLED": {
+      "count": 4,
+      "files": [
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "INFOR_CLIENT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "INFOR_CLIENT_SECRET": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "INVENTORY_SOURCE_API_KEY": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "INVESTOR_ONBOARDING_ENABLED": {
+      "count": 5,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "KEEPA_API_KEY": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "LOG_LEVEL": {
+      "count": 2,
+      "files": [
+        "apps/api/src/main.ts",
+        "apps/worker/src/main.ts"
+      ]
+    },
+    "MANHATTAN_CLIENT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "MANHATTAN_CLIENT_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "MARKETPLACE_CONNECT_ENABLED": {
+      "count": 12,
+      "files": [
+        "apps/api/src/capital/marketplace-accounts.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "META_ACCESS_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "META_AD_ACCOUNT_ID": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "MISTRAL_API_KEY": {
+      "count": 1,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "MIXPANEL_API_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "MIXPANEL_PROJECT_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "NETSUITE_ACCOUNT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "NETSUITE_CONSUMER_KEY": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "NETSUITE_TOKEN_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "NEXT_PUBLIC_API_PUBLIC_URL": {
+      "count": 12,
+      "files": [
+        "apps/web/next.config.ts",
+        "apps/web/src/lib/api.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/apply-local-secure-env.mjs",
+        "scripts/start.mjs",
+        "scripts/verify-ai-runtime.mjs",
+        "scripts/write-env-local.mjs"
+      ]
+    },
+    "NEXT_PUBLIC_API_TIMEOUT_MS": {
+      "count": 8,
+      "files": [
+        "apps/web/src/lib/api.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/apply-local-secure-env.mjs",
+        "scripts/write-env-local.mjs"
+      ]
+    },
+    "NEXT_PUBLIC_GA4_ENABLED": {
+      "count": 9,
+      "files": [
+        "apps/api/src/public/capabilities.ts",
+        "apps/web/src/components/feedback/ga4.tsx",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "NEXT_PUBLIC_GA4_MEASUREMENT_ID": {
+      "count": 7,
+      "files": [
+        "apps/web/src/components/feedback/ga4.tsx",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "NEXT_PUBLIC_SITE_URL": {
+      "count": 10,
+      "files": [
+        "apps/web/src/app/robots.ts",
+        "apps/web/src/app/sitemap.ts",
+        "apps/web/src/components/feedback/founder-access-banner.tsx",
+        "apps/web/src/lib/seo.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "NEXT_PUBLIC_TRADEOPS_ACCESS_MODE": {
+      "count": 7,
+      "files": [
+        "apps/web/src/lib/access-mode.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/apply-local-secure-env.mjs"
+      ]
+    },
+    "NEXT_PUBLIC_TRADEOPS_SIMULATION_MODE": {
+      "count": 6,
+      "files": [
+        "apps/web/src/app/terminal/layout.tsx",
+        "packages/commerce-engine/src/production-isolation.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "NODE_ENV": {
+      "count": 22,
+      "files": [
+        "apps/api/src/capital/network-capital.service.ts",
+        "apps/api/src/identity/session.service.ts",
+        "apps/api/src/main.ts",
+        "apps/web/src/components/forms/auth-forms.tsx",
+        "apps/web/src/components/layout/terminal-shell.tsx",
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/commerce-engine/src/production-isolation.ts",
+        "packages/config/src/access-mode.ts",
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.ts",
+        "packages/config/src/security-boot.ts",
+        "packages/database/src/client.ts"
+      ]
+    },
+    "OPENAI_API_KEY": {
+      "count": 6,
+      "files": [
+        "packages/ai-runtime/src/openai-client.ts",
+        "packages/ai-runtime/src/runtime/agent-loop.fail-closed.test.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "OPENAI_BASE_URL": {
+      "count": 4,
+      "files": [
+        "packages/ai-runtime/src/openai-client.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "OPENAI_CHAT_MODEL": {
+      "count": 2,
+      "files": [
+        "packages/ai-runtime/src/openai-client.ts",
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "OPENAI_MODEL": {
+      "count": 3,
+      "files": [
+        "packages/ai-runtime/src/openai-client.ts",
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "OPENAI_WEB_SEARCH_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "OPENEXCHANGERATES_APP_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "OTEL_EXPORTER_OTLP_ENDPOINT": {
+      "count": 1,
+      "files": [
+        "apps/api/src/observability/telemetry.ts"
+      ]
+    },
+    "PAYPAL_CLIENT_ID": {
+      "count": 6,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "PAYPAL_CLIENT_SECRET": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "POOLED_INVESTMENT_ENABLED": {
+      "count": 8,
+      "files": [
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "POSTHOG_API_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "POSTHOG_HOST": {
+      "count": 1,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "PRISMA_DEV_DB_PORT": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "scripts/bootstrap-local.mjs",
+        "scripts/prisma-dev-db.mjs",
+        "scripts/start.mjs"
+      ]
+    },
+    "PRISMA_DEV_NAME": {
+      "count": 1,
+      "files": [
+        "scripts/prisma-dev-db.mjs"
+      ]
+    },
+    "PRIVATE_AGREEMENT_LEDGER_ENABLED": {
+      "count": 8,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "PROFIT_SHARING_ENABLED": {
+      "count": 6,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "PUBLIC_CAMPAIGNS_ENABLED": {
+      "count": 8,
+      "files": [
+        "apps/api/src/capital/capital.service.ts",
+        "apps/web/src/app/capital/opportunities/page.tsx",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/financial-gates.test.ts",
+        "packages/config/src/financial-gates.ts"
+      ]
+    },
+    "QUICKBOOKS_ACCESS_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "QUICKBOOKS_REALM_ID": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "REDIS_URL": {
+      "count": 6,
+      "files": [
+        "apps/api/src/redis/redis.service.ts",
+        "apps/worker/src/main.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.test.ts"
+      ]
+    },
+    "RETRIEVAL_ENABLED": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "SALSIFY_API_KEY": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "SALSIFY_ORG_ID": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SAP_BASE_URL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SAP_CLIENT_ID": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "SAP_CLIENT_SECRET": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "SEARCH_ALLOWED_DOMAINS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_BLOCKED_DOMAINS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_DEFAULT_CACHE_TTL_SECONDS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_MAX_QUERIES_PER_REQUEST": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_MAX_RESULTS_PER_QUERY": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_PROVIDER_INTERNAL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_PROVIDER_PRIMARY": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_PROVIDER_RETRIEVAL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_REQUIRE_CITATIONS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SEARCH_REQUIRE_SOURCE_TIMESTAMPS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "SERPAPI_API_KEY": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "SESSION_TTL_HOURS": {
+      "count": 2,
+      "files": [
+        "apps/api/src/identity/session.service.ts"
+      ]
+    },
+    "SHIPSTATION_API_KEY": {
+      "count": 6,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "SHIPSTATION_API_SECRET": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "SHOPIFY_ACCESS_TOKEN": {
+      "count": 11,
+      "files": [
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.test.ts",
+        "packages/connectors/live-http/src/index.test.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "SHOPIFY_SHOP_DOMAIN": {
+      "count": 13,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.test.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.test.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "SQUARE_ACCESS_TOKEN": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "STRIPE_PRICE_AGENCY_ANNUAL": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_AGENCY_MONTHLY": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_ENTERPRISE_ANNUAL": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_ENTERPRISE_MONTHLY": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_FOUNDER_ANNUAL": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_FOUNDER_MONTHLY": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_PROFESSIONAL_ANNUAL": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_PRICE_PROFESSIONAL_MONTHLY": {
+      "count": 4,
+      "files": [
+        "apps/api/src/billing/billing-plans.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "STRIPE_SECRET_KEY": {
+      "count": 8,
+      "files": [
+        "apps/api/src/billing/billing.service.ts",
+        "apps/api/src/capital/marketplace-accounts.service.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "STRIPE_WEBHOOK_SECRET": {
+      "count": 5,
+      "files": [
+        "apps/api/src/billing/billing.service.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TAVILY_API_KEY": {
+      "count": 10,
+      "files": [
+        "packages/ai-runtime/src/runtime/agent-loop.ts",
+        "packages/ai-runtime/src/tavily-client.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TAVILY_CRAWL_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TAVILY_EXTRACT_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TAVILY_RESEARCH_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TAVILY_SEARCH_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TAXJAR_API_KEY": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TIKTOK_ACCESS_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "TIKTOK_ADVERTISER_ID": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_ACCESS_MODE": {
+      "count": 24,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/billing/billing.service.ts",
+        "apps/api/src/commerce/commerce.controller.ts",
+        "apps/api/src/commerce/workspace.service.ts",
+        "apps/api/src/identity/founder-access.service.ts",
+        "apps/api/src/public/public-tools.controller.ts",
+        "apps/web/src/lib/access-mode.ts",
+        "packages/config/src/access-mode.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.test.ts",
+        "packages/config/src/index.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/start.mjs"
+      ]
+    },
+    "TRADEOPS_AI_DEFAULT_GENERATE": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TRADEOPS_AI_MODE": {
+      "count": 9,
+      "files": [
+        "packages/ai-runtime/src/rag-engine.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TRADEOPS_AI_TIMEOUT_MS": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TRADEOPS_ALLOW_AUTHORIZED_SOURCING": {
+      "count": 8,
+      "files": [
+        "apps/api/src/billing/commerce-payment-readiness.test.ts",
+        "apps/api/src/billing/commerce-payment.service.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_ALLOW_INSECURE_BIND": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts"
+      ]
+    },
+    "TRADEOPS_ALLOW_PRODUCTION_SIMULATION": {
+      "count": 2,
+      "files": [
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_ALLOW_PUBLIC_FOUNDER": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts"
+      ]
+    },
+    "TRADEOPS_CAPITAL_MODE": {
+      "count": 3,
+      "files": [
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_CONNECTOR_PROBE_MS": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_ENV_VALIDATION": {
+      "count": 2,
+      "files": [
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_GUARANTEED_RETURNS_ENABLED": {
+      "count": 4,
+      "files": [
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_INTERNAL_CUSTODY_ENABLED": {
+      "count": 8,
+      "files": [
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_LIVE_SYNC_DISABLED": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_LIVE_SYNC_MS": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_LIVE_SYNC_PROVIDER_COOLDOWN_MS": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_OPS_SYNC_DISABLED": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_POOLED_INVESTMENT_ENABLED": {
+      "count": 4,
+      "files": [
+        "packages/config/src/capital-mode.test.ts",
+        "packages/config/src/capital-mode.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_PRODUCTION_WORKSPACE": {
+      "count": 2,
+      "files": [
+        "packages/commerce-engine/src/production-isolation.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "TRADEOPS_PUBLIC_WARNING": {
+      "count": 5,
+      "files": [
+        "apps/web/src/components/feedback/founder-access-banner.tsx",
+        "packages/config/src/access-mode.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.ts"
+      ]
+    },
+    "TRADEOPS_SECURITY_BOOT": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/security-boot.ts",
+        "scripts/start-api-with-env.mjs"
+      ]
+    },
+    "TRADEOPS_SIMULATION_MODE": {
+      "count": 10,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "apps/api/src/commerce/workspace.service.ts",
+        "apps/api/src/saas/saas.service.ts",
+        "apps/web/src/app/terminal/layout.tsx",
+        "packages/ai-runtime/src/runtime-provenance.ts",
+        "packages/commerce-engine/src/production-isolation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/verify-ai-runtime.mjs"
+      ]
+    },
+    "TRADEOPS_STORAGE_DIR": {
+      "count": 3,
+      "files": [
+        "apps/api/src/ai/rag.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "TRADEOPS_WEBHOOK_DRAIN_MS": {
+      "count": 2,
+      "files": [
+        "apps/api/src/commerce/ops-sync.scheduler.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "UPS_CLIENT_ID": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "UPS_CLIENT_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "USPS_CLIENT_ID": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "USPS_CLIENT_SECRET": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "WEB_HOST": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "scripts/start.mjs"
+      ]
+    },
+    "WEB_ORIGIN": {
+      "count": 7,
+      "files": [
+        "apps/api/src/billing/billing.service.ts",
+        "apps/api/src/main.ts",
+        "apps/web/src/components/feedback/founder-access-banner.tsx",
+        "packages/config/src/access-mode.ts",
+        "packages/config/src/index.ts",
+        "scripts/e2e-smoke.mjs"
+      ]
+    },
+    "WEB_PORT": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/index.test.ts",
+        "scripts/start.mjs"
+      ]
+    },
+    "WEB_SEARCH_ALLOWED_DOMAINS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_BLOCKED_DOMAINS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_DEFAULT_CACHE_TTL_SECONDS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_ENABLED": {
+      "count": 7,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/env-validation.ts",
+        "packages/config/src/environment-manifest.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "WEB_SEARCH_MAX_QUERIES_PER_REQUEST": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_MAX_RESULTS_PER_QUERY": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_PROVIDER": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_REQUIRE_CITATIONS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WEB_SEARCH_REQUIRE_TIMESTAMPS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "WINDCHILL_BASE_URL": {
+      "count": 3,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts"
+      ]
+    },
+    "WINDCHILL_PASSWORD": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "WOOCOMMERCE_CONSUMER_KEY": {
+      "count": 7,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "WOOCOMMERCE_CONSUMER_SECRET": {
+      "count": 7,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "packages/config/src/environment-manifest.test.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "WOOCOMMERCE_URL": {
+      "count": 7,
+      "files": [
+        "apps/api/src/ai/ai-operator.service.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "XAI_API_KEY": {
+      "count": 13,
+      "files": [
+        "packages/ai-runtime/src/rag-engine.test.ts",
+        "packages/ai-runtime/src/runtime/agent-loop.fail-closed.test.ts",
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "XAI_BASE_URL": {
+      "count": 6,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts",
+        "packages/config/src/xai-config.ts",
+        "scripts/sync-env-api-keys.mjs",
+        "scripts/write-api-key-docs.mjs"
+      ]
+    },
+    "XAI_CHAT_MODEL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/xai-config.ts"
+      ]
+    },
+    "XAI_EMBED_MODEL": {
+      "count": 1,
+      "files": [
+        "packages/config/src/xai-config.ts"
+      ]
+    },
+    "XAI_MODEL": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/xai-config.ts"
+      ]
+    },
+    "XAI_SEARCH_MAX_CALLS": {
+      "count": 1,
+      "files": [
+        "packages/config/src/ai-platform-config.ts"
+      ]
+    },
+    "XAI_WEB_SEARCH_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "XAI_X_SEARCH_ENABLED": {
+      "count": 2,
+      "files": [
+        "packages/config/src/ai-platform-config.ts",
+        "packages/config/src/environment-manifest.ts"
+      ]
+    },
+    "XERO_ACCESS_TOKEN": {
+      "count": 4,
+      "files": [
+        "packages/config/src/environment-manifest.ts",
+        "packages/connector-core/src/production-connectors.ts",
+        "packages/connectors/live-http/src/index.ts"
+      ]
+    },
+    "XERO_TENANT_ID": {
+      "count": 2,
+      "files": [
+        "packages/config/src/environment-manifest.ts"
+      ]
+    }
+  }
+}

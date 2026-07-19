@@ -108,6 +108,10 @@ export function TerminalShell(props: {
   founderSlot?: ReactNode;
   logoutSlot?: ReactNode;
   workspace?: ResolvedWorkspace | null;
+  tenantLabel?: string | null;
+  workspaceLabel?: string | null;
+  commerceMode?: string | null;
+  navSource?: 'workspace' | 'fallback';
 }) {
   return (
     <AiOperatorProvider>

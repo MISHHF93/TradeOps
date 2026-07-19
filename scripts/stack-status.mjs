@@ -6,50 +6,45 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import net from 'node:net';
+import {
+  apiHealthy,
+  dbHealthy,
+  isPidAlive,
+  loadDotEnv,
+  portOpen,
+  readLock,
+  stackPorts,
+} from './stack-lib.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const lockPath = join(root, '.stack-logs', 'supervisor.lock');
-
-const checks = [
-  { name: 'PGlite DB', port: 51214 },
-  { name: 'API', port: 4000, url: 'http://127.0.0.1:4000/api/v1/health' },
-  { name: 'Web', port: 3000, url: 'http://127.0.0.1:3000' },
-];
-
-function portOpen(port) {
-  return new Promise((resolve) => {
-    const s = net.connect({ port, host: '127.0.0.1' }, () => {
-      s.end();
-      resolve(true);
-    });
-    s.on('error', () => resolve(false));
-    s.setTimeout(800, () => {
-      s.destroy();
-      resolve(false);
-    });
-  });
-}
-
-function pidAlive(pid) {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const logDir = join(root, '.stack-logs');
+const lockPath = join(logDir, 'supervisor.lock');
+const watchdogPath = join(logDir, 'watchdog.lock');
+const heartbeatPath = join(logDir, 'supervisor.heartbeat');
 
 async function main() {
+  const env = loadDotEnv();
+  const ports = stackPorts(env);
   console.log('TradeOps stack status');
+
+  // Watchdog
+  const wd = readLock(watchdogPath);
+  if (wd?.pid && isPidAlive(wd.pid)) {
+    console.log(`  WDG  UP pid=${wd.pid}`);
+  } else if (wd?.pid) {
+    console.log(`  WDG  STALE pid=${wd.pid}`);
+  } else {
+    console.log('  WDG  DOWN');
+  }
+
   // Supervisor
   let sup = 'DOWN';
   if (existsSync(lockPath)) {
     try {
       const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
-      if (pidAlive(lock.pid)) {
+      if (isPidAlive(lock.pid)) {
         sup = `UP pid=${lock.pid} since=${lock.startedAt ?? '?'}`;
+        if (lock.lastTick) sup += ` tick=${lock.lastTick}`;
       } else {
         sup = `STALE lock pid=${lock.pid}`;
       }
@@ -59,35 +54,69 @@ async function main() {
   }
   console.log(`  SUP  ${sup}`);
 
-  for (const c of checks) {
-    const open = await portOpen(c.port);
-    let extra = '';
-    if (open && c.url) {
-      try {
-        const res = await fetch(c.url, { signal: AbortSignal.timeout(4000) });
-        if (c.name === 'API') {
-          const j = await res.json();
-          const pg = (j.dependencies || []).find((d) => d.name === 'postgres');
-          extra = ` HTTP ${res.status} api=${j.status} postgres=${pg?.status ?? '?'}`;
-        } else {
-          extra = ` HTTP ${res.status}`;
-        }
-      } catch (e) {
-        extra = ` (HTTP fail: ${e instanceof Error ? e.message : e})`;
-      }
+  if (existsSync(heartbeatPath)) {
+    try {
+      const hb = JSON.parse(readFileSync(heartbeatPath, 'utf8'));
+      console.log(`  HB   ${hb.at} phase=${hb.phase} pid=${hb.pid}`);
+    } catch {
+      /* ignore */
     }
-    console.log(`  ${open ? 'UP  ' : 'DOWN'} :${c.port} ${c.name}${extra}`);
   }
+
+  const dbOk = await dbHealthy(env);
+  const dbOpen = await portOpen(ports.db);
+  console.log(
+    `  ${dbOk ? 'UP  ' : 'DOWN'} :${ports.db} PGlite DB ${dbOk ? '(queryable)' : dbOpen ? '(zombie TCP only)' : ''}`,
+  );
+
+  const apiOk = await apiHealthy(ports.api);
+  const apiOpen = await portOpen(ports.api);
+  let apiExtra = '';
+  if (apiOpen) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${ports.api}/api/v1/health`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      const j = await res.json();
+      const pg = (j.dependencies || []).find((d) => d.name === 'postgres');
+      apiExtra = ` HTTP ${res.status} api=${j.status} postgres=${pg?.status ?? '?'}`;
+    } catch (e) {
+      apiExtra = ` (HTTP fail: ${e instanceof Error ? e.message : e})`;
+    }
+  }
+  console.log(
+    `  ${apiOk ? 'UP  ' : 'DOWN'} :${ports.api} API${apiOk ? ' healthy' : apiOpen ? ' unhealthy' : ''}${apiExtra}`,
+  );
+
+  const webOpen = await portOpen(ports.web);
+  let webExtra = '';
+  if (webOpen) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${ports.web}/`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      webExtra = ` HTTP ${res.status}`;
+    } catch (e) {
+      webExtra = ` (HTTP fail: ${e instanceof Error ? e.message : e})`;
+    }
+  }
+  console.log(`  ${webOpen ? 'UP  ' : 'DOWN'} :${ports.web} Web${webExtra}`);
+
   try {
     const res = await fetch('http://127.0.0.1:4000/api/v1/ai/health', {
       signal: AbortSignal.timeout(4000),
     });
     const j = await res.json();
     console.log(
-      `  AI   health configured=${j.configured} errorCode=${j.errorCode} model=${j.model}`,
+      `  AI   health configured=${j.configured} errorCode=${j.errorCode ?? 'none'} model=${j.model ?? '?'}`,
     );
   } catch {
     console.log('  AI   health unreachable');
+  }
+
+  if (!dbOk || !apiOk || !webOpen) {
+    console.log('\nHint: pnpm stack:up   (or pnpm stack:up --force if stuck)');
+    process.exitCode = 1;
   }
 }
 

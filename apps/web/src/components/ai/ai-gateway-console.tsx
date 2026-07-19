@@ -170,7 +170,7 @@ export function AiGatewayConsole({
   );
 
   const json = response?.output?.json as
-    | { recommendations?: GatewayRecommendation[] }
+    | { recommendations?: GatewayRecommendation[]; informationNeed?: string }
     | undefined;
   const artifact = response?.output?.artifact;
   const recommendations =

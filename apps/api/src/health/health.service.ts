@@ -31,6 +31,9 @@ export class HealthService {
         }),
       ]);
 
+    // ensureConnected soft-reconnects after PGlite blips before the health probe.
+    await withTimeout(this.prisma.ensureConnected(), 2500, false);
+
     const [database, redis] = await Promise.all([
       withTimeout(
         checkDatabaseHealth(this.prisma.client),

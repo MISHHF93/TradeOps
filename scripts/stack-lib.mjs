@@ -1,8 +1,11 @@
 /**
  * Shared helpers for stack-up-win + stack-supervise (Windows-first local stack).
+ *
+ * Process launch uses PowerShell Start-Process with UseShellExecute so children
+ * break away from the parent Job Object (agents/CI) and survive tool timeouts.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
@@ -71,6 +74,56 @@ export function freePort(port) {
   if (r.stderr) process.stderr.write(r.stderr);
 }
 
+/**
+ * True when PGlite accepts TCP AND Prisma can SELECT 1.
+ * Port-only checks hide zombie servers that cause API "Server has closed the connection".
+ */
+export function dbQueryable(env = {}) {
+  const ports = stackPorts(env);
+  const url =
+    env.DATABASE_URL ||
+    `postgresql://postgres:postgres@127.0.0.1:${ports.db}/template1?schema=public&sslmode=disable&pgbouncer=true&connection_limit=5`;
+  const script = `
+    const net = require('net');
+    const { PrismaClient } = require('@prisma/client');
+    const port = ${ports.db};
+    const url = process.env.DATABASE_URL;
+    function tcp() {
+      return new Promise((resolve) => {
+        const s = net.connect({ port, host: '127.0.0.1' }, () => { s.end(); resolve(true); });
+        s.on('error', () => resolve(false));
+        s.setTimeout(800, () => { s.destroy(); resolve(false); });
+      });
+    }
+    (async () => {
+      if (!(await tcp())) process.exit(2);
+      const p = new PrismaClient({ datasources: { db: { url } } });
+      try {
+        await p.$queryRawUnsafe('SELECT 1 AS x');
+        await p.$disconnect();
+        process.exit(0);
+      } catch (e) {
+        try { await p.$disconnect(); } catch {}
+        process.exit(1);
+      }
+    })();
+  `;
+  const r = spawnSync(nodeBin, ['-e', script], {
+    cwd: join(root, 'packages', 'database'),
+    encoding: 'utf8',
+    env: { ...process.env, DATABASE_URL: url },
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  return r.status === 0;
+}
+
+export async function dbHealthy(env = {}) {
+  const ports = stackPorts(env);
+  if (!(await portOpen(ports.db))) return false;
+  return dbQueryable(env);
+}
+
 export function writeLauncher(name, workDir, commandLine, envMap) {
   const out = join(logDir, `${name}.out.log`);
   const err = join(logDir, `${name}.err.log`);
@@ -97,15 +150,39 @@ export function writeLauncher(name, workDir, commandLine, envMap) {
   return launcher;
 }
 
-/** Start a launcher detached from agent Job Object (Windows). */
+/**
+ * Start a long-lived process detached from agent Job Objects.
+ * Uses PowerShell ProcessStartInfo.UseShellExecute = $true so the child is not
+ * killed when the launching tool/job ends.
+ */
 export function startDetached(name, workDir, commandLine, envMap) {
   const launcher = writeLauncher(name, workDir, commandLine, envMap);
+  const pidFile = join(logDir, `${name}.pid`);
   console.log(`→ start ${name}`);
   if (isWin) {
-    const ps = [
-      `$p = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '${launcher.replace(/'/g, "''")}') -WorkingDirectory '${workDir.replace(/'/g, "''")}' -WindowStyle Hidden -PassThru`,
-      `if ($p) { Set-Content -Path '${join(logDir, `${name}.pid`).replace(/'/g, "''")}' -Value $p.Id -Encoding ascii; Write-Output $p.Id }`,
-    ].join('; ');
+    const launcherEsc = launcher.replace(/'/g, "''");
+    const workEsc = workDir.replace(/'/g, "''");
+    const pidEsc = pidFile.replace(/'/g, "''");
+    // UseShellExecute=true breaks away from Job Object (critical for agent shells)
+    const ps = `
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = 'cmd.exe'
+$psi.Arguments = '/c "${launcherEsc}"'
+$psi.WorkingDirectory = '${workEsc}'
+$psi.UseShellExecute = $true
+$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+$psi.CreateNoWindow = $true
+try {
+  $p = [System.Diagnostics.Process]::Start($psi)
+  if ($p) {
+    Set-Content -Path '${pidEsc}' -Value $p.Id -Encoding ascii
+    Write-Output $p.Id
+  }
+} catch {
+  Write-Error $_
+  exit 1
+}
+`.trim();
     const r = spawnSync(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
@@ -116,15 +193,28 @@ export function startDetached(name, workDir, commandLine, envMap) {
       console.log(`[${name}] launched PID=${pid}`);
       return pid;
     }
-    spawnSync('cmd.exe', ['/c', 'start', '""', '/MIN', 'cmd.exe', '/c', launcher], {
-      cwd: workDir,
-      windowsHide: true,
-    });
-    console.log(`[${name}] launched (cmd start fallback)`);
+    // Fallback: classic Start-Process
+    const ps2 = [
+      `$p = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '${launcherEsc}') -WorkingDirectory '${workEsc}' -WindowStyle Hidden -PassThru`,
+      `if ($p) { Set-Content -Path '${pidEsc}' -Value $p.Id -Encoding ascii; Write-Output $p.Id }`,
+    ].join('; ');
+    const r2 = spawnSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps2],
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 },
+    );
+    const pid2 = (r2.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop();
+    if (pid2 && /^\d+$/.test(pid2)) {
+      console.log(`[${name}] launched PID=${pid2} (fallback)`);
+      return pid2;
+    }
+    console.error(`[${name}] launch failed`, r.stderr || r2.stderr || r.status);
     return null;
   }
-  spawnSync(nodeBin, ['-e', `require('child_process').spawn('cmd',[],{detached:true,stdio:'ignore'})`], {
+  // non-Windows: simple detached spawn via shell
+  spawnSync('bash', ['-c', `nohup ${commandLine} >> "${join(logDir, `${name}.out.log`)}" 2>> "${join(logDir, `${name}.err.log`)}" & echo $!`], {
     cwd: workDir,
+    encoding: 'utf8',
   });
   return null;
 }
@@ -133,7 +223,7 @@ export async function apiHealthy(port = 4000) {
   if (!(await portOpen(port))) return false;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return false;
     const j = await res.json();
@@ -152,7 +242,7 @@ export async function webHealthy(port = 3000) {
     });
     return res.status > 0 && res.status < 500;
   } catch {
-    // port open is enough for stay-alive; HTTP may fail mid-compile
+    // port open is enough mid-compile
     return true;
   }
 }
@@ -192,6 +282,7 @@ export function buildApiEnv(env) {
 
 export function buildWebEnv(env) {
   return {
+    // next start requires NODE_ENV=production; leave unset so next sets it
     API_PUBLIC_URL: env.API_PUBLIC_URL || 'http://127.0.0.1:4000',
     NEXT_PUBLIC_API_PUBLIC_URL: env.NEXT_PUBLIC_API_PUBLIC_URL || 'http://127.0.0.1:4000',
     PORT: String(env.WEB_PORT || 3000),
@@ -205,7 +296,7 @@ export function startDb(env) {
     'db',
     root,
     `"${nodeBin}" "${join(root, 'scripts', 'prisma-dev-db.mjs')}"`,
-    { PRISMA_DEV_DB_PORT: String(ports.db) },
+    { PRISMA_DEV_DB_PORT: String(ports.db), PRISMA_DEV_NAME: env.PRISMA_DEV_NAME || 'tradeops' },
   );
 }
 
@@ -226,7 +317,6 @@ export function startWeb(env) {
   }
   const webDir = join(root, 'apps', 'web');
   const ports = stackPorts(env);
-  // Prefer production start; supervisor will fall back if needed
   return startDetached(
     'web',
     webDir,
@@ -257,10 +347,22 @@ export function logLine(msg) {
   }
 }
 
-export function isPidAlive(pid) {
-  if (!pid || !Number.isFinite(pid)) return false;
+export function writeHeartbeat(extra = {}) {
   try {
-    process.kill(pid, 0);
+    writeFileSync(
+      join(logDir, 'supervisor.heartbeat'),
+      JSON.stringify({ at: new Date().toISOString(), pid: process.pid, ...extra }, null, 2),
+      'utf8',
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isPidAlive(pid) {
+  if (!pid || !Number.isFinite(Number(pid))) return false;
+  try {
+    process.kill(Number(pid), 0);
     return true;
   } catch {
     return false;
@@ -278,4 +380,18 @@ export function readLock(path) {
 
 export function writeLock(path, data) {
   writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
+}
+
+export function clearStaleSupervisorLock() {
+  const lock = join(logDir, 'supervisor.lock');
+  const existing = readLock(lock);
+  if (!existing) return;
+  if (!existing.pid || !isPidAlive(existing.pid)) {
+    try {
+      unlinkSync(lock);
+      console.log('Cleared stale supervisor.lock');
+    } catch {
+      /* ignore */
+    }
+  }
 }

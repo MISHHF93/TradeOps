@@ -1,5 +1,9 @@
 export { createPrismaClient, type CreatePrismaClientOptions, type PrismaClient } from './client';
-export { checkDatabaseHealth, type DatabaseHealthResult } from './health';
+export {
+  checkDatabaseHealth,
+  ensureDatabaseConnection,
+  type DatabaseHealthResult,
+} from './health';
 export {
   assertTenantId,
   orgWhere,

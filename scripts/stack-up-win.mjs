@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   apiHealthy,
+  clearStaleSupervisorLock,
+  dbHealthy,
   freePort,
   loadDotEnv,
   nodeBin,
@@ -23,7 +25,6 @@ import {
   startWeb,
   startWebDev,
   waitPort,
-  webHealthy,
 } from './stack-lib.mjs';
 
 const args = new Set(process.argv.slice(2));
@@ -43,17 +44,49 @@ async function main() {
   console.log(`  root=${root}`);
   console.log(`  force=${force}`);
 
-  // 1) DB
+  // 1) DB — require queryable, not just TCP
   if (force) {
     freePort(ports.db);
+    freePort(51215);
+    freePort(51216);
+    spawnSync(nodeBin, [join(root, 'scripts', 'prisma-dev-db.mjs'), '--stop'], {
+      cwd: root,
+      stdio: 'inherit',
+      windowsHide: true,
+      timeout: 60_000,
+    });
     await new Promise((r) => setTimeout(r, 800));
   }
-  if (!(await portOpen(ports.db))) {
+
+  if (!(await dbHealthy(env))) {
+    if (await portOpen(ports.db)) {
+      console.warn('DB port open but not queryable (zombie) — resetting');
+      freePort(ports.db);
+      spawnSync(nodeBin, [join(root, 'scripts', 'prisma-dev-db.mjs'), '--stop'], {
+        cwd: root,
+        stdio: 'inherit',
+        windowsHide: true,
+        timeout: 60_000,
+      });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
     startDb(env);
-    if (!(await waitPort(ports.db, 'PGlite', 120))) process.exit(1);
-    console.log(`OK PGlite :${ports.db}`);
+    let ok = false;
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (await dbHealthy(env)) {
+        ok = true;
+        break;
+      }
+      if (i > 0 && i % 15 === 0) console.log(`  …waiting for PGlite queryable (${i}s)`);
+    }
+    if (!ok) {
+      console.error('FAIL PGlite never became queryable');
+      process.exit(1);
+    }
+    console.log(`OK PGlite queryable :${ports.db}`);
   } else {
-    console.log(`OK PGlite already :${ports.db}`);
+    console.log(`OK PGlite already queryable :${ports.db}`);
   }
 
   // 2) API
@@ -63,11 +96,10 @@ async function main() {
   }
   if (!(await apiHealthy(ports.api))) {
     if (await portOpen(ports.api)) {
-      // half-dead listener
       freePort(ports.api);
       await new Promise((r) => setTimeout(r, 500));
     }
-    if (!(await portOpen(ports.db))) {
+    if (!(await dbHealthy(env))) {
       console.error('DB died before API start');
       process.exit(1);
     }
@@ -78,7 +110,6 @@ async function main() {
     }
     startApi(env);
     if (!(await waitPort(ports.api, 'API', 50))) process.exit(1);
-    // wait postgres-up
     for (let i = 0; i < 40; i++) {
       if (await apiHealthy(ports.api)) break;
       await new Promise((r) => setTimeout(r, 1000));
@@ -107,21 +138,24 @@ async function main() {
     console.log(`OK Web already :${ports.web}`);
   }
 
-  // 4) Supervisor (detached, single instance)
+  // 4) Supervisor watchdog (detached, self-healing)
   if (!noSupervise) {
-    console.log('→ ensure supervisor');
-    spawnSync(
-      nodeBin,
-      [join(root, 'scripts', 'stack-supervise.mjs'), '--daemon'],
-      { cwd: root, encoding: 'utf8', windowsHide: true, stdio: 'inherit' },
-    );
+    clearStaleSupervisorLock();
+    console.log('→ ensure supervisor watchdog');
+    spawnSync(nodeBin, [join(root, 'scripts', 'stack-supervise.mjs'), '--daemon'], {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: 'inherit',
+    });
   }
 
   console.log('\n=== Stack ===');
-  console.log(`  DB  :${ports.db}`);
+  console.log(`  DB  :${ports.db}  (PGlite queryable)`);
   console.log(`  API :${ports.api}  http://127.0.0.1:${ports.api}/api/v1/health`);
   console.log(`  Web :${ports.web}  http://127.0.0.1:${ports.web}`);
-  console.log('  Supervisor keeps services up (pnpm stack:stop to kill all).');
+  console.log('  Supervisor watchdog keeps services up (pnpm stack:stop to kill all).');
+  console.log('  Status: pnpm stack:status');
 }
 
 main().catch((e) => {

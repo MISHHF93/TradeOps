@@ -6,14 +6,51 @@ export * from './operator-objective-display';
 export * from './builtin-tools';
 export * from './live-examples';
 export * from './execution-navigator';
-// Local COS registries / adapters
-export * from './prompt-registry';
-export * from './schema-registry';
+
+// Local COS registries — rename symbols that collide with production registries
+export {
+  registerPrompt as registerCosPrompt,
+  getPrompt as getCosPrompt,
+  listPrompts as listCosPrompts,
+  renderPrompt,
+  type PromptTemplate,
+} from './prompt-registry';
+export {
+  registerSchema as registerCosSchema,
+  getSchema as getCosSchema,
+  listSchemas as listCosSchemas,
+  type JsonSchemaLite,
+  type RegisteredSchema,
+} from './schema-registry';
 export * from './artifact-registry';
-export * from './provider-abstraction';
+
+// Local provider abstraction — rename EmbedResult (collides with llm-client)
+export type {
+  AiProviderId,
+  GenerationRequest,
+  GenerationResult,
+  EmbedRequest,
+  EmbedResult as CosEmbedResult,
+  RerankRequest,
+  RerankResult as CosRerankResult,
+  AiProviderAdapter,
+} from './provider-abstraction';
+export {
+  offlineAdapter,
+  registerAiProvider,
+  setActiveAiProvider,
+  resolveProviderFromEnv,
+  getActiveAiProvider,
+  isCohereSoleActivePolicy,
+  generateText,
+  embedTexts,
+  rerankDocuments,
+  describeAiProviders,
+} from './provider-abstraction';
 export * from './cohere-adapter';
 export * from './xai-adapter';
 export * from './web-search-provider';
+
 // Production AI gateway / runtime (origin/master)
 export * from './rag-engine';
 export * from './llm-client';
@@ -42,7 +79,7 @@ export type {
   EmbedInput,
   EmbedResult as ProviderEmbedResult,
   RerankInput,
-  RerankResult,
+  RerankResult as ProviderRerankResult,
   ProviderHealth,
 } from './provider/ai-provider';
 export * from './provider/errors';

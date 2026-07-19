@@ -96,10 +96,13 @@ export type TradeOpsAiChatResponse = {
   meta?: {
     provider?: string;
     model?: string;
+    /** @deprecated prefer meta.provider */
+    aiProvider?: string;
     promptId?: string;
     promptVersion?: string;
     toolsInvoked?: string[];
     latencyMs?: number;
+    informationNeed?: string;
   };
 };
 

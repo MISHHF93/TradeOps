@@ -7,17 +7,20 @@ import {
   OPERATING_PERSONAS,
 } from './workspace';
 
-describe('hybrid persona nav', () => {
+describe('AI-first persona nav', () => {
   for (const persona of OPERATING_PERSONAS) {
-    it(`buildPersonaNav(${persona}) returns focus · operate · platform · more`, () => {
+    it(`buildPersonaNav(${persona}) returns primary · admin · more`, () => {
       const groups = buildPersonaNav(persona);
       assert.deepEqual(
         groups.map((g) => g.id),
-        ['focus', 'operate', 'platform', 'more'],
+        ['primary', 'admin', 'more'],
       );
-      assert.ok(groups[0]!.items.length >= 4, 'focus has primary items');
-      assert.ok(groups[1]!.items.length >= 1, 'operate not empty after dedupe');
-      assert.ok(groups[2]!.items.length >= 1, 'platform not empty after dedupe');
+      assert.ok(groups[0]!.items.length >= 3, 'primary has Home · Cases · Connections');
+      const labels = groups[0]!.items.map((i) => i.label);
+      assert.ok(labels.includes('Home'));
+      assert.ok(labels.includes('Cases'));
+      assert.ok(labels.includes('Connections'));
+      assert.ok(groups[1]!.items.length >= 1, 'admin not empty');
     });
 
     it(`buildPersonaNav(${persona}) has unique hrefs across groups`, () => {
@@ -26,12 +29,23 @@ describe('hybrid persona nav', () => {
       for (const g of groups) {
         for (const item of g.items) {
           const base = item.href.split('?')[0] ?? item.href;
-          // procedure deep-links share persona home path with query — allow those
-          if (item.id.startsWith('proc-')) continue;
           hrefs.push(base);
         }
       }
       assert.equal(hrefs.length, new Set(hrefs).size, hrefs.join(', '));
+    });
+
+    it(`buildPersonaNav(${persona}) omits industrial without pack`, () => {
+      const groups = buildPersonaNav(persona, { packs: {} });
+      const all = groups.flatMap((g) => g.items.map((i) => i.href)).join(' ');
+      assert.ok(!all.includes('/terminal/industrial'), all);
+      assert.ok(!all.includes('/terminal/live-examples'), all);
+    });
+
+    it(`buildPersonaNav(${persona}) includes industrial when pack on`, () => {
+      const groups = buildPersonaNav(persona, { packs: { industrial: true } });
+      const hrefs = groups.flatMap((g) => g.items.map((i) => i.href));
+      assert.ok(hrefs.some((h) => h.startsWith('/terminal/industrial')), hrefs.join(', '));
     });
   }
 
@@ -47,6 +61,6 @@ describe('hybrid persona nav', () => {
     const hrefs = new Set(list.map((d) => d.href));
     assert.ok(hrefs.has('/terminal'));
     assert.ok(hrefs.has('/terminal/connectors'));
-    assert.ok(hrefs.has('/terminal/ai'));
+    assert.ok(hrefs.has('/terminal/process'));
   });
 });

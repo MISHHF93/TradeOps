@@ -186,6 +186,11 @@ export class WorkspaceService {
       }
     }
 
+    const packOn = (k: string) => {
+      const v = process.env[k]?.trim().toLowerCase();
+      return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+    };
+
     return resolveWorkspace({
       organizationId: input.organizationId,
       organizationName: org?.name,
@@ -199,6 +204,10 @@ export class WorkspaceService {
       openBlockers: blockers.length,
       activeCaseCount: openCases.length,
       connectorIssues,
+      packs: {
+        industrial: packOn('TRADEOPS_ENABLE_INDUSTRIAL'),
+        engLabs: packOn('TRADEOPS_ENABLE_ENG_LABS'),
+      },
       availableConnectors: connectors.map((c) => ({
         providerKey: c.providerKey,
         status: String(c.status),

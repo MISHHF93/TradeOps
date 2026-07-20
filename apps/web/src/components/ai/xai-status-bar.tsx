@@ -17,7 +17,7 @@ type AiStatus = {
 };
 
 /**
- * xAI-first status strip for the AI terminal.
+ * xAI status strip — only renders live configured status (no loading/static copy).
  */
 export function XaiStatusBar() {
   const [status, setStatus] = useState<AiStatus | null>(null);
@@ -65,11 +65,10 @@ export function XaiStatusBar() {
   };
 
   const connected = Boolean(status?.configured && status?.usesXai !== false);
-  const label = !status
-    ? 'Loading xAI…'
-    : status.configured
-      ? `xAI · ${status.chatModel ?? 'grok'} · mode ${status.mode ?? '—'}`
-      : 'xAI not configured · tools + local RAG only';
+
+  if (!status?.configured) {
+    return null;
+  }
 
   return (
     <article
@@ -91,23 +90,25 @@ export function XaiStatusBar() {
         }}
       >
         <div>
-          <strong>{label}</strong>
-          <p className="meta" style={{ margin: '4px 0 0' }}>
-            {status?.note ??
-              'Primary free-form provider is xAI Grok. Set XAI_API_KEY in server .env (console.x.ai).'}
-            {status?.rag?.trained
-              ? ` · RAG trained (${status.rag.embeddingMode ?? 'index'})`
-              : ' · RAG not trained yet'}
-            {status?.probe
-              ? status.probe.ok
-                ? ` · probe ok ${status.probe.latencyMs}ms`
-                : ` · probe failed: ${status.probe.error ?? 'error'}`
-              : ''}
-          </p>
+          <strong>{status.chatModel ?? 'xAI'}</strong>
+          {status.rag?.trained || status.probe ? (
+            <p className="meta" style={{ margin: '4px 0 0' }}>
+              {[
+                status.rag?.trained ? status.rag.embeddingMode : null,
+                status.probe?.ok
+                  ? `${status.probe.latencyMs}ms`
+                  : status.probe?.error
+                    ? status.probe.error
+                    : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          ) : null}
         </div>
         <div className="ai-quick-row" style={{ gap: 8 }}>
           <button type="button" className="btn ghost" onClick={() => void load()}>
-            Refresh
+            ↻
           </button>
           <button
             type="button"
@@ -115,7 +116,7 @@ export function XaiStatusBar() {
             disabled={probing || !status?.configured}
             onClick={() => void probe()}
           >
-            {probing ? 'Probing…' : 'Probe xAI'}
+            {probing ? '…' : 'Probe'}
           </button>
         </div>
       </div>

@@ -3,7 +3,6 @@ import { ProcessCaseCard } from '../../../components/commerce/process-case-card'
 import {
   ProcessKpiStrip,
   ProcessPageHeader,
-  ProcessRelatedLinks,
 } from '../../../components/commerce/process-chrome';
 import {
   RuntimeBanner,
@@ -87,30 +86,34 @@ export default async function CommerceProcessPage() {
   return (
     <section>
       <ProcessPageHeader
-        pill="Commerce Runtime · process board"
-        title={PROCESS_LABELS.boardTitle}
-        lede="Every case is a process under the Commerce Runtime. Ask: what is executing? What is the next valid transformation?"
+        pill="Work · Cases"
+        title="Cases"
+        lede="Every opportunity is one Commerce Case. Clear blockers, apply the next step, use AI on the case. Seed demo cases are for walkthroughs until live products exist."
+        showStageStrip={false}
         breadcrumbs={[
-          { href: '/terminal/workspace', label: 'Workspace' },
-          { label: PROCESS_LABELS.boardTitle },
+          { href: '/terminal/workspace', label: 'Home' },
+          { label: 'Cases' },
         ]}
         toolbar={
           <>
+            <Link className="btn primary" href="/terminal/workspace">
+              Research with AI
+            </Link>
             <ProcessSyncButton />
             <Link className="btn secondary" href="/terminal">
-              {PROCESS_LABELS.discoverTitle}
+              Find products
             </Link>
             <Link className="btn ghost" href="/terminal/tasks">
-              {PROCESS_LABELS.viewTasks}
+              Tasks
             </Link>
             <Link className="btn ghost" href="/terminal/approvals">
-              {PROCESS_LABELS.viewApprovals}
+              Approvals
             </Link>
           </>
         }
       />
 
-      <ProcessRelatedLinks primary="process" />
+      {/* Related strip removed from default — Cases is the primary work surface (⌘K for the rest). */}
 
       <RuntimeBanner runtime={runtime} />
 
@@ -169,6 +172,14 @@ export default async function CommerceProcessPage() {
       ) : null}
 
       {data.honesty?.note ? <p className="meta">{data.honesty.note}</p> : null}
+
+      {data.summary.totalOpen > 0 && data.summary.blocked >= data.summary.totalOpen * 0.5 ? (
+        <p className="meta process-demo-callout" style={{ marginBottom: 12 }}>
+          Many cases look blocked — seed/demo policy walls are normal in demo mode. Prefer{' '}
+          <Link href="/terminal/workspace">AI research</Link> for live opportunities, then connect a
+          supplier under <Link href="/terminal/connectors">Connections</Link>.
+        </p>
+      ) : null}
 
       {data.summary.totalOpen === 0 ? (
         <ProcessEmptyState

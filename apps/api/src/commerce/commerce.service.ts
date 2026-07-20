@@ -874,7 +874,16 @@ export class CommerceService {
     });
 
     if (decision === 'approved' && approval.kind === 'publish_listing' && approval.listing) {
-      if (approval.listing.externalId) {
+      // Only fixture marketplace publish uses listing.externalId as marketplace id.
+      // Research / internal-draft / Shopify listings must not hit fixture publish.
+      const listingFull = await this.prisma.client.listing.findFirst({
+        where: { id: approval.listing.id, organizationId },
+        include: { salesChannel: true },
+      });
+      const channelKey = listingFull?.salesChannel?.providerKey ?? '';
+      const isFixtureChannel =
+        channelKey.startsWith('fixture') || channelKey === 'fixture-marketplace';
+      if (isFixtureChannel && approval.listing.externalId) {
         await this.marketplace.publishListing(approval.listing.externalId);
       }
       await this.prisma.client.listing.update({

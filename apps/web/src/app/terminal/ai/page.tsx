@@ -7,18 +7,22 @@ import {
   ProcessPageHeader,
   ProcessRelatedLinks,
 } from '../../../components/commerce/process-chrome';
+import { PackDisabledState } from '../../../components/feedback/pack-disabled-state';
 import { PROCESS_LABELS, stageTitle } from '../../../lib/process-ux';
+import { resolveProductPacks } from '../../../lib/product-packs';
 import { terminalGet } from '../../../lib/terminal-api';
 
 type Props = { searchParams: Promise<{ caseId?: string; objective?: string }> };
 
 /**
- * AI platform workspace — gateway, retrieval, prediction, status.
- * Universal objective composer lives in the persistent right rail (AiContextPanel).
- * Durable runs: /terminal/objectives · long-form: /terminal/objectives/[id]
- * (AiOperatorConsole removed — rail + ai-operator-client are canonical.)
+ * Eng-lab AI platform workspace (gated).
+ * Universal objectives: right rail · runs: /terminal/objectives
+ * Enable: TRADEOPS_ENABLE_ENG_LABS=1
  */
 export default async function AiWorkspacePage({ searchParams }: Props) {
+  if (!resolveProductPacks().engLabs) {
+    return <PackDisabledState pack="engLabs" />;
+  }
   const sp = await searchParams;
   const caseId = sp.caseId?.trim();
   const presetObjective = sp.objective?.trim();

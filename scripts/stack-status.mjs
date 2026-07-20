@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * Report TradeOps local stack health (DB :51214, API :4000, Web :3000) + supervisor.
- * Usage: node scripts/stack-status.mjs
+ * Usage:
+ *   node scripts/stack-status.mjs
+ *   node scripts/stack-status.mjs --json   # machine-readable (Cycle 12)
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -21,43 +23,42 @@ const logDir = join(root, '.stack-logs');
 const lockPath = join(logDir, 'supervisor.lock');
 const watchdogPath = join(logDir, 'watchdog.lock');
 const heartbeatPath = join(logDir, 'supervisor.heartbeat');
+const asJson = process.argv.includes('--json');
 
-async function main() {
+async function collectStatus() {
   const env = loadDotEnv();
   const ports = stackPorts(env);
-  console.log('TradeOps stack status');
 
-  // Watchdog
   const wd = readLock(watchdogPath);
-  if (wd?.pid && isPidAlive(wd.pid)) {
-    console.log(`  WDG  UP pid=${wd.pid}`);
-  } else if (wd?.pid) {
-    console.log(`  WDG  STALE pid=${wd.pid}`);
-  } else {
-    console.log('  WDG  DOWN');
-  }
+  let watchdog = 'down';
+  if (wd?.pid && isPidAlive(wd.pid)) watchdog = 'up';
+  else if (wd?.pid) watchdog = 'stale';
 
-  // Supervisor
-  let sup = 'DOWN';
+  let supervisor = 'down';
+  let supervisorPid = null;
+  let supervisorSince = null;
+  let supervisorTick = null;
   if (existsSync(lockPath)) {
     try {
       const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
       if (isPidAlive(lock.pid)) {
-        sup = `UP pid=${lock.pid} since=${lock.startedAt ?? '?'}`;
-        if (lock.lastTick) sup += ` tick=${lock.lastTick}`;
+        supervisor = 'up';
+        supervisorPid = lock.pid;
+        supervisorSince = lock.startedAt ?? null;
+        supervisorTick = lock.lastTick ?? null;
       } else {
-        sup = `STALE lock pid=${lock.pid}`;
+        supervisor = 'stale';
+        supervisorPid = lock.pid;
       }
     } catch {
-      sup = 'LOCK unreadable';
+      supervisor = 'lock_unreadable';
     }
   }
-  console.log(`  SUP  ${sup}`);
 
+  let heartbeat = null;
   if (existsSync(heartbeatPath)) {
     try {
-      const hb = JSON.parse(readFileSync(heartbeatPath, 'utf8'));
-      console.log(`  HB   ${hb.at} phase=${hb.phase} pid=${hb.pid}`);
+      heartbeat = JSON.parse(readFileSync(heartbeatPath, 'utf8'));
     } catch {
       /* ignore */
     }
@@ -65,57 +66,141 @@ async function main() {
 
   const dbOk = await dbHealthy(env);
   const dbOpen = await portOpen(ports.db);
-  console.log(
-    `  ${dbOk ? 'UP  ' : 'DOWN'} :${ports.db} PGlite DB ${dbOk ? '(queryable)' : dbOpen ? '(zombie TCP only)' : ''}`,
-  );
-
   const apiOk = await apiHealthy(ports.api);
   const apiOpen = await portOpen(ports.api);
-  let apiExtra = '';
+  let apiHttp = null;
+  let apiStatus = null;
+  let postgresStatus = null;
   if (apiOpen) {
     try {
       const res = await fetch(`http://127.0.0.1:${ports.api}/api/v1/health`, {
         signal: AbortSignal.timeout(4000),
       });
       const j = await res.json();
+      apiHttp = res.status;
+      apiStatus = j.status ?? null;
       const pg = (j.dependencies || []).find((d) => d.name === 'postgres');
-      apiExtra = ` HTTP ${res.status} api=${j.status} postgres=${pg?.status ?? '?'}`;
-    } catch (e) {
-      apiExtra = ` (HTTP fail: ${e instanceof Error ? e.message : e})`;
+      postgresStatus = pg?.status ?? null;
+    } catch {
+      apiHttp = null;
     }
   }
-  console.log(
-    `  ${apiOk ? 'UP  ' : 'DOWN'} :${ports.api} API${apiOk ? ' healthy' : apiOpen ? ' unhealthy' : ''}${apiExtra}`,
-  );
 
   const webOpen = await portOpen(ports.web);
-  let webExtra = '';
+  let webHttp = null;
   if (webOpen) {
     try {
       const res = await fetch(`http://127.0.0.1:${ports.web}/`, {
         signal: AbortSignal.timeout(4000),
       });
-      webExtra = ` HTTP ${res.status}`;
-    } catch (e) {
-      webExtra = ` (HTTP fail: ${e instanceof Error ? e.message : e})`;
+      webHttp = res.status;
+    } catch {
+      webHttp = null;
     }
   }
-  console.log(`  ${webOpen ? 'UP  ' : 'DOWN'} :${ports.web} Web${webExtra}`);
 
+  let ai = null;
   try {
-    const res = await fetch('http://127.0.0.1:4000/api/v1/ai/health', {
+    const res = await fetch(`http://127.0.0.1:${ports.api}/api/v1/ai/health`, {
       signal: AbortSignal.timeout(4000),
     });
     const j = await res.json();
-    console.log(
-      `  AI   health configured=${j.configured} errorCode=${j.errorCode ?? 'none'} model=${j.model ?? '?'}`,
-    );
+    ai = {
+      configured: Boolean(j.configured),
+      errorCode: j.errorCode ?? null,
+      model: j.model ?? null,
+    };
   } catch {
-    console.log('  AI   health unreachable');
+    ai = { configured: false, errorCode: 'unreachable', model: null };
   }
 
-  if (!dbOk || !apiOk || !webOpen) {
-    console.log('\nHint: pnpm stack:up   (or pnpm stack:up --force if stuck)');
+  const healthy = Boolean(dbOk && apiOk && webOpen);
+  return {
+    ok: healthy,
+    cycle: 12,
+    ports,
+    watchdog,
+    supervisor,
+    supervisorPid,
+    supervisorSince,
+    supervisorTick,
+    heartbeat,
+    db: {
+      ok: dbOk,
+      open: dbOpen,
+      status: dbOk ? 'queryable' : dbOpen ? 'zombie_tcp' : 'down',
+    },
+    api: {
+      ok: apiOk,
+      open: apiOpen,
+      http: apiHttp,
+      status: apiStatus,
+      postgres: postgresStatus,
+    },
+    web: {
+      ok: webOpen,
+      open: webOpen,
+      http: webHttp,
+    },
+    ai,
+    hint: healthy
+      ? null
+      : 'node scripts/stack-keep.mjs  (or pnpm stack:up --force if stuck)',
+  };
+}
+
+async function main() {
+  const status = await collectStatus();
+
+  if (asJson) {
+    console.log(JSON.stringify(status));
+    process.exit(status.ok ? 0 : 1);
+  }
+
+  console.log('TradeOps stack status');
+  console.log(
+    `  WDG  ${status.watchdog === 'up' ? `UP pid=${readLock(watchdogPath)?.pid}` : status.watchdog.toUpperCase()}`,
+  );
+  if (status.supervisor === 'up') {
+    console.log(
+      `  SUP  UP pid=${status.supervisorPid} since=${status.supervisorSince ?? '?'}${
+        status.supervisorTick ? ` tick=${status.supervisorTick}` : ''
+      }`,
+    );
+  } else {
+    console.log(`  SUP  ${status.supervisor.toUpperCase()}`);
+  }
+  if (status.heartbeat) {
+    console.log(
+      `  HB   ${status.heartbeat.at} phase=${status.heartbeat.phase} pid=${status.heartbeat.pid}`,
+    );
+  }
+  console.log(
+    `  ${status.db.ok ? 'UP  ' : 'DOWN'} :${status.ports.db} PGlite DB ${
+      status.db.ok ? '(queryable)' : status.db.open ? '(zombie TCP only)' : ''
+    }`,
+  );
+  console.log(
+    `  ${status.api.ok ? 'UP  ' : 'DOWN'} :${status.ports.api} API${
+      status.api.ok ? ' healthy' : status.api.open ? ' unhealthy' : ''
+    }${
+      status.api.http
+        ? ` HTTP ${status.api.http} api=${status.api.status} postgres=${status.api.postgres ?? '?'}`
+        : ''
+    }`,
+  );
+  console.log(
+    `  ${status.web.ok ? 'UP  ' : 'DOWN'} :${status.ports.web} Web${
+      status.web.http ? ` HTTP ${status.web.http}` : ''
+    }`,
+  );
+  if (status.ai) {
+    console.log(
+      `  AI   health configured=${status.ai.configured} errorCode=${status.ai.errorCode ?? 'none'} model=${status.ai.model ?? '?'}`,
+    );
+  }
+  if (!status.ok) {
+    console.log(`\nHint: ${status.hint}`);
     process.exitCode = 1;
   }
 }

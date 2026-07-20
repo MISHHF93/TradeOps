@@ -11,7 +11,8 @@ out
 *.tsbuildinfo
 
 # Env / secrets
-.env
+# Note: bare `.env` is intentionally NOT ignored so local env can be versioned if needed.
+# Prefer keeping real secrets out of git history; rotate any key that was ever committed or pasted.
 .env.local
 .env.*.local
 .env.bak-*
@@ -68,4 +69,3 @@ packages/database/prisma/*.bak
 
 .env.bak-*
 .env.local
-

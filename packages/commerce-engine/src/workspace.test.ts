@@ -37,36 +37,36 @@ describe('workspace personas', () => {
     assert.equal(resolveOperatingPersona('developer'), 'developer');
   });
 
-  it('builds lean Focus + More nav (not a feature dump)', () => {
+  it('builds AI-first primary · admin · more (not a feature dump)', () => {
     const nav = buildPersonaNav('researcher', { openTasks: 3 });
-    assert.ok(nav.some((g) => g.id === 'focus'));
-    assert.ok(nav.some((g) => g.id === 'more'));
-    assert.equal(nav.some((g) => g.id === 'procedures'), false);
-    const focus = nav.find((g) => g.id === 'focus')!;
-    assert.ok(focus.items.length <= 7, 'focus should stay lean');
-    const labels = focus.items.map((i) => i.label);
-    assert.deepEqual(labels, ['Home', 'Discover', 'Opportunities', 'Cases', 'Objectives']);
+    assert.deepEqual(
+      nav.map((g) => g.id),
+      ['primary', 'admin', 'more'],
+    );
+    const primary = nav.find((g) => g.id === 'primary')!;
+    assert.ok(primary.items.length <= 4, 'primary stays lean');
+    const labels = primary.items.map((i) => i.label);
+    assert.deepEqual(labels, ['Home', 'Cases', 'Connections']);
     const hrefs = nav.flatMap((g) => g.items).map((i) => i.href);
     assert.equal(hrefs.some((h) => h.startsWith('/capital')), false);
-    assert.ok(hrefs.includes('/terminal'));
-    assert.ok(hrefs.includes('/terminal/objectives'));
+    assert.ok(hrefs.includes('/terminal/process'));
+    assert.ok(hrefs.includes('/terminal/connectors'));
     assert.ok(!hrefs.includes('/terminal/ai'));
-    // Procedures stay on Home — not cloned into More
+    assert.ok(hrefs.includes('/terminal/objectives'));
     const more = nav.find((g) => g.id === 'more')!;
     assert.equal(
       more.items.some((i) => i.kind === 'procedure_hub' || Boolean(i.procedureId)),
       false,
     );
-    assert.equal(more.items.some((i) => /Discover products|Evaluate demand/i.test(i.label)), false);
   });
 
-  it('operator More reaches full finance spine', () => {
+  it('operator More keeps core commerce secondary links', () => {
     const nav = buildPersonaNav('operator');
     const moreHrefs = nav.find((g) => g.id === 'more')!.items.map((i) => i.href);
-    assert.ok(moreHrefs.includes('/terminal/finance/payments'));
-    assert.ok(moreHrefs.includes('/terminal/finance/payouts'));
-    assert.ok(moreHrefs.includes('/terminal/finance/reconciliation'));
-    assert.ok(moreHrefs.includes('/terminal/finance/disputes'));
+    assert.ok(moreHrefs.includes('/terminal/orders'));
+    assert.ok(moreHrefs.includes('/terminal/tasks'));
+    assert.ok(moreHrefs.includes('/terminal/approvals'));
+    assert.ok(moreHrefs.includes('/terminal/fulfillment'));
   });
 
   it('procedures no longer point at legacy cockpit/control-tower', () => {
@@ -79,26 +79,23 @@ describe('workspace personas', () => {
     }
   });
 
-  it('executive focus includes home, cases, approvals, portfolio, Objectives (not AI page)', () => {
-    const nav = buildPersonaNav('executive', { pendingApprovals: 2 });
-    const focus = nav.find((g) => g.id === 'focus')!;
-    const labels = focus.items.map((i) => i.label);
-    const hrefs = focus.items.map((i) => i.href);
+  it('executive primary is Home · Cases · Connections (AI is the rail)', () => {
+    const nav = buildPersonaNav('executive', { pendingApprovals: 2, openBlockers: 4 });
+    const primary = nav.find((g) => g.id === 'primary')!;
+    const labels = primary.items.map((i) => i.label);
+    const hrefs = primary.items.map((i) => i.href);
     assert.ok(labels.some((l) => /home/i.test(l)));
     assert.ok(labels.some((l) => /case/i.test(l)));
-    assert.ok(labels.some((l) => /approv/i.test(l)));
-    assert.ok(labels.some((l) => /portfolio/i.test(l)));
-    assert.ok(labels.some((l) => /objective/i.test(l)));
+    assert.ok(labels.some((l) => /connection/i.test(l)));
     assert.ok(!hrefs.includes('/terminal/ai'), 'AI page is not primary nav — right rail owns AI');
-    assert.ok(hrefs.includes('/terminal/objectives'));
-    const decisions = focus.items.find((i) => i.id === 'decisions');
-    assert.equal(decisions?.badge, '2');
-    // More must not re-list Focus hrefs
+    const cases = primary.items.find((i) => i.id === 'process' || i.href === '/terminal/process');
+    assert.equal(cases?.badge, '4');
     const more = nav.find((g) => g.id === 'more')!;
-    const focusHrefs = new Set(focus.items.map((i) => i.href.split('?')[0]));
+    const primaryHrefs = new Set(primary.items.map((i) => i.href.split('?')[0]));
     for (const m of more.items) {
-      assert.equal(focusHrefs.has(m.href.split('?')[0]!), false, m.href);
+      assert.equal(primaryHrefs.has(m.href.split('?')[0]!), false, m.href);
     }
+    assert.ok(more.items.some((i) => i.href === '/terminal/approvals'));
   });
 
   it('resolveWorkspace assembles surface + intelligence + AI preamble', () => {

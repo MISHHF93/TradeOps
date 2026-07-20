@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { AskAiButton } from '../../../../components/ai/ask-ai-button';
 import { ProcessPageHeader } from '../../../../components/commerce/process-chrome';
 import { PersonaHome } from '../../../../components/workspace/persona-home';
@@ -15,6 +15,15 @@ const VALID: OperatingPersona[] = [
   'administrator',
 ];
 
+/** Legacy stored personas → operating persona (matches commerce-engine resolveOperatingPersona). */
+const LEGACY_PERSONA: Record<string, OperatingPersona> = {
+  founder: 'researcher',
+  procurement: 'operator',
+  finance: 'executive',
+  agency: 'administrator',
+  auditor: 'executive',
+};
+
 type Props = {
   params: Promise<{ persona: string }>;
   searchParams: Promise<{ procedure?: string }>;
@@ -26,7 +35,12 @@ type Props = {
 export default async function PersonaWorkspacePage({ params, searchParams }: Props) {
   const { persona: raw } = await params;
   const { procedure: focusProcedure } = await searchParams;
-  const persona = raw.toLowerCase() as OperatingPersona;
+  const key = raw.toLowerCase();
+  if (LEGACY_PERSONA[key]) {
+    const qs = focusProcedure ? `?procedure=${encodeURIComponent(focusProcedure)}` : '';
+    redirect(`/terminal/workspace/${LEGACY_PERSONA[key]}${qs}`);
+  }
+  const persona = key as OperatingPersona;
   if (!VALID.includes(persona)) notFound();
 
   const result = await terminalGet<ResolvedWorkspace>('/api/v1/workspace');
@@ -48,20 +62,21 @@ export default async function PersonaWorkspacePage({ params, searchParams }: Pro
   return (
     <section className="terminal-page persona-workspace-page">
       <ProcessPageHeader
-        pill={`${label} workspace`}
-        title={`${label} workspace`}
+        pill="Home · Intent"
+        title="Home"
         lede={
           mismatched
             ? `You are set to ${ws.personaLabel}. Switch persona to fully adopt this workspace.`
-            : ws.mission
+            : `${label}: ${ws.mission} Start with AI, work Cases, connect systems.`
         }
-        breadcrumbs={[
-          { href: '/terminal/workspace', label: 'Workspaces' },
-          { label },
-        ]}
+        breadcrumbs={[{ href: '/terminal/workspace', label: 'Home' }, { label }]}
         toolbar={
           <>
-            <AskAiButton objective={focusObjective || `Operate as ${label}`} label="Ask AI" />
+            <AskAiButton
+              objective={focusObjective || `Operate as ${label}`}
+              label="Open AI"
+              className="btn primary"
+            />
             {!mismatched && ws.recommendedNextAction ? (
               <Link className="btn secondary" href={ws.recommendedNextAction.href}>
                 {ws.recommendedNextAction.label}

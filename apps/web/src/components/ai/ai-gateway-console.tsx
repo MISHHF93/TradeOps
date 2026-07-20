@@ -185,44 +185,7 @@ export function AiGatewayConsole({
 
   return (
     <article className="panel" style={{ marginBottom: 16 }}>
-      <h2 style={{ marginTop: 0 }}>TradeOps AI · live Cohere chat</h2>
-      <p className="meta" style={{ marginTop: 0 }}>
-        Canonical path: <code>POST /api/v1/ai/chat</code> → Cohere agent runtime (not a static script).
-        Look for <strong>Live · cohere · model</strong> under each reply. Catalog answers may say
-        TEST_FIXTURE when only demo products are seeded — that is honesty, not offline mode.
-      </p>
-
-      {catalog?.platform ? (
-        <p className="meta">
-          Provider: <strong>{(catalog.platform as { aiProvider?: string }).aiProvider ?? 'cohere'}</strong>
-          {' · '}
-          Cohere:{' '}
-          {(catalog.platform as { cohereConfigured?: boolean }).cohereConfigured
-            ? 'key set'
-            : 'missing — set COHERE_API_KEY'}
-          {' · '}
-          OpenAI (optional search):{' '}
-          {(catalog.platform as { openaiConfigured?: boolean }).openaiConfigured
-            ? 'key set'
-            : 'unset'}
-          {' · '}
-          xAI: {catalog.platform.xaiConfigured ? 'key set' : 'optional'}
-          {catalog.skills?.length ? (
-            <>
-              {' · '}
-              Skills: {catalog.skills.join(', ')}
-            </>
-          ) : null}
-        </p>
-      ) : null}
-
-      {conversationId ? (
-        <p className="meta">
-          Conversation: <code>{conversationId.slice(0, 8)}…</code> (saved in database)
-        </p>
-      ) : (
-        <p className="meta">New conversation will be created on first send and stored in the DB.</p>
-      )}
+      <h2 style={{ marginTop: 0 }}>AI chat</h2>
 
       {thread.length > 0 ? (
         <div
@@ -247,14 +210,7 @@ export function AiGatewayConsole({
                   t.role === 'user' ? 'var(--panel-muted, #111)' : 'transparent',
               }}
             >
-              <div className="meta">
-                <strong>{t.role === 'user' ? 'You' : 'TradeOps AI'}</strong>
-                {t.status ? ` · ${t.status}` : ''}
-                {t.dataMode ? ` · ${t.dataMode}` : ''}
-                {t.provider ? ` · ${t.provider}` : ''}
-                {t.model ? ` · ${t.model}` : ''}
-              </div>
-              <div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{t.content}</div>
+              <div style={{ whiteSpace: 'pre-wrap' }}>{t.content}</div>
             </div>
           ))}
         </div>
@@ -270,7 +226,7 @@ export function AiGatewayConsole({
           onChange={(ev) => setObjective(ev.target.value)}
           rows={3}
           style={{ width: '100%', marginTop: 6, marginBottom: 8 }}
-          placeholder='Try "Hi" — needs COHERE_API_KEY for a live reply (not a canned script)'
+          placeholder=""
           disabled={busy}
         />
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>

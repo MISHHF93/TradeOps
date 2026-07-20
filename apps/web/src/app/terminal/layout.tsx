@@ -106,6 +106,13 @@ export default async function TerminalLayout({ children }: { children: ReactNode
     Array.isArray(connectors.data) &&
     connectors.data.some((c) => c.isFixture);
 
+  const apiOffline = navSource === 'fallback' || !workspaceRes.ok;
+  const apiOfflineDetail = !workspaceRes.ok
+    ? workspaceRes.error
+    : !tenant.ok
+      ? tenant.error
+      : null;
+
   return (
     <TerminalShell
       founderDirect={founder}
@@ -126,11 +133,30 @@ export default async function TerminalLayout({ children }: { children: ReactNode
       }
       logoutSlot={!founder ? <LogoutButton /> : undefined}
     >
+      {apiOffline ? (
+        <div
+          className="form-error"
+          role="alert"
+          style={{
+            margin: '0 0 12px',
+            padding: '10px 12px',
+            borderRadius: 8,
+            border: '1px solid color-mix(in srgb, var(--danger, #c44) 35%, transparent)',
+            background: 'color-mix(in srgb, var(--danger, #c44) 8%, transparent)',
+          }}
+        >
+          <strong>API offline</strong>
+          {apiOfflineDetail ? ` — ${apiOfflineDetail}` : null}. Start PGlite (
+          <code>node scripts/prisma-dev-db.mjs</code>) then the API (
+          <code>node scripts/start-api-with-env.mjs</code>) on{' '}
+          <code>127.0.0.1:4000</code>, then reload.
+        </div>
+      ) : null}
       <SimulationBanner active={simulationMode} />
       {hasFixtureConnectors && !simulationMode ? (
-        <p className="pill" style={{ margin: '0 0 12px' }}>
-          TEST FIXTURE connectors installed — fixture products/orders are labeled and are not live
-          marketplace data. Set TRADEOPS_SIMULATION_MODE=1 to mark the whole workspace as Simulation.
+        <p className="meta" style={{ margin: '0 0 12px', opacity: 0.9 }}>
+          Demo connectors present — seed catalog is for walkthroughs only. Use{' '}
+          <strong>AI Operator</strong> for live market research; connect a real supplier when ready.
         </p>
       ) : null}
       {children}

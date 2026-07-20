@@ -315,6 +315,1349 @@ export async function shopifyFetchOrders(): Promise<
 }
 
 /**
+ * Shopify Admin GraphQL — productCreate (draft product).
+ * Never call without founder approval + explicit confirm in the app layer.
+ * Returns product GID on success; never fabricates an id.
+ */
+export async function shopifyCreateProduct(input: {
+  title: string;
+  descriptionHtml?: string;
+  status?: 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+  vendor?: string;
+  productType?: string;
+  tags?: string[];
+}): Promise<
+  LiveFetchResult<{
+    externalId: string;
+    title: string;
+    status: string;
+    handle: string | null;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const title = String(input.title ?? '').trim().slice(0, 200);
+  if (title.length < 2) {
+    return {
+      ok: false,
+      error: 'title_required',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const mutation = `
+    mutation productCreate($input: ProductInput!) {
+      productCreate(input: $input) {
+        product {
+          id
+          title
+          status
+          handle
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+  const variables = {
+    input: {
+      title,
+      descriptionHtml: (input.descriptionHtml ?? title).slice(0, 50_000),
+      status: input.status ?? 'DRAFT',
+      vendor: (input.vendor ?? 'TradeOps').slice(0, 100),
+      productType: (input.productType ?? 'ai-research').slice(0, 100),
+      tags: Array.isArray(input.tags) ? input.tags.slice(0, 10) : ['tradeops', 'ai-research'],
+    },
+  };
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({ query: mutation, variables }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        productCreate?: {
+          product?: {
+            id: string;
+            title: string;
+            status: string;
+            handle?: string | null;
+          } | null;
+          userErrors?: Array<{ field?: string[] | null; message: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = json.data?.productCreate?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      return {
+        ok: false,
+        error: userErrors.map((e) => e.message).join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const product = json.data?.productCreate?.product;
+    if (!product?.id) {
+      return {
+        ok: false,
+        error: 'productCreate returned no product id',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        externalId: product.id,
+        title: product.title,
+        status: product.status,
+        handle: product.handle ?? null,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/** Build Shopify Admin product URL from shop domain + product GID or numeric id. */
+export function shopifyAdminProductUrl(productGidOrId: string): string | null {
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  if (!shop || !productGidOrId) return null;
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const numeric =
+    productGidOrId.match(/Product\/(\d+)/)?.[1] ||
+    (/^\d+$/.test(productGidOrId) ? productGidOrId : null);
+  if (!numeric) return `https://${domain}/admin/products`;
+  return `https://${domain}/admin/products/${numeric}`;
+}
+
+/**
+ * Cycle 10 — set default variant price + SKU after productCreate.
+ * Fetches first variant, then productVariantUpdate. Never fabricates ids.
+ */
+export async function shopifyUpdateDefaultVariant(input: {
+  productId: string;
+  price: string;
+  sku?: string;
+}): Promise<
+  LiveFetchResult<{
+    variantId: string;
+    price: string;
+    sku: string | null;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const productId = String(input.productId ?? '').trim();
+  if (!productId.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  // Shopify price is decimal string e.g. "26.25"
+  const price = String(input.price ?? '')
+    .replace(/[^0-9.]/g, '')
+    .replace(/^(\d+\.\d{0,2}).*$/, '$1');
+  if (!price || Number(price) <= 0) {
+    return {
+      ok: false,
+      error: 'invalid_price',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const sku = input.sku ? String(input.sku).trim().slice(0, 100) : undefined;
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const qRes = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          query defaultVariant($id: ID!) {
+            product(id: $id) {
+              variants(first: 1) {
+                edges { node { id } }
+              }
+            }
+          }
+        `,
+        variables: { id: productId },
+      }),
+    });
+    if (!qRes.ok) return httpError(providerKey, qRes.status, Date.now() - t0);
+    const qJson = (await qRes.json()) as {
+      data?: {
+        product?: {
+          variants?: { edges?: Array<{ node: { id: string } }> };
+        } | null;
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (qJson.errors?.length) {
+      return {
+        ok: false,
+        error: qJson.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs: Date.now() - t0,
+      };
+    }
+    const variantId = qJson.data?.product?.variants?.edges?.[0]?.node?.id;
+    if (!variantId) {
+      return {
+        ok: false,
+        error: 'no_default_variant',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs: Date.now() - t0,
+      };
+    }
+
+    const mRes = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation productVariantUpdate($input: ProductVariantInput!) {
+            productVariantUpdate(input: $input) {
+              productVariant { id price sku }
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            id: variantId,
+            price,
+            ...(sku ? { sku } : {}),
+          },
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!mRes.ok) return httpError(providerKey, mRes.status, latencyMs);
+    const mJson = (await mRes.json()) as {
+      data?: {
+        productVariantUpdate?: {
+          productVariant?: {
+            id: string;
+            price: string;
+            sku?: string | null;
+          } | null;
+          userErrors?: Array<{ message: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (mJson.errors?.length) {
+      return {
+        ok: false,
+        error: mJson.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = mJson.data?.productVariantUpdate?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      return {
+        ok: false,
+        error: userErrors.map((e) => e.message).join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const variant = mJson.data?.productVariantUpdate?.productVariant;
+    if (!variant?.id) {
+      return {
+        ok: false,
+        error: 'variant_update_empty',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        variantId: variant.id,
+        price: String(variant.price ?? price),
+        sku: variant.sku ?? sku ?? null,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/** True when URL looks like a public image Shopify can fetch (not an article page). */
+export function isLikelyPublicImageUrl(url: string): boolean {
+  const u = String(url ?? '').trim();
+  if (!/^https:\/\//i.test(u)) return false;
+  if (u.length > 2000) return false;
+  if (/\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(u)) return true;
+  if (
+    /cdn\.shopify\.com|images\.unsplash\.com|imgix\.net|cloudinary\.com|googleusercontent\.com|cloudfront\.net/i.test(
+      u,
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Cycle 11 — attach a public image URL to a Shopify product via productCreateMedia.
+ * Never fabricates media ids. Requires a real https image source Shopify can fetch.
+ */
+export async function shopifyAttachProductImage(input: {
+  productId: string;
+  originalSource: string;
+  alt?: string;
+}): Promise<
+  LiveFetchResult<{
+    mediaId: string | null;
+    status: string | null;
+    originalSource: string;
+  }>
+> {
+  const batch = await shopifyAttachProductImages({
+    productId: input.productId,
+    sources: [{ originalSource: input.originalSource, alt: input.alt }],
+  });
+  if (!batch.ok || !batch.data) {
+    return {
+      ok: false,
+      error: batch.error,
+      providerKey: batch.providerKey,
+      isLive: true,
+      fetchedAt: batch.fetchedAt,
+      latencyMs: batch.latencyMs,
+    };
+  }
+  const first = batch.data.attached[0];
+  if (!first) {
+    return {
+      ok: false,
+      error: batch.data.errors[0] || 'media_attach_failed',
+      providerKey: batch.providerKey,
+      isLive: true,
+      fetchedAt: batch.fetchedAt,
+      latencyMs: batch.latencyMs,
+    };
+  }
+  return {
+    ok: true,
+    data: first,
+    providerKey: batch.providerKey,
+    isLive: true,
+    fetchedAt: batch.fetchedAt,
+    latencyMs: batch.latencyMs,
+  };
+}
+
+/**
+ * Cycle 12 — attach a gallery of public image URLs (max 5) via productCreateMedia.
+ * Single GraphQL call with multiple CreateMediaInput. Never fabricates media ids.
+ */
+export async function shopifyAttachProductImages(input: {
+  productId: string;
+  sources: Array<{ originalSource: string; alt?: string }>;
+}): Promise<
+  LiveFetchResult<{
+    attached: Array<{
+      mediaId: string | null;
+      status: string | null;
+      originalSource: string;
+    }>;
+    planned: string[];
+    errors: string[];
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const productId = String(input.productId ?? '').trim();
+  if (!productId.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const planned: string[] = [];
+  const mediaInputs: Array<{
+    originalSource: string;
+    alt: string;
+    mediaContentType: 'IMAGE';
+  }> = [];
+  for (const s of input.sources ?? []) {
+    const originalSource = String(s.originalSource ?? '').trim();
+    if (!originalSource || planned.includes(originalSource)) continue;
+    if (!isLikelyPublicImageUrl(originalSource)) continue;
+    planned.push(originalSource);
+    mediaInputs.push({
+      originalSource,
+      alt: (s.alt ?? `Product image ${planned.length}`).slice(0, 200),
+      mediaContentType: 'IMAGE',
+    });
+    if (mediaInputs.length >= 5) break;
+  }
+  if (mediaInputs.length === 0) {
+    return {
+      ok: false,
+      error: 'no_valid_image_urls',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+            productCreateMedia(productId: $productId, media: $media) {
+              media {
+                ... on MediaImage {
+                  id
+                  status
+                }
+                ... on Video {
+                  id
+                  status
+                }
+                ... on ExternalVideo {
+                  id
+                  status
+                }
+                ... on Model3d {
+                  id
+                  status
+                }
+              }
+              mediaUserErrors {
+                field
+                message
+                code
+              }
+            }
+          }
+        `,
+        variables: {
+          productId,
+          media: mediaInputs,
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        productCreateMedia?: {
+          media?: Array<{ id?: string; status?: string } | null> | null;
+          mediaUserErrors?: Array<{ message?: string; code?: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = json.data?.productCreateMedia?.mediaUserErrors ?? [];
+    const errors = userErrors.map((e) => e.message || e.code || 'media_error');
+    const mediaNodes = (json.data?.productCreateMedia?.media ?? []).filter(Boolean) as Array<{
+      id?: string;
+      status?: string;
+    }>;
+    // Map responses in order; Shopify returns one media entry per input when accepted
+    const attached = mediaInputs.map((m, i) => {
+      const node = mediaNodes[i];
+      return {
+        mediaId: node?.id ?? null,
+        status: node?.status ?? (errors.length ? 'ERROR' : 'ACCEPTED'),
+        originalSource: m.originalSource,
+      };
+    });
+    // Partial success: if no media nodes and hard userErrors, fail
+    if (mediaNodes.length === 0 && errors.length > 0) {
+      return {
+        ok: false,
+        error: errors.join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        attached,
+        planned,
+        errors,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Cycle 13 — set Shopify product status (DRAFT | ACTIVE | ARCHIVED).
+ * Storefront visibility requires ACTIVE. Never call without explicit founder confirm.
+ */
+export async function shopifySetProductStatus(input: {
+  productId: string;
+  status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+}): Promise<
+  LiveFetchResult<{
+    externalId: string;
+    status: string;
+    title: string | null;
+    handle: string | null;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const productId = String(input.productId ?? '').trim();
+  if (!productId.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const status = input.status;
+  if (status !== 'ACTIVE' && status !== 'DRAFT' && status !== 'ARCHIVED') {
+    return {
+      ok: false,
+      error: 'invalid_status',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation productUpdate($input: ProductInput!) {
+            productUpdate(input: $input) {
+              product {
+                id
+                title
+                status
+                handle
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            id: productId,
+            status,
+          },
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        productUpdate?: {
+          product?: {
+            id: string;
+            title?: string;
+            status: string;
+            handle?: string | null;
+          } | null;
+          userErrors?: Array<{ message?: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = json.data?.productUpdate?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      return {
+        ok: false,
+        error: userErrors.map((e) => e.message || 'update_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const product = json.data?.productUpdate?.product;
+    if (!product?.id) {
+      return {
+        ok: false,
+        error: 'productUpdate_empty',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        externalId: product.id,
+        status: product.status,
+        title: product.title ?? null,
+        handle: product.handle ?? null,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Read Shopify product status (for already_active / honesty checks).
+ */
+export async function shopifyGetProductStatus(
+  productId: string,
+): Promise<
+  LiveFetchResult<{
+    externalId: string;
+    status: string;
+    title: string | null;
+    handle: string | null;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const id = String(productId ?? '').trim();
+  if (!id.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          query productStatus($id: ID!) {
+            product(id: $id) {
+              id
+              title
+              status
+              handle
+            }
+          }
+        `,
+        variables: { id },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        product?: {
+          id: string;
+          title?: string;
+          status: string;
+          handle?: string | null;
+        } | null;
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const product = json.data?.product;
+    if (!product?.id) {
+      return {
+        ok: false,
+        error: 'product_not_found',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        externalId: product.id,
+        status: product.status,
+        title: product.title ?? null,
+        handle: product.handle ?? null,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Cycle 14 — resolve default variant inventory item + first location for inventory ops.
+ */
+export async function shopifyResolveInventoryContext(productId: string): Promise<
+  LiveFetchResult<{
+    inventoryItemId: string;
+    locationId: string;
+    locationName: string | null;
+    variantId: string;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const id = String(productId ?? '').trim();
+  if (!id.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          query inventoryContext($id: ID!) {
+            product(id: $id) {
+              variants(first: 1) {
+                edges {
+                  node {
+                    id
+                    inventoryItem { id }
+                  }
+                }
+              }
+            }
+            locations(first: 5) {
+              edges {
+                node {
+                  id
+                  name
+                  isActive
+                }
+              }
+            }
+          }
+        `,
+        variables: { id },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        product?: {
+          variants?: {
+            edges?: Array<{
+              node: { id: string; inventoryItem?: { id: string } | null };
+            }>;
+          };
+        } | null;
+        locations?: {
+          edges?: Array<{
+            node: { id: string; name?: string; isActive?: boolean };
+          }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const variant = json.data?.product?.variants?.edges?.[0]?.node;
+    const inventoryItemId = variant?.inventoryItem?.id;
+    const locations = (json.data?.locations?.edges ?? []).map((e) => e.node);
+    const location =
+      locations.find((l) => l.isActive !== false) ?? locations[0] ?? null;
+    if (!variant?.id || !inventoryItemId || !location?.id) {
+      return {
+        ok: false,
+        error: 'inventory_context_incomplete',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        inventoryItemId,
+        locationId: location.id,
+        locationName: location.name ?? null,
+        variantId: variant.id,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Cycle 14 — set available inventory quantity for a product's default variant.
+ */
+export async function shopifySetInventoryAvailable(input: {
+  productId: string;
+  quantity: number;
+}): Promise<
+  LiveFetchResult<{
+    inventoryItemId: string;
+    locationId: string;
+    locationName: string | null;
+    quantity: number;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const qty = Math.max(0, Math.floor(Number(input.quantity)));
+  if (!Number.isFinite(qty)) {
+    return {
+      ok: false,
+      error: 'invalid_quantity',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const ctx = await shopifyResolveInventoryContext(input.productId);
+  if (!ctx.ok || !ctx.data) {
+    return {
+      ok: false,
+      error: ctx.error ?? 'inventory_context_failed',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs: ctx.latencyMs,
+    };
+  }
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+            inventorySetQuantities(input: $input) {
+              userErrors { field message code }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            name: 'available',
+            reason: 'correction',
+            ignoreCompareQuantity: true,
+            quantities: [
+              {
+                inventoryItemId: ctx.data.inventoryItemId,
+                locationId: ctx.data.locationId,
+                quantity: qty,
+              },
+            ],
+          },
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        inventorySetQuantities?: {
+          userErrors?: Array<{ message?: string; code?: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = json.data?.inventorySetQuantities?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      return {
+        ok: false,
+        error: userErrors.map((e) => e.message || e.code || 'inventory_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        inventoryItemId: ctx.data.inventoryItemId,
+        locationId: ctx.data.locationId,
+        locationName: ctx.data.locationName,
+        quantity: qty,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Cycle 14 — find collection by title (exact, case-insensitive) or create it.
+ */
+export async function shopifyFindOrCreateCollection(input: {
+  title: string;
+}): Promise<
+  LiveFetchResult<{
+    collectionId: string;
+    title: string;
+    created: boolean;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const title = String(input.title ?? '').trim().slice(0, 200);
+  if (title.length < 2) {
+    return {
+      ok: false,
+      error: 'title_required',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    // Search existing
+    const qRes = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          query findCollection($q: String!) {
+            collections(first: 10, query: $q) {
+              edges { node { id title } }
+            }
+          }
+        `,
+        variables: { q: `title:${title}` },
+      }),
+    });
+    if (!qRes.ok) return httpError(providerKey, qRes.status, Date.now() - t0);
+    const qJson = (await qRes.json()) as {
+      data?: {
+        collections?: {
+          edges?: Array<{ node: { id: string; title: string } }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (!qJson.errors?.length) {
+      const match = (qJson.data?.collections?.edges ?? []).find(
+        (e) => e.node.title.toLowerCase() === title.toLowerCase(),
+      );
+      if (match) {
+        return {
+          ok: true,
+          data: {
+            collectionId: match.node.id,
+            title: match.node.title,
+            created: false,
+          },
+          providerKey,
+          isLive: true,
+          fetchedAt: new Date().toISOString(),
+          latencyMs: Date.now() - t0,
+        };
+      }
+    }
+
+    const cRes = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation collectionCreate($input: CollectionInput!) {
+            collectionCreate(input: $input) {
+              collection { id title }
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: {
+          input: {
+            title,
+          },
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!cRes.ok) return httpError(providerKey, cRes.status, latencyMs);
+    const cJson = (await cRes.json()) as {
+      data?: {
+        collectionCreate?: {
+          collection?: { id: string; title: string } | null;
+          userErrors?: Array<{ message?: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (cJson.errors?.length) {
+      return {
+        ok: false,
+        error: cJson.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = cJson.data?.collectionCreate?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      return {
+        ok: false,
+        error: userErrors.map((e) => e.message || 'collection_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const collection = cJson.data?.collectionCreate?.collection;
+    if (!collection?.id) {
+      return {
+        ok: false,
+        error: 'collection_create_empty',
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: {
+        collectionId: collection.id,
+        title: collection.title,
+        created: true,
+      },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
+ * Cycle 14 — add product to a collection.
+ */
+export async function shopifyAddProductToCollection(input: {
+  collectionId: string;
+  productId: string;
+}): Promise<
+  LiveFetchResult<{
+    collectionId: string;
+    productId: string;
+  }>
+> {
+  const providerKey = 'shopify-graphql-admin';
+  const shop = env('SHOPIFY_SHOP_DOMAIN');
+  const token = env('SHOPIFY_ACCESS_TOKEN');
+  if (!shop || !token) {
+    return missing(providerKey, ['SHOPIFY_SHOP_DOMAIN', 'SHOPIFY_ACCESS_TOKEN']);
+  }
+  const collectionId = String(input.collectionId ?? '').trim();
+  const productId = String(input.productId ?? '').trim();
+  if (!collectionId.startsWith('gid://shopify/Collection/')) {
+    return {
+      ok: false,
+      error: 'invalid_collection_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  if (!productId.startsWith('gid://shopify/Product/')) {
+    return {
+      ok: false,
+      error: 'invalid_product_id',
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+  const domain = shop.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`https://${domain}/admin/api/2025-01/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': token,
+      },
+      body: JSON.stringify({
+        query: `
+          mutation collectionAddProducts($id: ID!, $productIds: [ID!]!) {
+            collectionAddProducts(id: $id, productIds: $productIds) {
+              userErrors { field message }
+            }
+          }
+        `,
+        variables: {
+          id: collectionId,
+          productIds: [productId],
+        },
+      }),
+    });
+    const latencyMs = Date.now() - t0;
+    if (!res.ok) return httpError(providerKey, res.status, latencyMs);
+    const json = (await res.json()) as {
+      data?: {
+        collectionAddProducts?: {
+          userErrors?: Array<{ message?: string }>;
+        };
+      };
+      errors?: Array<{ message?: string }>;
+    };
+    if (json.errors?.length) {
+      return {
+        ok: false,
+        error: json.errors.map((e) => e.message ?? 'graphql_error').join('; ').slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    const userErrors = json.data?.collectionAddProducts?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      // Already in collection is often a soft conflict — treat as ok if message says so
+      const msg = userErrors.map((e) => e.message || '').join('; ');
+      if (/already|exist/i.test(msg)) {
+        return {
+          ok: true,
+          data: { collectionId, productId },
+          providerKey,
+          isLive: true,
+          fetchedAt: new Date().toISOString(),
+          latencyMs,
+        };
+      }
+      return {
+        ok: false,
+        error: msg.slice(0, 400),
+        providerKey,
+        isLive: true,
+        fetchedAt: new Date().toISOString(),
+        latencyMs,
+      };
+    }
+    return {
+      ok: true,
+      data: { collectionId, productId },
+      providerKey,
+      isLive: true,
+      fetchedAt: new Date().toISOString(),
+      latencyMs,
+    };
+  } catch (e) {
+    return catchError(providerKey, e, Date.now() - t0);
+  }
+}
+
+/**
  * Stripe — list recent payouts (live operational cash).
  */
 export async function stripeFetchPayouts(): Promise<

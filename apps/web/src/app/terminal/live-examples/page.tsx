@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { LiveExamplesClient } from '../../../components/ai/live-examples-client';
 import { TerminalPageFrame } from '../../../components/commerce/process-chrome';
+import { PackDisabledState } from '../../../components/feedback/pack-disabled-state';
+import { resolveProductPacks } from '../../../lib/product-packs';
 import { terminalGet } from '../../../lib/terminal-api';
 
 type LiveExamplesResponse = {
@@ -39,6 +41,9 @@ type LiveExamplesResponse = {
 };
 
 export default async function LiveExamplesPage() {
+  if (!resolveProductPacks().engLabs) {
+    return <PackDisabledState pack="engLabs" />;
+  }
   const result = await terminalGet<LiveExamplesResponse>('/api/v1/ai/live-examples');
 
   return (

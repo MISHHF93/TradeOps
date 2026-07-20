@@ -386,9 +386,10 @@ export class AiController {
       body.objective?.trim() ||
       'Find products worth evaluating.';
 
-    // Default: Objective Resolution Engine (execution navigator)
-    // Flatten so existing AI console still receives cycle fields + package.
-    if (body.navigate !== false) {
+    // Default: agent-first ecommerce path (web research + Cohere).
+    // Only use the heavy Execution Navigator when the client opts in with navigate:true.
+    // Never silently fall back to fixture productRecommendations for open discovery.
+    if (body.navigate === true) {
       return this.operator.resolveObjective({
         organizationId: requireOrgId(auth),
         userId: auth.userId,
@@ -399,7 +400,13 @@ export class AiController {
         commerceCaseId: body.commerceCaseId?.trim(),
         runCycle: true,
       }).then((resolved) => {
-        const cycle = resolved.cycleResult;
+        const cycle = resolved.cycleResult as
+          | (NonNullable<typeof resolved.cycleResult> & {
+              briefingSource?: string;
+              honesty?: { path?: string; note?: string; dataMode?: string; forceShadow?: boolean };
+            })
+          | undefined;
+        const agentFirst = cycle?.honesty?.path === 'ecommerce_agent';
         return {
           runId: resolved.runId,
           status: cycle?.status ?? resolved.executionPackage.executionStatus.overall,
@@ -426,14 +433,20 @@ export class AiController {
           critic: cycle?.critic,
           auditor: cycle?.auditor,
           toolTrace: cycle?.toolTrace,
-          recommendations:
-            cycle?.recommendations ??
-            resolved.executionPackage.productRecommendations,
+          // Agent path: only web/agent recs. Never substitute fixture catalog cards.
+          recommendations: agentFirst
+            ? (cycle?.recommendations ?? [])
+            : (cycle?.recommendations ??
+              resolved.executionPackage.productRecommendations ??
+              []),
           resultsPath: cycle?.resultsPath ?? `/terminal/objectives/${resolved.runId}`,
           honesty: cycle?.honesty ?? resolved.executionPackage.honesty,
-          executionPackage: resolved.executionPackage,
-          navigatorSummary: resolved.summary,
-          knowledgeBaseDelta: resolved.executionPackage.knowledgeBaseDelta,
+          executionPackage: agentFirst ? undefined : resolved.executionPackage,
+          navigatorSummary: agentFirst ? undefined : resolved.summary,
+          knowledgeBaseDelta: agentFirst
+            ? undefined
+            : resolved.executionPackage.knowledgeBaseDelta,
+          briefingSource: cycle?.briefingSource,
         };
       });
     }
@@ -449,6 +462,354 @@ export class AiController {
     });
   }
 
+
+  /**
+   * Cycle 4: persist AI productComparison rows as Product + CommerceCase
+   * (sourcePlatform=ai-research — never fixture).
+   */
+  @Post('operator/research-to-cases')
+  @RequirePermissions('ai:write', 'products:read')
+  persistResearchToCases(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      runId?: string;
+      products?: Array<{
+        product?: string;
+        title?: string;
+        priceBand?: string | null;
+        why?: string | null;
+        rationale?: string | null;
+        risk?: string | null;
+        rank?: number;
+        confidence?: number;
+        sourceUrl?: string | null;
+      }>;
+    },
+  ) {
+    const products = Array.isArray(body.products) ? body.products : [];
+    if (products.length === 0) {
+      return {
+        created: 0,
+        reused: 0,
+        cases: [],
+        error: 'products_required',
+        message: 'Provide productComparison rows from the operator result.',
+      };
+    }
+    return this.operator.persistResearchCandidates({
+      organizationId: requireOrgId(auth),
+      userId: auth.userId,
+      runId: body.runId?.trim(),
+      products,
+    });
+  }
+
+  /**
+   * Cycle 14: inventory + collection ops on a linked Shopify product.
+   * Requires confirmOps. Never silent.
+   */
+  @Post('operator/shopify-post-active-ops')
+  @RequirePermissions('ai:write', 'products:read')
+  async shopifyPostActiveOps(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      listingId?: string;
+      shopifyProductId?: string;
+      confirmOps?: boolean;
+      dryRun?: boolean;
+      inventoryQuantity?: number;
+      collectionTitle?: string;
+    },
+  ) {
+    try {
+      return await this.operator.applyShopifyPostActiveOps({
+        organizationId: requireOrgId(auth),
+        userId: auth.userId,
+        listingId: body.listingId?.trim(),
+        shopifyProductId: body.shopifyProductId?.trim(),
+        confirmOps: Boolean(body.confirmOps),
+        dryRun: Boolean(body.dryRun),
+        inventoryQuantity:
+          body.inventoryQuantity === undefined || body.inventoryQuantity === null
+            ? null
+            : Number(body.inventoryQuantity),
+        collectionTitle: body.collectionTitle?.trim() || null,
+      });
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err && 'code' in err
+          ? String((err as { code?: string }).code)
+          : 'ops_failed';
+      const status =
+        typeof err === 'object' && err && 'status' in err
+          ? Number((err as { status?: number }).status)
+          : 500;
+      if (status === 400 || status === 404) {
+        return {
+          error: code,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Provide listingId/shopifyProductId + inventoryQuantity and/or collectionTitle.',
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Cycle 13: set already-pushed Shopify product to storefront ACTIVE.
+   * Requires confirmPublish + confirmPhrase PUBLISH_ACTIVE. Never silent.
+   */
+  @Post('operator/publish-shopify-active')
+  @RequirePermissions('ai:write', 'products:read')
+  async publishShopifyActive(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      listingId?: string;
+      shopifyProductId?: string;
+      confirmPublish?: boolean;
+      confirmPhrase?: string;
+      dryRun?: boolean;
+    },
+  ) {
+    try {
+      return await this.operator.publishShopifyProductActive({
+        organizationId: requireOrgId(auth),
+        userId: auth.userId,
+        listingId: body.listingId?.trim(),
+        shopifyProductId: body.shopifyProductId?.trim(),
+        confirmPublish: Boolean(body.confirmPublish),
+        confirmPhrase: body.confirmPhrase?.trim(),
+        dryRun: Boolean(body.dryRun),
+      });
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err && 'code' in err
+          ? String((err as { code?: string }).code)
+          : 'publish_failed';
+      const status =
+        typeof err === 'object' && err && 'status' in err
+          ? Number((err as { status?: number }).status)
+          : 500;
+      if (status === 400 || status === 404) {
+        return {
+          error: code,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Provide listingId or shopifyProductId with confirmPublish + phrase.',
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Cycle 9: explicit Shopify productCreate after publish approval.
+   * Requires confirmPush=true. Never silent.
+   */
+  @Post('operator/push-listing-to-shopify')
+  @RequirePermissions('ai:write', 'products:read')
+  async pushListingToShopify(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      listingId?: string;
+      approvalId?: string;
+      confirmPush?: boolean;
+      approveIfPending?: boolean;
+      dryRun?: boolean;
+      /** Cycle 11 optional public image for productCreateMedia */
+      imageUrl?: string;
+      /** Cycle 12 gallery (max 5) */
+      imageUrls?: string[];
+    },
+  ) {
+    try {
+      return await this.operator.pushListingToShopify({
+        organizationId: requireOrgId(auth),
+        userId: auth.userId,
+        listingId: body.listingId?.trim(),
+        approvalId: body.approvalId?.trim(),
+        confirmPush: Boolean(body.confirmPush),
+        approveIfPending: Boolean(body.approveIfPending),
+        dryRun: Boolean(body.dryRun),
+        imageUrl: body.imageUrl?.trim(),
+        imageUrls: Array.isArray(body.imageUrls)
+          ? body.imageUrls.map((u) => String(u).trim()).filter(Boolean)
+          : undefined,
+      });
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err && 'code' in err
+          ? String((err as { code?: string }).code)
+          : 'push_failed';
+      const status =
+        typeof err === 'object' && err && 'status' in err
+          ? Number((err as { status?: number }).status)
+          : 500;
+      if (
+        status === 400 ||
+        status === 404 ||
+        code === 'listing_required' ||
+        code === 'listing_not_found'
+      ) {
+        return {
+          error: code,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Provide listingId or approvalId with confirmPush: true.',
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Cycle 8: research draft → Shopify go-live readiness pack
+   * (approval queue + env/probe; never silent productCreate).
+   */
+  @Post('operator/prepare-shopify-golive')
+  @RequirePermissions('ai:write', 'products:read')
+  async prepareShopifyGoLive(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      runId?: string;
+      listingId?: string;
+      caseId?: string;
+      product?: {
+        product?: string;
+        title?: string;
+        priceBand?: string | null;
+        why?: string | null;
+        rationale?: string | null;
+        risk?: string | null;
+        rank?: number;
+        confidence?: number;
+        sourceUrl?: string | null;
+      };
+      products?: Array<{
+        product?: string;
+        title?: string;
+        priceBand?: string | null;
+        why?: string | null;
+        rationale?: string | null;
+        risk?: string | null;
+        rank?: number;
+        confidence?: number;
+        sourceUrl?: string | null;
+      }>;
+    },
+  ) {
+    try {
+      return await this.operator.prepareShopifyGoLive({
+        organizationId: requireOrgId(auth),
+        userId: auth.userId,
+        runId: body.runId?.trim(),
+        listingId: body.listingId?.trim(),
+        caseId: body.caseId?.trim(),
+        product: body.product,
+        products: body.products,
+      });
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err && 'code' in err
+          ? String((err as { code?: string }).code)
+          : 'golive_failed';
+      const status =
+        typeof err === 'object' && err && 'status' in err
+          ? Number((err as { status?: number }).status)
+          : 500;
+      if (
+        status === 400 ||
+        status === 404 ||
+        code === 'listing_required' ||
+        code === 'listing_not_found' ||
+        code === 'product_required' ||
+        code === 'product_title_required'
+      ) {
+        return {
+          error: code,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Provide listingId, caseId, or productComparison rows for Shopify go-live prep.',
+        };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Cycle 7: top research product → Product + Case + internal Listing draft
+   * (status=draft, never auto-published).
+   */
+  @Post('operator/research-to-listing-draft')
+  @RequirePermissions('ai:write', 'products:read')
+  async draftListingFromResearch(
+    @CurrentAuth() auth: AuthContext,
+    @Body()
+    body: {
+      runId?: string;
+      product?: {
+        product?: string;
+        title?: string;
+        priceBand?: string | null;
+        why?: string | null;
+        rationale?: string | null;
+        risk?: string | null;
+        rank?: number;
+        confidence?: number;
+        sourceUrl?: string | null;
+      };
+      products?: Array<{
+        product?: string;
+        title?: string;
+        priceBand?: string | null;
+        why?: string | null;
+        rationale?: string | null;
+        risk?: string | null;
+        rank?: number;
+        confidence?: number;
+        sourceUrl?: string | null;
+      }>;
+    },
+  ) {
+    try {
+      return await this.operator.draftListingFromResearch({
+        organizationId: requireOrgId(auth),
+        userId: auth.userId,
+        runId: body.runId?.trim(),
+        product: body.product,
+        products: body.products,
+      });
+    } catch (err) {
+      const code =
+        typeof err === 'object' && err && 'code' in err
+          ? String((err as { code?: string }).code)
+          : 'draft_failed';
+      const status =
+        typeof err === 'object' && err && 'status' in err
+          ? Number((err as { status?: number }).status)
+          : 500;
+      if (status === 400 || code === 'product_required' || code === 'product_title_required') {
+        return {
+          error: code,
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Provide a productComparison row (top pick) to draft a listing.',
+        };
+      }
+      throw err;
+    }
+  }
 
   /**
    * SSE stream of operator progress + final result.
@@ -477,12 +838,7 @@ export class AiController {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
-    send('state', {
-      state: 'queued',
-      step: 'Operator run queued',
-      at: new Date().toISOString(),
-    });
-
+    // Live milestones (state) + final result. No fake timers — only real agent steps.
     try {
       const result = await this.operator.runObjective({
         organizationId: requireOrgId(auth),
@@ -493,15 +849,15 @@ export class AiController {
         permissions: [...(auth.permissions ?? [])],
         commerceCaseId: body.commerceCaseId?.trim(),
         onProgress: async (ev) => {
-          send('state', ev);
+          send('state', {
+            state: ev.state,
+            step: ev.step,
+            detail: ev.detail,
+            at: ev.at,
+          });
         },
       });
       send('result', result);
-      send('state', {
-        state: 'completed',
-        step: 'Done',
-        at: new Date().toISOString(),
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const code =

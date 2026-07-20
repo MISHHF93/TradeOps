@@ -89,13 +89,15 @@ export async function apiFetch<T>(
     return { ok: true, data: parsed as T, status: response.status };
   } catch (error) {
     const aborted = error instanceof Error && error.name === 'AbortError';
+    const raw = error instanceof Error ? error.message : 'Failed to reach API';
+    // Node often surfaces "fetch failed" when nothing listens on the API host.
+    const friendlier =
+      !aborted && /fetch failed|ECONNREFUSED|network/i.test(raw)
+        ? `Cannot reach API at ${getApiBaseUrl()} (${raw})`
+        : raw;
     return {
       ok: false,
-      error: aborted
-        ? `API timeout after ${timeoutMs}ms`
-        : error instanceof Error
-          ? error.message
-          : 'Failed to reach API',
+      error: aborted ? `API timeout after ${timeoutMs}ms` : friendlier,
       status: 0,
     };
   } finally {

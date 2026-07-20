@@ -50,7 +50,7 @@ export function TerminalSidebar({
 
   const usingFallback = navSource === 'fallback' || !workspace?.nav?.length;
 
-  // Only "More" collapsed by default — Focus / Operate / Platform stay open
+  // More collapsed by default; Primary + Admin stay open
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({ more: true });
 
   function toggle(id: string) {
@@ -123,7 +123,6 @@ export function TerminalSidebar({
 
       <nav className="nav-groups">
         {groups.map((g) => {
-          // Focus / Operate / Platform expanded unless user collapsed; More starts collapsed
           const defaultCollapsed = g.id === 'more';
           const isCollapsed = collapsed[g.id] ?? defaultCollapsed;
           return (
@@ -174,7 +173,7 @@ export function TerminalSidebar({
 
       <div className="terminal-nav-footer">
         <p className="meta" style={{ fontSize: '0.68rem', marginBottom: 8 }}>
-          Jump anywhere with ⌘K · expand More for persona extras
+          Start with AI (right) or ⌘K · Home · Cases · Connections
         </p>
         <p className="meta" style={{ fontSize: '0.75rem', margin: 0, fontWeight: 600 }}>
           {orgName}

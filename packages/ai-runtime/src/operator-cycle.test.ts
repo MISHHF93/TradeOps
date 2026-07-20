@@ -177,12 +177,13 @@ describe('AI operator cycle', () => {
     assert.ok(
       result.recommendations.some((r) => r.title.includes('Water Bottle')),
     );
-    // Without Cohere: honest block, never fixed "I evaluated / Strongest opportunity" essay
+    // Without Cohere: short ranked-results status, never fixed "I evaluated / Strongest opportunity" essay
     assert.equal(result.briefingSource, 'blocked');
     assert.doesNotMatch(result.responseSummary, /I evaluated \d+ supplier products/i);
     assert.doesNotMatch(result.responseSummary, /Strongest opportunity:/i);
     assert.doesNotMatch(result.responseSummary, /Tool evidence \(deterministic\)/i);
-    assert.match(result.responseSummary, /No fixed narrative was substituted/i);
+    assert.doesNotMatch(result.responseSummary, /COHERE_API_KEY|No fixed narrative was substituted/i);
+    assert.match(result.responseSummary, /ranked|recommendation|Highest-ranked/i);
   });
 
   it('does not emit fixed product essay when synthesizeWithLlm is false', async () => {

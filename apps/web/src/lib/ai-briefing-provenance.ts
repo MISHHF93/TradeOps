@@ -18,21 +18,21 @@ export type TimelineStep = {
   detail?: string;
 };
 
-/** Human label for briefingSource from the server. */
+/** Human label for briefingSource from the server. Avoid env-key / config jargon. */
 export function briefingSourceLabel(source?: string | null): string {
   switch ((source ?? '').toLowerCase()) {
     case 'cohere':
-      return 'Cohere (live)';
+      return 'Live briefing';
     case 'blocked':
-      return 'Blocked — no fixed essay';
+      return 'Ranked results';
     case 'empty_store':
-      return 'Empty store';
+      return 'Empty catalog';
     case 'no_qualifiers':
-      return 'No qualifiers';
+      return 'No matches';
     case 'tools_structured':
-      return 'Tools only';
+      return 'Tool results';
     default:
-      return source?.trim() ? source : 'Unknown';
+      return source?.trim() ? source : 'Result';
   }
 }
 
@@ -61,8 +61,8 @@ export function isGenerativeBriefing(source?: string | null): boolean {
 }
 
 /**
- * Extract Phase B latency / provider detail from operator timeline.
- * Example detail: "provider=cohere 9205ms schema=operator_briefing"
+ * Extract briefing latency from operator timeline (user-safe; no env/key chatter).
+ * Matches "Writing briefing" (current) and legacy "Phase B" step names.
  */
 export function phaseBDetail(timeline?: TimelineStep[] | null): {
   detail: string | null;
@@ -71,34 +71,36 @@ export function phaseBDetail(timeline?: TimelineStep[] | null): {
   fixedTemplate: boolean | null;
 } {
   const steps = timeline ?? [];
-  const synth = [...steps].reverse().find((t) => /phase b/i.test(t.step));
-  const sourceLine = [...steps].reverse().find((t) => /briefing source/i.test(t.step));
+  const synth = [...steps]
+    .reverse()
+    .find((t) => /writing briefing|phase b/i.test(t.step));
   const detail = synth?.detail?.trim() || null;
   let latencyMs: number | null = null;
   let provider: string | null = null;
-  if (detail) {
+  if (detail && !/key|api_key|missing|configured|fixed_template/i.test(detail)) {
     const lat = detail.match(/(\d+)\s*ms/i);
     if (lat) latencyMs = Number(lat[1]);
     const prov = detail.match(/provider=([a-z0-9_-]+)/i);
     if (prov) provider = prov[1]!;
   }
-  let fixedTemplate: boolean | null = null;
-  if (sourceLine?.detail) {
-    if (/fixed_template=false/i.test(sourceLine.detail)) fixedTemplate = false;
-    else if (/fixed_template=true/i.test(sourceLine.detail)) fixedTemplate = true;
-  }
-  return { detail, latencyMs, provider, fixedTemplate };
+  // fixedTemplate intentionally unused in UI — never advertise template meta
+  return { detail: null, latencyMs, provider, fixedTemplate: null };
 }
 
 export function resolveBriefingText(result: {
   responseSummary?: string | null;
   envelope?: { text?: string | null } | null;
   decisionNote?: string | null;
+  navigatorSummary?: string | null;
+  plan?: { finalAnswer?: string | null; responseSummary?: string | null } | null;
 }): string | null {
   const t =
     result.responseSummary?.trim() ||
-    result.envelope?.text?.trim() ||
     result.decisionNote?.trim() ||
+    result.navigatorSummary?.trim() ||
+    result.plan?.finalAnswer?.trim() ||
+    result.plan?.responseSummary?.trim() ||
+    result.envelope?.text?.trim() ||
     '';
   return t || null;
 }

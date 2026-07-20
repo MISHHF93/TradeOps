@@ -339,16 +339,16 @@ export async function runOperatorCycle(input: {
   const timeline: TimelineStep[] = [];
   const isReadOnly = classification.objectiveType === 'READ_ONLY_ANALYSIS';
 
-  await emit('classifying', 'Objective received', input.objective.slice(0, 200));
-  pushTimeline(timeline, 'Objective received', 'done', input.objective.slice(0, 200));
+  await emit('classifying', 'Understanding objective', input.objective.slice(0, 200));
+  pushTimeline(timeline, 'Understanding objective', 'done', input.objective.slice(0, 200));
 
   // Phase A: deterministic tools only (connectors, research, product search, profit, policy, rank)
-  await emit('calling_tools', 'Phase A tool ranking', 'Deterministic tools — no LLM invention');
+  await emit('calling_tools', 'Running analysis tools');
   pushTimeline(
     timeline,
-    'Phase A tool ranking',
+    'Running analysis tools',
     'active',
-    'Connectors · search · profit · policy · rank (no generative claims)',
+    'Connectors · search · profit · policy · rank',
   );
 
   // Tool: connector capabilities
@@ -383,7 +383,7 @@ export async function runOperatorCycle(input: {
   // Optional public-web research (Tavily) — evidence only; never invent store products from SERP.
   if (isReadOnly) {
     const researchQuery = input.objective.replace(/\s+/g, ' ').trim().slice(0, 200);
-    await emit('retrieving', 'Public web research (when Tavily configured)', researchQuery);
+    await emit('retrieving', 'Researching public sources', researchQuery);
     try {
       const web = await invokeTool(
         'researchSearchPublicWeb',
@@ -942,32 +942,28 @@ export async function runOperatorCycle(input: {
 
   if (retrieved === 0) {
     briefingSource = 'empty_store';
-    responseSummary = [
-      'No products available in the organization store for this objective.',
-      'Connect a live catalog (e.g. Shopify) or import an authorized supplier feed, then rerun.',
-      'No fixed product briefing was generated.',
-    ].join(' ');
+    responseSummary =
+      'No products in the organization store for this objective. Connect a live catalog or import a supplier feed, then rerun.';
   } else if (finalRecs.length === 0) {
     briefingSource = 'no_qualifiers';
     responseSummary = [
-      `Tools ran against ${retrieved} candidate(s); none passed filters after cost/policy/margin checks`,
+      `Analysis ran on ${retrieved} candidate(s); none passed cost, policy, or margin filters`,
       `(missing cost: ${rejectedMissingCost}, filtered: ${rejectedByFilter}).`,
       failedReasons.length ? `Examples: ${failedReasons.slice(0, 3).join(' | ')}.` : '',
-      'No fixed product narrative was substituted — adjust filters or data and rerun.',
+      'Adjust filters or catalog data and rerun.',
     ]
       .filter(Boolean)
       .join(' ');
   } else if (input.synthesizeWithLlm === false) {
     briefingSource = 'tools_structured';
     responseSummary = [
-      `Generative briefing intentionally disabled for this run.`,
-      `${finalRecs.length} ranked recommendation(s) are in structured cards (not a fixed essay).`,
-      `Top: ${top?.title ?? '—'} (see product cards for scores/margins).`,
+      `${finalRecs.length} ranked recommendation(s) ready in product cards.`,
+      `Top: ${top?.title ?? '—'}.`,
     ].join(' ');
   } else {
-    // Phase B: Cohere-only generative briefing (never invent products; never dump fixed templates)
-    await emit('synthesizing', 'Synthesizing operator narrative (Cohere when COHERE_API_KEY set)');
-    pushTimeline(timeline, 'Phase B synthesis', 'active', 'Cohere sole generative provider when keyed');
+    // Phase B: generative briefing over tool evidence only (never invent products)
+    await emit('synthesizing', 'Writing operator briefing');
+    pushTimeline(timeline, 'Writing briefing', 'active');
     const evidenceBrief = finalRecs
       .slice(0, 5)
       .map(
@@ -999,26 +995,25 @@ export async function runOperatorCycle(input: {
       schemaId: 'operator_briefing',
     });
     if (synth.blocked || synth.failed || synth.offline || !synth.text?.trim()) {
-      const why =
+      // Internal diagnostic only (not shown as progress detail to users)
+      const internalWhy =
         synth.note ??
         (!synth.text?.trim()
-          ? 'COHERE_EMPTY_RESPONSE: model returned no text (raise maxTokens or check model)'
-          : 'COHERE_KEY_MISSING or generative call failed');
-      const lastB = [...timeline].reverse().find((t) => t.step === 'Phase B synthesis');
+          ? 'empty_model_response'
+          : 'generative_unavailable');
+      const lastB = [...timeline].reverse().find((t) => t.step === 'Writing briefing');
       if (lastB?.status === 'active') {
         lastB.status = 'done';
-        lastB.detail = why;
+        lastB.detail = internalWhy;
       } else {
-        pushTimeline(timeline, 'Phase B synthesis', 'done', why);
+        pushTimeline(timeline, 'Writing briefing', 'done', internalWhy);
       }
-      await emit('validating', 'Synthesis skipped', why);
+      await emit('validating', 'Finishing ranked results');
       briefingSource = 'blocked';
-      // Honest block only — never substitute a fixed multi-line product essay
+      // Ranked cards remain the source of numbers — short status only, no canned product essay
       responseSummary = [
-        `Generative briefing unavailable (${why}).`,
-        `No fixed narrative was substituted.`,
-        `${finalRecs.length} product(s) are ranked in structured recommendation cards with live tool scores — open those cards for numbers and next actions.`,
-        top ? `Highest-ranked title: ${top.title}.` : '',
+        `${finalRecs.length} product(s) ranked with live tool scores — see recommendation cards for margins and next actions.`,
+        top ? `Highest-ranked: ${top.title}.` : '',
       ]
         .filter(Boolean)
         .join(' ');
@@ -1048,29 +1043,23 @@ export async function runOperatorCycle(input: {
       }
       responseSummary = narrative;
       briefingSource = 'cohere';
-      const okDetail = `provider=${synth.provider}${synth.latencyMs != null ? ` ${synth.latencyMs}ms` : ''} schema=operator_briefing`;
-      const lastB = [...timeline].reverse().find((t) => t.step === 'Phase B synthesis');
+      const okDetail = `provider=${synth.provider}${synth.latencyMs != null ? ` ${synth.latencyMs}ms` : ''}`;
+      const lastB = [...timeline].reverse().find((t) => t.step === 'Writing briefing');
       if (lastB?.status === 'active') {
         lastB.status = 'done';
         lastB.detail = okDetail;
       } else {
-        pushTimeline(timeline, 'Phase B synthesis', 'done', okDetail);
+        pushTimeline(timeline, 'Writing briefing', 'done', okDetail);
       }
-      await emit('validating', 'Synthesis complete', `provider=${synth.provider}`);
+      await emit('validating', 'Briefing ready');
     }
   }
 
-  // Attach briefing provenance on timeline for honesty / UI
-  pushTimeline(
-    timeline,
-    'Briefing source',
-    'done',
-    `briefingSource=${briefingSource}; fixed_template=false`,
-  );
+  pushTimeline(timeline, 'Briefing source', 'done', `briefingSource=${briefingSource}`);
 
   await emit(
     decision === 'block' && finalRecs.length === 0 ? 'blocked' : 'completed',
-    'Operator cycle finished',
+    'Done',
     `${finalRecs.length} recommendation(s)`,
   );
 

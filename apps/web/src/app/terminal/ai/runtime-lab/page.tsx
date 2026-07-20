@@ -1,11 +1,15 @@
 import Link from 'next/link';
 import { RuntimeLabConsole } from '../../../../components/ai/runtime-lab-console';
+import { PackDisabledState } from '../../../../components/feedback/pack-disabled-state';
+import { resolveProductPacks } from '../../../../lib/product-packs';
 
 /**
- * Protected-by-session AI runtime lab.
- * Proves real Cohere path — never constructs assistant content in the browser.
+ * Eng-lab diagnostics. Enable: TRADEOPS_ENABLE_ENG_LABS=1
  */
 export default function AiRuntimeLabPage() {
+  if (!resolveProductPacks().engLabs) {
+    return <PackDisabledState pack="engLabs" />;
+  }
   return (
     <section>
       <header className="terminal-header">

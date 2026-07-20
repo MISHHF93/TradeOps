@@ -83,7 +83,9 @@ export function ProcessCaseCard({
           ) : null}
 
           {c.blockerMessage ? (
-            <p className="form-error process-case-card__blocker">{c.blockerMessage}</p>
+            <p className="process-case-card__blocker meta" role="status">
+              {c.blockerMessage}
+            </p>
           ) : null}
 
           <p className="process-case-card__next meta">

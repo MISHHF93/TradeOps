@@ -308,7 +308,7 @@ export async function runCohereAgentLoop(
 
   // Prefer model tool selection. Only force heuristic tools when the model failed
   // AND the information need actually requires tools (never force tools for pure Q&A).
-  const calls =
+  let calls =
     selection.ok && selection.calls.length
       ? selection.calls.slice(0, maxRounds)
       : need !== 'no_search' && suggested.length
@@ -317,6 +317,56 @@ export async function runCohereAgentLoop(
             arguments: { query: input.message, objective: input.message },
           }))
         : [];
+
+  // Ecommerce web-first with empty live catalog: skip store tools so empty/fixture
+  // slices cannot pollute synthesis. Prefer research + search.manager only.
+  const preMeta =
+    input.operationalContext &&
+    typeof input.operationalContext.meta === 'object' &&
+    input.operationalContext.meta
+      ? (input.operationalContext.meta as Record<string, unknown>)
+      : null;
+  const webFirstEmpty =
+    preMeta?.agentMode === 'ecommerce_web_first' &&
+    (preMeta?.dataClass === 'EMPTY' ||
+      Number(preMeta?.liveProductCount ?? preMeta?.productCount ?? 0) === 0);
+
+  /** Prefer SERP language that surfaces product lists over meta "how to find products" blogs. */
+  const discoverySearchQuery = (message: string): string => {
+    const base = message.trim().replace(/\s+/g, ' ').slice(0, 160);
+    const isDiscovery =
+      /\b(product|sell|resell|dropship|opportunit|trend|market|find|discover|usb|led|gadget|ecommerce|e-?commerce|sku|wholesale)\b/i.test(
+        base,
+      );
+    if (!isDiscovery) return base;
+    return `${base} best selling products price amazon wholesale 2026`;
+  };
+
+  if (webFirstEmpty) {
+    const q = discoverySearchQuery(input.message);
+    calls = calls
+      .filter(
+        (c) =>
+          c.name.startsWith('research.') ||
+          c.name === 'search.manager' ||
+          c.name.startsWith('analytics.'),
+      )
+      .map((c) => ({
+        ...c,
+        arguments: {
+          ...c.arguments,
+          query: q,
+          objective: q,
+        },
+      }));
+    // Ensure at least research when discovery objective and web is available
+    if (calls.length === 0 && !input.disableSearch) {
+      calls.push({
+        name: 'research.web_search',
+        arguments: { query: q, objective: q },
+      });
+    }
+  }
 
   // Free-form / definitional / canary: skip schema synthesis — use live generateText.
   // (Structured schema often rejects short free-form with "artifact required".)
@@ -388,9 +438,20 @@ export async function runCohereAgentLoop(
       continue;
     }
     toolsInvoked.push(call.name);
+    // Prefer model-selected query args. Never overwrite a good short query with a long prompt.
+    const argQuery =
+      typeof call.arguments?.query === 'string' && call.arguments.query.trim()
+        ? call.arguments.query.trim()
+        : typeof call.arguments?.objective === 'string' && call.arguments.objective.trim()
+          ? call.arguments.objective.trim()
+          : input.message;
     const result = await invokeCapability({
       capability: call.name,
-      parameters: { ...call.arguments, query: input.message, objective: input.message },
+      parameters: {
+        ...call.arguments,
+        query: argQuery,
+        objective: argQuery,
+      },
       tenantId: input.tenantId,
       operationalContext: input.operationalContext,
     });
@@ -455,8 +516,17 @@ export async function runCohereAgentLoop(
 
   if (input.knowledgeDocuments?.length || (wantsPublic && webSearchEnabled)) {
     toolsInvoked.push('search.manager');
+    // Prefer a short merchant objective for public search (avoid stuffing system-ish prompts).
+    // Web-first ecommerce path: rewrite toward product SERP language.
+    const rawObjective =
+      input.message.length > 400
+        ? input.message.slice(0, 400)
+        : input.message;
+    const searchObjective = webFirstEmpty
+      ? discoverySearchQuery(rawObjective)
+      : rawObjective;
     const search = await runSearchManager({
-      objective: input.message,
+      objective: searchObjective,
       internalDocuments: input.knowledgeDocuments,
       internalOnly: !wantsPublic || !webSearchEnabled,
       policy: wantsPublic && webSearchEnabled ? undefined : { allowed: false },
@@ -633,13 +703,40 @@ export async function runCohereAgentLoop(
   }
 
   // --- Phase B: structured synthesis ---
+  const agentRules =
+    input.operationalContext &&
+    Array.isArray((input.operationalContext as { agentRules?: unknown }).agentRules)
+      ? ((input.operationalContext as { agentRules: unknown[] }).agentRules as unknown[])
+          .map(String)
+          .filter(Boolean)
+      : [];
+  const agentRole =
+    input.operationalContext &&
+    typeof (input.operationalContext as { agentRole?: unknown }).agentRole === 'string'
+      ? String((input.operationalContext as { agentRole: string }).agentRole)
+      : '';
+  const catalogNote =
+    snapMeta && typeof snapMeta.catalogNote === 'string'
+      ? String(snapMeta.catalogNote)
+      : '';
+  const dataClass =
+    snapMeta && typeof snapMeta.dataClass === 'string'
+      ? String(snapMeta.dataClass)
+      : '';
+  const emptyLiveCatalog = dataClass === 'EMPTY' || dataClass === '';
+
   const synthesisUser = [
     `User objective: ${input.message}`,
     `Intent category hint: ${category}`,
     `Information mode hint: ${informationMode}`,
+    agentRole ? `Agent role: ${agentRole}` : null,
     snapMeta
       ? `Tenant snapshot meta: ${JSON.stringify(snapMeta)}`
       : 'Tenant snapshot meta: (none)',
+    catalogNote ? `Catalog note: ${catalogNote}` : null,
+    agentRules.length
+      ? `Operator agent rules (must follow):\n${agentRules.map((r) => `- ${r}`).join('\n')}`
+      : null,
     '',
     'Tool results (verified by TradeOps — do not invent additional operational facts):',
     JSON.stringify(toolResults).slice(0, 8000),
@@ -654,11 +751,26 @@ export async function runCohereAgentLoop(
     warnings.join('; ') || '(none)',
     '',
     'Return structured JSON for the TradeOps synthesis schema.',
-    'Ground the answer in the tool results and evidence above — cite specific product titles, SKUs, quantities, or case blockers when present.',
-    'If dataClass is TEST_FIXTURE, say so clearly.',
+    emptyLiveCatalog || webFirstEmpty
+      ? [
+          'Tenant has no live store products. Answer from public web research only.',
+          'Do not invent store inventory. Do not mention fixture/demo catalogs.',
+          'MANDATORY format for product discovery objectives:',
+          '1) One short direct answer sentence.',
+          '2) Then a numbered list of 3–5 concrete products or sellable product types:',
+          '   N. Product name — why it fits, rough price band if known, source type (Amazon/wholesale/etc).',
+          '3) Risks: (1–2 bullets)',
+          '4) Next: (1–2 actions)',
+          'Do NOT answer only with blog/article titles, tool names, or “use Amazon tools” meta-advice.',
+          'If evidence is thin, still name plausible product *types* grounded in the evidence themes and say confidence is low.',
+        ].join('\n')
+      : 'Ground the answer in the tool results and evidence above — cite specific product titles, SKUs, quantities, or case blockers when present.',
+    'If dataClass is TEST_FIXTURE, say so clearly once and do not rank fixture SKUs as live opportunities.',
     'If write actions are appropriate, put them in proposedActions with requiresApproval=true.',
     'Never claim actions completed.',
-  ].join('\n');
+  ]
+    .filter((line): line is string => line != null)
+    .join('\n');
 
   let synthesisResult = await provider.generateStructured({
     system: composedSystem,

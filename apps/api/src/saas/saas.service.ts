@@ -222,9 +222,20 @@ export class SaasService {
 
   /**
    * Server-side entitlement gate. Throws ForbiddenException when over quota.
+   * Founder-direct local mode never blocks AI evaluations.
    */
   async assertAiEvaluationAllowed(organizationId: string): Promise<void> {
     await this.billing.assertBillingAccess(organizationId);
+    // Local product / founder testing must never hit SaaS quota walls
+    if ((process.env.TRADEOPS_ACCESS_MODE || 'founder_direct') === 'founder_direct') {
+      return;
+    }
+    if (
+      process.env.TRADEOPS_DISABLE_AI_QUOTA === '1' ||
+      process.env.TRADEOPS_DISABLE_AI_QUOTA === 'true'
+    ) {
+      return;
+    }
     const org = await this.prisma.client.organization.findUniqueOrThrow({
       where: { id: organizationId },
     });

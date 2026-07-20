@@ -198,20 +198,61 @@ function weight(persona: OperatingPersona, kind: InsightKind): number {
 export function generateInsights(signals: IntelligenceSignals): RankedInsight[] {
   const insights: RankedInsight[] = [];
   const p = signals.persona;
+  /** Seed/demo catalog only — do not treat fixture policy walls as the product crisis. */
+  const fixtureOnly =
+    signals.productCount > 0 &&
+    signals.fixtureProductCount > 0 &&
+    signals.liveProductCount === 0;
+
+  // Founder / researcher default: lead with live market research when store is demo-only.
+  if (fixtureOnly && (p === 'researcher' || p === 'executive' || p === 'operator')) {
+    insights.push({
+      id: 'ins-research-first',
+      kind: 'opportunity',
+      title: 'Research live product opportunities',
+      detail:
+        'Demo catalog only — use AI + web research for real market candidates, not seed SKUs.',
+      urgencyScore: p === 'researcher' ? 78 : 62,
+      confidence: 0.95,
+      href: '/terminal/workspace',
+      personaRelevance: weight(p, 'opportunity'),
+      evidence: [
+        `fixtureProductCount=${signals.fixtureProductCount}`,
+        'liveProductCount=0',
+        'path=ecommerce_web_first',
+      ],
+      suggestedObjective:
+        'Find concrete product opportunities worth reselling online right now with rough price bands and sources. Prefer public market research; do not rank demo catalog SKUs.',
+      suggestedAiQuery: 'Find products worth selling this week',
+    });
+  }
 
   if (signals.openBlockers > 0) {
     insights.push({
       id: 'ins-blockers',
       kind: 'blocker',
-      title: `${signals.openBlockers} critical blocker${signals.openBlockers === 1 ? '' : 's'}`,
-      detail: 'Process tasks are blocked — commerce cases cannot advance until resolved.',
-      urgencyScore: Math.min(100, 70 + signals.openBlockers * 8),
+      title: fixtureOnly
+        ? `${signals.openBlockers} demo case blocker${signals.openBlockers === 1 ? '' : 's'}`
+        : `${signals.openBlockers} critical blocker${signals.openBlockers === 1 ? '' : 's'}`,
+      detail: fixtureOnly
+        ? 'Seed cases are blocked by design (policy rehearsal). Prefer AI market research until live products exist.'
+        : 'Process tasks are blocked — commerce cases cannot advance until resolved.',
+      urgencyScore: fixtureOnly
+        ? Math.min(40, 22 + signals.openBlockers * 4)
+        : Math.min(100, 70 + signals.openBlockers * 8),
       confidence: 0.95,
       href: '/terminal/tasks',
-      personaRelevance: weight(p, 'blocker'),
-      evidence: [`openBlockers=${signals.openBlockers}`],
-      suggestedObjective: `Resolve the ${signals.openBlockers} open process blockers and recommend the next unblocked case action.`,
-      suggestedAiQuery: 'What blockers should I clear first?',
+      personaRelevance: weight(p, 'blocker') * (fixtureOnly ? 0.55 : 1),
+      evidence: [
+        `openBlockers=${signals.openBlockers}`,
+        fixtureOnly ? 'fixtureOnly=true' : 'fixtureOnly=false',
+      ],
+      suggestedObjective: fixtureOnly
+        ? 'Ignore demo case blockers for discovery. Research live product opportunities with web sources instead.'
+        : `Resolve the ${signals.openBlockers} open process blockers and recommend the next unblocked case action.`,
+      suggestedAiQuery: fixtureOnly
+        ? 'Find products worth selling this week'
+        : 'What blockers should I clear first?',
     });
   }
 
@@ -271,21 +312,36 @@ export function generateInsights(signals: IntelligenceSignals): RankedInsight[] 
     insights.push({
       id: 'ins-stalled',
       kind: 'stalled_case',
-      title: `${signals.stalledCaseCount} stalled Commerce Case${signals.stalledCaseCount === 1 ? '' : 's'}`,
-      detail: hint
-        ? `Example: ${hint.title} at ${hint.stage}/${hint.status}`
-        : 'Cases waiting or blocked without progress.',
-      urgencyScore: Math.min(100, 48 + signals.stalledCaseCount * 7),
+      title: fixtureOnly
+        ? `${signals.stalledCaseCount} demo case${signals.stalledCaseCount === 1 ? '' : 's'} on the board`
+        : `${signals.stalledCaseCount} stalled Commerce Case${signals.stalledCaseCount === 1 ? '' : 's'}`,
+      detail: fixtureOnly
+        ? hint
+          ? `Seed example: ${hint.title} (${hint.stage}/${hint.status}) — not live inventory.`
+          : 'Seed cases for process rehearsal only.'
+        : hint
+          ? `Example: ${hint.title} at ${hint.stage}/${hint.status}`
+          : 'Cases waiting or blocked without progress.',
+      urgencyScore: fixtureOnly
+        ? Math.min(35, 18 + signals.stalledCaseCount * 3)
+        : Math.min(100, 48 + signals.stalledCaseCount * 7),
       confidence: 0.85,
       href: hint ? `/terminal/process/${hint.caseId}` : '/terminal/process',
-      personaRelevance: weight(p, 'stalled_case'),
+      personaRelevance: weight(p, 'stalled_case') * (fixtureOnly ? 0.5 : 1),
       evidence: [`stalledCaseCount=${signals.stalledCaseCount}`],
-      suggestedObjective: `Unstick stalled Commerce Cases: identify stage blockers and the next transformation for each.`,
-      suggestedAiQuery: 'Which commerce cases are stuck?',
+      suggestedObjective: fixtureOnly
+        ? 'Use AI to research live market products instead of advancing demo cases.'
+        : `Unstick stalled Commerce Cases: identify stage blockers and the next transformation for each.`,
+      suggestedAiQuery: fixtureOnly
+        ? 'Find products worth selling this week'
+        : 'Which commerce cases are stuck?',
     });
   }
 
-  if (signals.highOpportunityCount > 0 || (signals.topOpportunityScore ?? 0) >= 60) {
+  if (
+    !fixtureOnly &&
+    (signals.highOpportunityCount > 0 || (signals.topOpportunityScore ?? 0) >= 60)
+  ) {
     const score = signals.topOpportunityScore ?? 0;
     insights.push({
       id: 'ins-opps',
@@ -312,15 +368,25 @@ export function generateInsights(signals: IntelligenceSignals): RankedInsight[] 
     insights.push({
       id: 'ins-policy',
       kind: 'blocker',
-      title: `${signals.signalBlockedCount} policy/blocked signal${signals.signalBlockedCount === 1 ? '' : 's'}`,
-      detail: 'Products or actions blocked by policy — review before capital or publish.',
-      urgencyScore: Math.min(95, 55 + signals.signalBlockedCount * 8),
+      title: fixtureOnly
+        ? `${signals.signalBlockedCount} demo policy signal${signals.signalBlockedCount === 1 ? '' : 's'}`
+        : `${signals.signalBlockedCount} policy/blocked signal${signals.signalBlockedCount === 1 ? '' : 's'}`,
+      detail: fixtureOnly
+        ? 'Fixture SKUs intentionally fail publish policy — expected for seed data, not a live store outage.'
+        : 'Products or actions blocked by policy — review before capital or publish.',
+      urgencyScore: fixtureOnly
+        ? Math.min(30, 16 + signals.signalBlockedCount * 3)
+        : Math.min(95, 55 + signals.signalBlockedCount * 8),
       confidence: 0.88,
       href: '/terminal/signals',
-      personaRelevance: weight(p, 'blocker'),
+      personaRelevance: weight(p, 'blocker') * (fixtureOnly ? 0.45 : 1),
       evidence: [`signalBlockedCount=${signals.signalBlockedCount}`],
-      suggestedObjective: `Explain blocked commerce signals and whether any can be remediated safely.`,
-      suggestedAiQuery: 'Explain blocked signals',
+      suggestedObjective: fixtureOnly
+        ? 'Skip demo policy walls. Research real products on the open web for evaluation.'
+        : `Explain blocked commerce signals and whether any can be remediated safely.`,
+      suggestedAiQuery: fixtureOnly
+        ? 'Find products worth selling this week'
+        : 'Explain blocked signals',
     });
   }
 
@@ -347,19 +413,19 @@ export function generateInsights(signals: IntelligenceSignals): RankedInsight[] 
     insights.push({
       id: 'ins-fixture-only',
       kind: 'data_quality',
-      title: 'Catalog is fixture-only',
-      detail: `${signals.fixtureProductCount} TEST FIXTURE products — not live marketplace truth.`,
-      urgencyScore: 32,
+      title: 'Demo catalog only (seed data)',
+      detail: `${signals.fixtureProductCount} seed products for walkthroughs — not live marketplace inventory. AI research uses the public web.`,
+      urgencyScore: 24,
       confidence: 1,
       href: '/terminal/connectors',
-      personaRelevance: weight(p, 'data_quality'),
+      personaRelevance: weight(p, 'data_quality') * 0.7,
       evidence: [
         `fixtureProductCount=${signals.fixtureProductCount}`,
         'liveProductCount=0',
       ],
       suggestedObjective:
-        'Connect a live supplier or storefront so KPIs move off fixture data; label simulation until then.',
-      suggestedAiQuery: 'Connect live Shopify products',
+        'Find real product opportunities via web research; connect a live supplier when you are ready to import inventory.',
+      suggestedAiQuery: 'Find products worth selling this week',
     });
   } else if (
     signals.fixtureProductCount > 0 &&
@@ -390,16 +456,23 @@ export function generateInsights(signals: IntelligenceSignals): RankedInsight[] 
     insights.push({
       id: 'ins-no-live',
       kind: 'connector',
-      title: 'No live connectors connected',
-      detail: 'Registry may list vendors, but none are live-connected for this org.',
-      urgencyScore: 28,
+      title: fixtureOnly
+        ? 'Live storefront not connected yet'
+        : 'No live connectors connected',
+      detail: fixtureOnly
+        ? 'Optional next step: connect Shopify/Amazon/supplier when you leave demo mode. AI web research works without it.'
+        : 'Registry may list vendors, but none are live-connected for this org.',
+      urgencyScore: fixtureOnly ? 18 : 28,
       confidence: 0.9,
       href: '/terminal/connectors',
-      personaRelevance: weight(p, 'connector'),
+      personaRelevance: weight(p, 'connector') * (fixtureOnly ? 0.6 : 1),
       evidence: ['liveConnectorCount=0'],
-      suggestedObjective:
-        'List which production connectors to connect first for this persona mission and required env credentials.',
-      suggestedAiQuery: 'Which connectors should I connect first?',
+      suggestedObjective: fixtureOnly
+        ? 'Research market opportunities with AI first; outline which connector to connect when importing live inventory.'
+        : 'List which production connectors to connect first for this persona mission and required env credentials.',
+      suggestedAiQuery: fixtureOnly
+        ? 'Find products worth selling this week'
+        : 'Which connectors should I connect first?',
     });
   }
 
@@ -476,7 +549,9 @@ function defaultMissionObjective(p: OperatingPersona, s: IntelligenceSignals): s
     case 'operator':
       return `Focus on open Commerce Cases ready to prepare, approve, publish, or fulfill. ${s.activeCaseCount} active cases, ${s.openOrderCount} open orders.`;
     case 'researcher':
-      return `Discover and rank product candidates with economics and policy risk. Store has ${s.productCount} products (${s.liveProductCount} live).`;
+      return s.liveProductCount === 0
+        ? `Find concrete product opportunities worth reselling online right now with rough price bands and sources. Prefer public web research; do not rank demo catalog SKUs.`
+        : `Discover and rank product candidates with economics and policy risk. Store has ${s.productCount} products (${s.liveProductCount} live).`;
     case 'analyst':
       return `Explain signals and portfolio composition. Highlight learning from recent outcomes (${s.recentObjectiveCount} recent AI runs).`;
     case 'developer':
